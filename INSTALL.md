@@ -2,9 +2,7 @@
 
 This walks a new host ("I found WL on GitHub, I want ticket tracking for my
 own project") from a bare clone to agents filing and working tickets. It
-does not assume tradeOS or any other existing host — see
-[README.md](README.md#host-integration--tradeos-profile) for the tradeOS
-profile specifically.
+assumes no existing host.
 
 ## 1. Clone
 
@@ -126,15 +124,11 @@ verification bar is before closing a ticket. Don't skip this: it's what
 keeps multiple agents from clobbering each other's claims.
 
 Start from [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md), which has
-a fill-in-the-blanks PROCESS.md §6-style profile plus a CLAUDE.md snippet.
-Concrete worked examples: PROCESS.md §6 (tradeOS), §6.1 (Cursor), §6.2
-(Grok), §8 (WL's own self-host lane).
+a fill-in-the-blanks PROCESS.md §6-style profile plus an agent-instructions snippet.
+See PROCESS.md §6 (Host Profiles).
 
 ## Read next
 
 - [PROCESS.md](PROCESS.md) — the normative ticket lifecycle/ownership
   rulebook every agent (yours included) follows.
-- [worklane/TRUTH.md](worklane/TRUTH.md) — canonical
-  entrypoints, runtime layout, full HTTP surface.
-- [README.md](README.md) — product overview and the tradeOS worked example
-  of a host integration.
+- [README.md](README.md) — product overview, quickstart, MCP setup.

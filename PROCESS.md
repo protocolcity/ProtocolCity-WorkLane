@@ -136,10 +136,8 @@ Next step: <what's needed>
 
 ### 5.1) Close-out guard — commit-or-abandon (all agents)
 
-Uncommitted work in an abandoned working copy is how finished fixes get destroyed
-(tradeOS #816/#836) or silently stranded off `main` while the board says done
-(tradeOS #857 evidence: a batch worktree held commits for five closed tickets,
-unmerged for ~5 hours). Every close-out — success or blocked — passes this guard:
+Uncommitted work in an abandoned working copy is how finished fixes get destroyed or silently stranded off `main` while the board says done
+(seen in production). Every close-out — success or blocked — passes this guard:
 
 1. **Inspect before leaving.** Before removing a worktree, switching away from a
    working copy, or ending a session: `git status --porcelain` and
@@ -189,14 +187,11 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 
 Reserved system authors — written by automation only, never by an agent:
 `cli-label`, `cli-update`, `dependency-guard` (WL internals), and
-`tradeos-app` (tickets filed by the tradeOS app itself — ntfy auto-filers,
-in-app proxies — when the originating payload carries no agent id).
+`<host>-app` (tickets filed by the host application itself when the originating payload carries no agent id).
 
 Rules:
 
-- **One id per lane, forever.** Historical variants (`tradeOS Profile`,
-  `[COWORK]`, `claude`, `work-pool-test`, bare human names, anything with
-  trailing whitespace) are deprecated — do not write them; they exist only in
+- **One id per lane, forever.** Historical variants (renamed profiles, bare human names, anything with trailing whitespace) are deprecated — do not write them; they exist only in
   pre-2026-07-10 history.
 - **New lane, new row.** A new agent lane registers its id in this table (same
   commit that adds its §6 profile) before posting its first comment.
@@ -205,13 +200,13 @@ Rules:
 
 ## 7) API and Surface
 
-WL exposes API/UI so other cockpits can read ticket state. Board/table and API reflect the same DB truth. External aggregators should be read-first unless write is explicitly enabled. tradeOS is a WL client; shipped/product startup must not depend on WL availability.
+WL exposes API/UI so other cockpits can read ticket state. Board/table and API reflect the same DB truth. External aggregators should be read-first unless write is explicitly enabled. Host products are WL clients; a host must never depend on WL availability to start.
 
-**One product, one store** (2026-07-10): every product tracked by WL has its
+**One product, one store:** every product tracked by WL has its
 own SQLite file (`worklane/local/data/<slug>.db`) and its own Pool
 surface tab; "All" is a merged read view. Products are independent — an agent
 working one product's tickets never writes another product's store. Composite
-ids (`t-…` tradeOS, `wl-…` WorkLane) address tickets across stores;
+ids (`wl-…` WorkLane, `<slug>-…` your product) address tickets across stores;
 WL's own development work is tracked in `worklane.db` under the same
 rules as any other product.
 

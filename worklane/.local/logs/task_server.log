@@ -5749,3 +5749,133 @@ INFO:     127.0.0.1:52074 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52083 - "GET /admin/cockpit HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52086 - "GET /favicon.ico HTTP/1.1" 404 Not Found
 INFO:     127.0.0.1:52083 - "GET /api/admin/cockpit/summary?_=1783730975635 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52114 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52116 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52114 - "GET /api/admin/cockpit/summary?_=1783731006625 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52114 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52116 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52114 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52116 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52114 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52126 - "POST /api/admin/tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52129 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52131 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52129 - "GET /api/admin/cockpit/summary?_=1783731037620 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52157 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52159 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52157 - "GET /api/admin/cockpit/summary?_=1783731068615 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52157 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52159 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52157 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52159 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52157 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52165 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52167 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52165 - "GET /api/admin/cockpit/summary?_=1783731099604 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52193 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52193 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52198 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52193 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52198 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52196 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52198 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52196 - "GET /api/admin/cockpit/summary?_=1783731130615 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52203 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52205 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52203 - "GET /api/admin/cockpit/summary?_=1783731161627 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52211 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52211 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52214 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52211 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52214 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52214 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52211 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52214 - "GET /api/admin/cockpit/summary?_=1783731192585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52237 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52239 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52237 - "GET /api/admin/cockpit/summary?_=1783731223605 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52243 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52243 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52246 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52243 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52246 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52246 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52243 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52246 - "GET /api/admin/cockpit/summary?_=1783731254604 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52273 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52275 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52273 - "GET /api/admin/cockpit/summary?_=1783731285622 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52279 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52279 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52284 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52279 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52284 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52286 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52288 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52286 - "GET /api/admin/cockpit/summary?_=1783731316611 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52315 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52317 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52315 - "GET /api/admin/cockpit/summary?_=1783731347616 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52320 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52320 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52323 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52320 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52323 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52325 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52327 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52325 - "GET /api/admin/cockpit/summary?_=1783731378606 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52337 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52339 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52337 - "GET /api/admin/cockpit/summary?_=1783731409619 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52359 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52359 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52362 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52359 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52362 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52366 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52364 - "GET /api/admin/cockpit/summary?_=1783731440601 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52371 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52373 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52371 - "GET /api/admin/cockpit/summary?_=1783731471631 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52401 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52401 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52403 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52401 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52403 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52406 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52408 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52406 - "GET /api/admin/cockpit/summary?_=1783731502614 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52411 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52413 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52411 - "GET /api/admin/cockpit/summary?_=1783731533617 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52417 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52417 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52420 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52417 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52420 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52445 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52447 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52445 - "GET /api/admin/cockpit/summary?_=1783731564614 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52450 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52452 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52450 - "GET /api/admin/cockpit/summary?_=1783731595618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52455 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52455 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52460 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52455 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52460 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52467 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52469 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52467 - "GET /api/admin/cockpit/summary?_=1783731626598 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52492 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52494 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52492 - "GET /api/admin/cockpit/summary?_=1783731657608 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52508 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52508 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52510 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52508 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52510 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52514 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52516 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52514 - "GET /api/admin/cockpit/summary?_=1783731688616 HTTP/1.1" 200 OK

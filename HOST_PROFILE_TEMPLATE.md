@@ -1,10 +1,7 @@
 # Host profile template
 
 Copy this into your host repo (e.g. as a `PROCESS.md` section or standalone
-`TICKETING.md`) and fill in the blanks. It mirrors the shape of WL's own
-[PROCESS.md](PROCESS.md) §6 (tradeOS), §6.1 (Cursor), §6.2 (Grok), §8 (WL
-self-host) — those are worked examples if you want to see a filled-in
-version. Setup steps live in [INSTALL.md](INSTALL.md); this is the
+`TICKETING.md`) and fill in the blanks. It mirrors the host-profile shape described in [PROCESS.md](PROCESS.md) §6 (Host Profiles). Setup steps live in [INSTALL.md](INSTALL.md); this is the
 *process* doc that goes in your host repo once WL is running.
 
 Why this exists: WL enforces signed writes and status transitions, but it
@@ -74,9 +71,9 @@ expression, launchd label, manual trigger), and where its logs land.
 
 ---
 
-## CLAUDE.md snippet
+## Agent-instructions snippet
 
-Add a section like this to your host repo's `CLAUDE.md` (or equivalent
+Add a section like this to your host repo's `AGENTS.md` or `CLAUDE.md` (or equivalent
 agent-instructions file) so any agent that scopes into ticket work finds
 the rulebook:
 
