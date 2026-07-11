@@ -5746,3 +5746,6 @@ INFO:     127.0.0.1:52071 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52074 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52071 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52074 - "GET /api/dev/activity?limit=6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52083 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52086 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52083 - "GET /api/admin/cockpit/summary?_=1783730975635 HTTP/1.1" 200 OK

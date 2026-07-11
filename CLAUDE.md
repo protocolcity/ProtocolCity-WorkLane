@@ -22,7 +22,7 @@ Read this file when:
 - **WL is not a SaaS dependency.** Everything is file-backed SQLite on the local machine.
 - **Host products consume WL as a client** — via the CLI, the HTTP API, or an in-tree tracker adapter when the host ships one. WL itself never reaches back into the host.
 
-If a change would cross any of these lines, it needs either an ADR in the host repo's `docs/decisions/` (explaining the coupling). Don't silently couple.
+If a change would cross any of these lines, it needs an ADR in the host repo's `docs/decisions/` (explaining the coupling). Don't silently couple.
 
 ## Code conventions
 
