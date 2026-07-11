@@ -634,14 +634,26 @@ def _render_work_queue_filters(
     # Jump-to-ticket search: single input, client-side navigates to /admin/tasks/<id>.
     # Lives inline in the command bar — ticket-number lookup is the most
     # frequent ops action and shouldn't hide behind a disclosure.
+    #
+    # Composite ids (wl-503) always navigate directly. A bare number resolves
+    # within the current product's store when scoped (data-scope-prefix);
+    # in the All view (no scope) it's ambiguous across stores, so JS asks
+    # /api/admin/tasks/resolve and shows a disambiguation popover (wl-76).
+    scoped_prefix = ""
+    if prod:
+        scoped_spec = get_product(prod)
+        if scoped_spec:
+            scoped_prefix = scoped_spec.prefix
+    jump_placeholder = "503" if scoped_prefix else "t-503 / wl-503"
     jump_form = (
         "<form class='wq-jump-form' "
-        "onsubmit=\"var v=(this.elements['id'].value||'').trim().replace(/^#/,'');"
-        "if(/^\\d+$/.test(v)){window.location.href='/admin/tasks/'+v;}return false;\">"
+        f"data-scope-prefix='{_esc(scoped_prefix)}' "
+        "onsubmit=\"return adminBoardJumpSubmit(this);\">"
         "<label class='dim' for='wq-jump-id'>Jump&nbsp;#</label>"
-        "<input id='wq-jump-id' name='id' type='text' inputmode='numeric' "
-        "pattern='#?\\d+' placeholder='503' autocomplete='off' "
+        "<input id='wq-jump-id' name='id' type='text' inputmode='text' "
+        f"placeholder='{_esc(jump_placeholder)}' autocomplete='off' "
         "class='ts-filter-input wq-jump-input'/>"
+        "<div id='wq-jump-ambiguous' class='wq-jump-ambiguous' hidden></div>"
         "</form>"
     )
 
@@ -1251,6 +1263,48 @@ def _client_js() -> str:
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* wl-76: Jump-# box. Composite ids (wl-503) navigate directly; a bare
+     number resolves against the current product scope when the command
+     bar is scoped to one, otherwise (All view) it's ambiguous across
+     stores and /api/admin/tasks/resolve is asked to disambiguate. */
+  async function adminBoardJumpSubmit(form) {
+    var box = document.getElementById('wq-jump-ambiguous');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+    var v = (form.elements['id'].value || '').trim().replace(/^#/, '');
+    if (!v) return false;
+    if (/^[A-Za-z]+-\d+$/.test(v)) {
+      window.location.href = '/admin/tasks/' + v;
+      return false;
+    }
+    if (!/^\d+$/.test(v)) {
+      if (typeof showToast === 'function') showToast('Use a number or an id like wl-503', 'error');
+      return false;
+    }
+    var prefix = form.getAttribute('data-scope-prefix') || '';
+    if (prefix) {
+      window.location.href = '/admin/tasks/' + prefix + '-' + v;
+      return false;
+    }
+    try {
+      var resp = await fetch('/api/admin/tasks/resolve?id=' + encodeURIComponent(v));
+      var j = await resp.json();
+      if (j.ok && j.match) {
+        window.location.href = '/admin/tasks/' + j.match;
+      } else if (j.ok && j.candidates && j.candidates.length && box) {
+        box.innerHTML = j.candidates.map(function (c) {
+          return "<a href='/admin/tasks/" + adminBoardEscape(c.id) + "'>" +
+            adminBoardEscape(c.id) + ' — ' + adminBoardEscape(c.title) + '</a>';
+        }).join('');
+        box.hidden = false;
+      } else if (typeof showToast === 'function') {
+        showToast('No ticket #' + v + ' found', 'error');
+      }
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('Network error', 'error');
+    }
+    return false;
   }
 
   // wl-9: card markup is server-rendered only (_render_task_card). The poll

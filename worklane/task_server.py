@@ -3736,6 +3736,36 @@ def api_tasks_ready(
     return JSONResponse(payload)
 
 
+@router.get("/api/admin/tasks/resolve")
+def api_tasks_resolve(id: str = "") -> JSONResponse:
+    """Resolve a Jump-# box entry to a composite task id (wl-76).
+
+    Composite ids (``wl-503``) are the caller's job to build directly —
+    this endpoint only exists for the ambiguous case: a bare number typed
+    in the All view, where the same sequence number can exist in more than
+    one product store. Looks the raw id up in every store's hot + archive
+    tables and reports back a single match, the full candidate list when
+    more than one store has that number, or not_found.
+    """
+    raw = (id or "").strip().lstrip("#")
+    if not raw:
+        return JSONResponse({"ok": False, "error": "empty"}, status_code=400)
+    if not raw.isdigit():
+        return JSONResponse({"ok": False, "error": "invalid"}, status_code=400)
+
+    candidates: List[Dict[str, Any]] = []
+    for spec, tracker in product_trackers():
+        task, _comments, _archived = _get_task_hot_or_archive(tracker, raw)
+        if task is not None:
+            candidates.append({"id": f"{spec.prefix}-{raw}", "title": task.title})
+
+    if not candidates:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    if len(candidates) == 1:
+        return JSONResponse({"ok": True, "match": candidates[0]["id"]})
+    return JSONResponse({"ok": True, "candidates": candidates})
+
+
 @router.get("/api/admin/tasks/{task_id}/relations")
 def api_list_task_relations(task_id: str) -> JSONResponse:
     """List structured relations touching ``task_id`` (wl-20)."""
@@ -5131,13 +5161,40 @@ def _task_server_extra_css() -> str:
     margin: 0;
     flex-wrap: nowrap;
   }
+  .wq-jump-form { position: relative; }
   .wq-jump-form label { font-size: var(--fs-sm, 12px); }
   .wq-jump-input {
-    max-width: 72px;
+    max-width: 108px;
     height: 28px;
     box-sizing: border-box;
     font-variant-numeric: tabular-nums;
   }
+  .wq-jump-ambiguous {
+    position: absolute;
+    top: 32px;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 220px;
+    max-width: 360px;
+    background: var(--card, #fff);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    padding: 4px;
+  }
+  .wq-jump-ambiguous a {
+    padding: 6px 8px;
+    font-size: var(--fs-sm, 12px);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wq-jump-ambiguous a:hover { background: var(--raised, rgba(0, 0, 0, 0.06)); }
   .wq-adv-toggle {
     display: inline-flex;
     align-items: center;

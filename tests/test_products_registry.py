@@ -621,5 +621,88 @@ class SurfaceRoutingTest(unittest.TestCase):
                 self.assertEqual(r.status_code, 200)
 
 
+class TasksResolveTest(unittest.TestCase):
+    """GET /api/admin/tasks/resolve — Jump-# box bare-number lookup (wl-76)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._env_before = {
+            k: os.environ.get(k)
+            for k in (
+                "WORKLANE_RUNTIME_DIR",
+                "WORKLANE_DB",
+                "TRADEOS_TRACKER_DB",
+                "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PRODUCT",
+                "WL_PRODUCT",
+            )
+        }
+        _make_env(self.root)
+        # Both stores' first task lands on raw id "1" — same sequence
+        # number, two different stores, the exact ambiguity wl-76 is about.
+        SQLiteTracker(db_path=self.root / "data" / "tradeos.db").create_task(
+            title="tradeOS ticket one"
+        )
+        SQLiteTracker(db_path=self.root / "data" / "worklane.db").create_task(
+            title="WL ticket one"
+        )
+        SQLiteTracker(db_path=self.root / "data" / "tradeos.db").create_task(
+            title="tradeOS ticket two"
+        )
+
+        from worklane.task_server import router
+
+        app = FastAPI()
+        app.include_router(router)
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._tmp.cleanup()
+
+    def test_bare_unique_resolves(self) -> None:
+        r = self.client.get("/api/admin/tasks/resolve", params={"id": "2"})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["match"], "t-2")
+
+    def test_bare_ambiguous_lists_candidates(self) -> None:
+        r = self.client.get("/api/admin/tasks/resolve", params={"id": "1"})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertNotIn("match", body)
+        ids = {c["id"] for c in body["candidates"]}
+        self.assertEqual(ids, {"t-1", "wl-1"})
+
+    def test_bare_not_found(self) -> None:
+        r = self.client.get("/api/admin/tasks/resolve", params={"id": "999"})
+        self.assertEqual(r.status_code, 404)
+        self.assertFalse(r.json()["ok"])
+
+    def test_leading_hash_stripped(self) -> None:
+        r = self.client.get("/api/admin/tasks/resolve", params={"id": "#2"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["match"], "t-2")
+
+    def test_composite_id_input_rejected(self) -> None:
+        # The resolve endpoint only handles the ambiguous bare-number case —
+        # composite ids (wl-1) are the caller's job to navigate to directly.
+        r = self.client.get("/api/admin/tasks/resolve", params={"id": "wl-1"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "invalid")
+
+    def test_empty_id_rejected(self) -> None:
+        r = self.client.get("/api/admin/tasks/resolve", params={"id": ""})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "empty")
+
+
 if __name__ == "__main__":
     unittest.main()
