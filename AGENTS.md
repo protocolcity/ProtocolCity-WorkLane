@@ -30,6 +30,7 @@ WL ships Python and uses FastAPI. When writing WL code:
 - Python 3.9+ is the version floor — use `Optional[X]`, `List[X]`, `Dict[K, V]` from `typing` in signatures and pydantic models; no `X | None` or built-in generics at annotation positions FastAPI evaluates at import time.
 - Keep WL importable without the host. `worklane/*` must not `from core.*` or `from <host>.*`. If you need host-specific behavior, hide it behind a host profile flag (PROTOCOL.md §6) and keep the default path host-neutral.
 - Follow the lifecycle contract in PROTOCOL.md §3 when emitting status changes, including the auto-transition guard semantics (`Owner:`, `Completed:`+`Verification:`, `Blocked:`+`Next step:`).
+- This is a shared checkout — other agent lanes and the founder's own terminal may have unrelated uncommitted edits in the working copy at any time. Never `git add -A` / `git add .` / `git commit -a`; stage only the files your own ticket touched, by explicit path (PROTOCOL.md §5.1).
 
 ## Host-specific instructions
 

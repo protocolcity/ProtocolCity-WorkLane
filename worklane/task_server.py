@@ -89,6 +89,7 @@ from worklane.board import (
     _PRIORITY_TIERS,
     _render_comments,
     _render_labels,
+    _scoped_labels,
     _render_priority_badge,
     _render_status_badge,
     _render_task_board,
@@ -2379,10 +2380,10 @@ def _wq_poll_script(
     return f"<script>window.__WQ_POLL_PARAMS = {payload};</script>"
 
 
-def _render_task_table(tasks: List[Task]) -> str:
+def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
     if not tasks:
         return "<p class='dim'>No tasks match the current filters.</p>"
-    rows = "".join(_render_task_row(t) for t in tasks)
+    rows = "".join(_render_task_row(t, scope_product) for t in tasks)
     return (
         "<table class='tos-table'>"
         "<thead><tr>"
@@ -2395,7 +2396,7 @@ def _render_task_table(tasks: List[Task]) -> str:
     )
 
 
-def _render_task_row(t: Task) -> str:
+def _render_task_row(t: Task, scope_product: str = "") -> str:
     ext = (
         f"<div class='dim' style='font-size:var(--fs-xs);'>{_esc(t.ext_id)}</div>"
         if t.ext_id else ""
@@ -2409,7 +2410,7 @@ def _render_task_row(t: Task) -> str:
         f"<td>{title_link}{ext}</td>"
         f"<td>{_status_select(t.id, t.status)}</td>"
         f"<td>{_render_priority_badge(int(t.priority or 3))}</td>"
-        f"<td>{_render_labels(t.labels)}</td>"
+        f"<td>{_render_labels(_scoped_labels(t.labels, scope_product))}</td>"
         f"<td class='dim' style='font-size:var(--fs-xs);'>"
         f"{_esc(t.updated_at[:19] if t.updated_at else '')}</td>"
         "</tr>"
@@ -2801,7 +2802,9 @@ def _tickets_app_html(
             + _OPS_WORKSPACE_OPEN
             + poll_inject
             + command_bar
-            + _render_task_board(tasks, previews, column_counts)
+            + _render_task_board(
+                tasks, previews, column_counts, scope_product=prod or ""
+            )
             + _OPS_WORKSPACE_CLOSE
             + _OPS_READING_SHEET_CLOSE
             + dispatch_hygiene
@@ -2819,7 +2822,7 @@ def _tickets_app_html(
             + _OPS_READING_SHEET_OPEN
             + _OPS_WORKSPACE_OPEN
             + command_bar
-            + _render_task_table(tasks)
+            + _render_task_table(tasks, scope_product=prod or "")
             + _OPS_WORKSPACE_CLOSE
             + _OPS_READING_SHEET_CLOSE
             + dispatch_hygiene
@@ -3734,10 +3737,12 @@ def api_list_tasks(
                 td["last_comment_preview"] = entry["body"]
                 td["last_comment_author"] = entry["author"]
                 td["last_comment_at"] = entry["created_at"]
+                td["owner"] = entry.get("owner") or ""
             else:
                 td["last_comment_preview"] = ""
                 td["last_comment_author"] = ""
                 td["last_comment_at"] = ""
+                td["owner"] = ""
 
     scope_tasks = list_tasks_for_scope_multi(products, prod, limit=None)
     scope_counts = _wq_status_counts(scope_tasks)

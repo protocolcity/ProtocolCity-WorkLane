@@ -12,6 +12,7 @@ that tradeOS-internal callers (ops_tickets_feed.py) keep working unchanged.
 from __future__ import annotations
 
 import os
+import re
 import urllib.parse
 from dataclasses import replace
 from pathlib import Path
@@ -378,6 +379,19 @@ def list_tasks_for_scope_multi(
     return merged
 
 
+# Ownership marker line per PROTOCOL.md §3 — `Owner: <agent-id> (<model>)`.
+# The parenthetical and anything after it is presentation, not identity.
+_OWNER_LINE_RE = re.compile(r"^Owner:\s*([^\n(]+)", re.MULTILINE)
+
+
+def _extract_owner(comments: List[Any]) -> str:
+    for c in sorted(comments, key=lambda c: c.created_at or "", reverse=True):
+        m = _OWNER_LINE_RE.search(c.body or "")
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
 def _load_preview_comments_multi(
     products: List[Tuple[ProductSpec, Any]],
     tasks: List[Task],
@@ -412,6 +426,7 @@ def _load_preview_comments_multi(
             "body": first_line,
             "author": latest.author or "",
             "created_at": latest.created_at or "",
+            "owner": _extract_owner(comments),
         }
     return preview
 
@@ -753,40 +768,65 @@ def _render_work_queue_filters(
 
 # ── Board rendering ───────────────────────────────────────────────────────
 
-def _detect_worker(preview: Dict[str, str]) -> Optional[str]:
-    author = (preview.get("author") or "").strip().lower()
-    body = (preview.get("body") or "").lower()
-    # Signed author field wins (PROTOCOL.md §3.8 canonical ids).
-    if author in _WORKER_ICONS:
-        return author
-    if author == "founder-terminal":
-        return "terminal"
-    # Fallback: sniff the Owner:/coordination text for unsigned history.
+def _known_worker_key(candidate: str) -> Optional[str]:
+    c = candidate.strip().lower()
+    if not c:
+        return None
+    if c in _WORKER_ICONS:
+        return c
     for key in ("grok", "cursor", "cowork"):
-        if key in author or key in body:
+        if key in c:
             return key
-    if "terminal" in author or "terminal" in body:
+    if "terminal" in c:
         return "terminal"
-    if "work-pool" in author or "work pool" in author or "workpool" in body \
-            or "work-pool" in body:
+    if "work-pool" in c or "work pool" in c or "workpool" in c:
         return "work-pool"
     return None
 
 
-def _render_task_card(t: Task, preview: Dict[str, str]) -> str:
+def _detect_worker(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
+    # Newest Owner: marker wins, then the signed latest-comment author
+    # (PROTOCOL.md §3.8 canonical ids). A signed-but-unrecognized id is still
+    # an identity — render it verbatim rather than dropping the byline.
+    for candidate in (preview.get("owner") or "", preview.get("author") or ""):
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        key = _known_worker_key(candidate)
+        if key:
+            return _WORKER_ICONS[key]
+        return ("·", candidate)
+    # Fallback: sniff the coordination text for unsigned history.
+    key = _known_worker_key(preview.get("body") or "")
+    return _WORKER_ICONS[key] if key else None
+
+
+def _scoped_labels(labels: Optional[List[str]], scope_product: str) -> List[str]:
+    """Drop the label the view already states (wl-55): in a scoped view the
+    product:<scope> chip is redundant on every card. Other product: labels
+    (cross-files, mislabels) still render; the All view hides nothing."""
+    if not scope_product:
+        return list(labels or [])
+    return [l for l in (labels or []) if l != f"product:{scope_product}"]
+
+
+def _render_task_card(
+    t: Task, preview: Dict[str, str], scope_product: str = ""
+) -> str:
     ext = t.ext_id or ""
     id_label = f"#{t.id}"
     if ext:
         id_label = f"#{t.id} · {ext}"
     ext_html = f"<span class='tb-card-id'>{_esc(id_label)}</span>"
     priority_badge = _render_priority_badge(int(t.priority or 3))
+    chip_labels = _scoped_labels(t.labels, scope_product)
     labels_html = (
-        " ".join(_label_chip(l, _label_tier(l)) for l in (t.labels or [])[:4])
-        if t.labels else ""
+        " ".join(_label_chip(l, _label_tier(l)) for l in chip_labels[:4])
+        if chip_labels else ""
     )
     extra_labels = (
-        f"<span class='dim tb-card-more'>+{len(t.labels) - 4}</span>"
-        if len(t.labels or []) > 4 else ""
+        f"<span class='dim tb-card-more'>+{len(chip_labels) - 4}</span>"
+        if len(chip_labels) > 4 else ""
     )
     updated_attr = _esc(t.updated_at or "")
     updated_human = (
@@ -818,11 +858,13 @@ def _render_task_card(t: Task, preview: Dict[str, str]) -> str:
             + preview_html
             + "</div>"
         )
+    # Byline on every column (wl-54): backlog reads as "responsible",
+    # done reads as "worked by" — same signal, the newest identity on record.
     worker_html = ""
-    if t.status == TaskStatus.IN_PROGRESS and preview:
+    if preview:
         worker = _detect_worker(preview)
         if worker:
-            icon, label_text = _WORKER_ICONS[worker]
+            icon, label_text = worker
             worker_html = (
                 f"<div class='tb-card-worker'>"
                 f"<span>{icon}</span> <span>{_esc(label_text)}</span>"
@@ -876,18 +918,21 @@ def _render_column_body(
     col_status: str,
     col_tasks: List[Task],
     previews: Dict[str, Dict[str, str]],
+    scope_product: str = "",
 ) -> str:
     if not col_tasks:
         return "<div class='tb-col-empty dim'>No tasks in this column.</div>"
     visible = col_tasks[:_BOARD_COLUMN_CAP]
     hidden = col_tasks[_BOARD_COLUMN_CAP:]
     cards_visible = "".join(
-        _render_task_card(t, previews.get(t.id, {})) for t in visible
+        _render_task_card(t, previews.get(t.id, {}), scope_product)
+        for t in visible
     )
     if not hidden:
         return cards_visible
     cards_hidden = "".join(
-        _render_task_card(t, previews.get(t.id, {})) for t in hidden
+        _render_task_card(t, previews.get(t.id, {}), scope_product)
+        for t in hidden
     )
     more_id = f"tb-col-more-{_esc(col_status)}"
     hidden_id = f"tb-col-hidden-{_esc(col_status)}"
@@ -905,6 +950,7 @@ def _render_task_board(
     tasks: List[Task],
     previews: Dict[str, Dict[str, str]],
     column_counts: Optional[Dict[str, int]] = None,
+    scope_product: str = "",
 ) -> str:
     grouped: Dict[str, List[Task]] = {col: [] for col in _BOARD_COLUMNS}
     for t in tasks:
@@ -920,7 +966,9 @@ def _render_task_board(
     for col_status in _BOARD_COLUMNS:
         col_tasks = grouped[col_status]
         label = _STATUS_LABELS.get(col_status, col_status)
-        body_html = _render_column_body(col_status, col_tasks, previews)
+        body_html = _render_column_body(
+            col_status, col_tasks, previews, scope_product
+        )
         # Empty columns collapse to a slim rail (wl-36). Both the normal
         # header and the rail label are always in the DOM; CSS shows one
         # based on .tb-col--rail, so the JS poll only toggles the class.
@@ -1092,6 +1140,10 @@ def _board_styles() -> str:
                  font-weight:500; word-break:break-word;
                  font-size:var(--fs-xs); line-height:1.4; }
 .tb-card-title:hover { color:var(--neon); }
+/* Byline (wl-54): responsible/worked-by identity, shown on every column. */
+.tb-card-worker { display:flex; align-items:center; gap:4px; margin-top:4px;
+                  font-family:var(--font-mono); font-size:10px;
+                  color:var(--muted); letter-spacing:.03em; }
 /* Meta row (wl-36): labels + age share one line; age right-aligned. */
 .tb-card-meta { margin-top:5px; display:flex; flex-wrap:wrap; gap:3px;
                 align-items:center; }
@@ -1315,32 +1367,51 @@ def _client_js() -> str:
     return adminBoardBadge(lv, tv);
   }
 
+  function adminBoardKnownWorker(text, icons) {
+    var c = (text || '').trim().toLowerCase();
+    if (!c) return null;
+    if (icons[c]) return icons[c];
+    if (c.indexOf('grok') >= 0) return icons['grok'];
+    if (c.indexOf('cursor') >= 0) return icons['cursor'];
+    if (c.indexOf('cowork') >= 0) return icons['cowork'];
+    if (c.indexOf('terminal') >= 0) return icons['terminal'];
+    if (c.indexOf('work-pool') >= 0 || c.indexOf('work pool') >= 0 || c.indexOf('workpool') >= 0) return icons['work-pool'];
+    return null;
+  }
+
   function adminBoardDetectWorker(task) {
-    var signed = (task.last_comment_author || '').trim().toLowerCase();
     var icons = {
       'terminal': ['⚡', 'Terminal'], 'founder-terminal': ['⚡', 'Terminal'],
       'work-pool': ['⚒', 'Work-pool'], 'cowork': ['🔄', 'Cowork'],
       'grok': ['🛰', 'Grok'], 'cursor': ['✦', 'Cursor']
     };
-    if (icons[signed]) return icons[signed];
-    var text = (signed + ' ' + (task.last_comment_preview || '')).toLowerCase();
-    if (text.indexOf('grok') >= 0) return icons['grok'];
-    if (text.indexOf('cursor') >= 0) return icons['cursor'];
-    if (text.indexOf('cowork') >= 0) return icons['cowork'];
-    if (text.indexOf('terminal') >= 0) return icons['terminal'];
-    if (text.indexOf('work-pool') >= 0 || text.indexOf('work pool') >= 0 || text.indexOf('workpool') >= 0) return icons['work-pool'];
-    return null;
+    // Mirror Python _detect_worker: Owner: marker first, then signed author;
+    // an unrecognized signed id renders verbatim.
+    var candidates = [task.owner || '', task.last_comment_author || ''];
+    for (var i = 0; i < candidates.length; i++) {
+      var candidate = candidates[i].trim();
+      if (!candidate) continue;
+      var known = adminBoardKnownWorker(candidate, icons);
+      return known || ['·', candidate];
+    }
+    return adminBoardKnownWorker(task.last_comment_preview || '', icons);
   }
 
   function adminBoardRenderCard(task) {
     var idLabel = '#' + adminBoardEscape(task.id);
     if (task.ext_id) idLabel += ' · ' + adminBoardEscape(task.ext_id);
     var extHtml = "<span class='tb-card-id'>" + idLabel + "</span>";
-    var labels = (task.labels || []).slice(0, 4)
+    // Mirror _scoped_labels (wl-55): the scoped view already states the
+    // product, so its own product:<scope> chip is dropped from cards.
+    var scope = (window.__WQ_POLL_PARAMS && window.__WQ_POLL_PARAMS.product) || '';
+    var chipLabels = (task.labels || []).filter(function(l) {
+      return !scope || l !== 'product:' + scope;
+    });
+    var labels = chipLabels.slice(0, 4)
       .map(function(l) { return adminBoardLabelChip(l, adminBoardLabelTier(l)); })
       .join(' ');
-    var extraLabels = (task.labels || []).length > 4
-      ? "<span class='dim tb-card-more'>+" + ((task.labels || []).length - 4) + "</span>"
+    var extraLabels = chipLabels.length > 4
+      ? "<span class='dim tb-card-more'>+" + (chipLabels.length - 4) + "</span>"
       : '';
     var preview = '';
     if (task.last_comment_preview) {
@@ -1357,10 +1428,8 @@ def _client_js() -> str:
       + "</span>"
       : '';
     var workerHtml = '';
-    if (task.status === 'in_progress') {
-      var w = adminBoardDetectWorker(task);
-      if (w) workerHtml = "<div class='tb-card-worker'><span>" + w[0] + "</span> <span>" + adminBoardEscape(w[1]) + "</span></div>";
-    }
+    var w = adminBoardDetectWorker(task);
+    if (w) workerHtml = "<div class='tb-card-worker'><span>" + w[0] + "</span> <span>" + adminBoardEscape(w[1]) + "</span></div>";
     var decisionHtml = '';
     if ((task.labels || []).indexOf('needs:decision') >= 0
         || (task.labels || []).indexOf('needs:founder-decision') >= 0) {
@@ -1700,6 +1769,7 @@ def _load_preview_comments(
             "body": first_line,
             "author": latest.author or "",
             "created_at": latest.created_at or "",
+            "owner": _extract_owner(comments),
         }
     return preview
 
@@ -1738,5 +1808,6 @@ def _load_preview_comments_dual(
             "body": first_line,
             "author": latest.author or "",
             "created_at": latest.created_at or "",
+            "owner": _extract_owner(comments),
         }
     return preview

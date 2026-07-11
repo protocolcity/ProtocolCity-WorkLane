@@ -162,6 +162,17 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
    rules — the same close-out updates the truth docs (`PROTOCOL.md`, `README.md` as applicable) in the same commit, and the
    `Completed:` section names the doc updates (or states "docs: no drift").
    Stale truth files are orphan work with better manners; don't leave them.
+6. **Stage explicitly — never blanket-add (added 2026-07-11).** This is a
+   shared checkout: multiple agent lanes and the founder's own terminal all
+   edit the same working copy, often concurrently. `git add -A` / `git add .`
+   / `git commit -a` will sweep up someone else's uncommitted, unrelated edits
+   into your ticket's commit — silently, with no ticket trail (2026-07-10
+   evidence: commit c37006a absorbed a founder-terminal session's unrelated
+   board.py/task_server.py fixes under an unrelated "wl-37" commit message —
+   see wl-51). Stage only the files your ticket touched, by explicit path.
+   The `git status --porcelain` check from step 1 is where you catch this: if
+   it shows dirty files outside your ticket's scope, leave them unstaged and
+   name them in your close-out comment rather than silently sweeping them in.
 
 ### 5.2) Identity and attribution (all agents)
 
