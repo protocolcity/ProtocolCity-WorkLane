@@ -42,23 +42,24 @@ class ExtractOwnerTest(unittest.TestCase):
 
 
 class DetectWorkerTest(unittest.TestCase):
+    """wl-84: every identity renders verbatim from store data — the byline
+    carries no baked-in agent roster or per-agent decoration."""
+
     def test_owner_beats_latest_author(self) -> None:
         got = _detect_worker(
-            {"owner": "grok", "author": "founder-terminal", "body": "Completed:"}
+            {"owner": "agent-a", "author": "agent-b", "body": "Completed:"}
         )
-        self.assertEqual(got, ("🛰", "Grok"))
+        self.assertEqual(got, ("·", "agent-a"))
 
     def test_signed_author_when_no_owner(self) -> None:
-        got = _detect_worker({"owner": "", "author": "work-pool", "body": ""})
-        self.assertEqual(got, ("⚒", "Work-pool"))
+        got = _detect_worker({"owner": "", "author": "agent-b", "body": ""})
+        self.assertEqual(got, ("·", "agent-b"))
 
-    def test_unknown_signed_id_renders_verbatim(self) -> None:
-        got = _detect_worker({"owner": "wl-pool", "author": "", "body": ""})
-        self.assertEqual(got, ("·", "wl-pool"))
-
-    def test_unsigned_body_sniff_fallback(self) -> None:
-        got = _detect_worker({"owner": "", "author": "", "body": "Owner: cursor"})
-        self.assertEqual(got, ("✦", "Cursor"))
+    def test_unsigned_owner_line_fallback(self) -> None:
+        got = _detect_worker(
+            {"owner": "", "author": "", "body": "Owner: agent-c (model-x)\nPlan:"}
+        )
+        self.assertEqual(got, ("·", "agent-c"))
 
     def test_nothing_detected(self) -> None:
         self.assertIsNone(_detect_worker({"owner": "", "author": "", "body": "hi"}))

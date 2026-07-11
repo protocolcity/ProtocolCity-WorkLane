@@ -32,8 +32,8 @@ pip install -e .
 worklane                     # server + board UI on http://127.0.0.1:8799
 ```
 
-Open http://localhost:8799/admin/cockpit — the cockpit shows live pulse,
-in-flight work, and throughput across every project store.
+Open http://localhost:8799/admin/overview — the Overview shows live metrics,
+in-flight work, and throughput for one project store or all of them.
 
 File your first ticket:
 

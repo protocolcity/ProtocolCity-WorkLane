@@ -29,7 +29,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence
+from typing import Iterator, List, Optional
 
 from worklane.trackers.protocol import ProjectTracker, Task, TaskComment, TaskStatus
 
@@ -603,26 +603,6 @@ class SQLiteTracker(ProjectTracker):
                 """,
                 (int(resolved["id"]),),
             ).fetchall()
-        return [_row_to_comment(r) for r in rows]
-
-    def list_comments_by_authors(
-        self, authors: Sequence[str], *, since: Optional[str] = None
-    ) -> List[TaskComment]:
-        """Bulk comment scan across every task (wl-77 lane pulse) — one
-        query instead of one ``list_comments`` call per task, which is the
-        difference between this being viable on a ~1k-task store and not.
-        """
-        if not authors:
-            return []
-        placeholders = ",".join("?" for _ in authors)
-        query = f"SELECT * FROM task_comments WHERE author IN ({placeholders})"
-        params: List[object] = list(authors)
-        if since:
-            query += " AND created_at >= ?"
-            params.append(since)
-        query += " ORDER BY created_at DESC"
-        with self._connect() as conn:
-            rows = conn.execute(query, params).fetchall()
         return [_row_to_comment(r) for r in rows]
 
     # ── helpers ──────────────────────────────────────────────────────

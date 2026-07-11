@@ -110,7 +110,6 @@ from worklane.board import (
     TICKETS_APP_ALL,
     TICKETS_APP_OPS,
     TICKETS_APP_TRADEOS,
-    _WORKER_ICONS,
     _WORK_QUEUE_PATH,
     _wq_query_for_view,
     _wq_column_counts,
@@ -154,130 +153,6 @@ def _render_tickets_context_strip() -> str:
         '<span id="ts-last-updated" class="ts-last-updated dim"></span>'
         "</div>"
         "</div></div>"
-    )
-
-
-# wl-77: canonical dispatch-lane agent ids (PROTOCOL.md §5.2). founder-terminal,
-# cowork, and doc-audit are peers on the pool but not dispatch lanes (they
-# don't work a backlog on a schedule), so lane pulse excludes them.
-_LANE_PULSE_IDS: Tuple[str, ...] = (
-    "claude-tradeos", "claude-worklane", "cursor", "grok", "codex",
-)
-# Label-lane agents pull from a `lane:<id>` label filter rather than working
-# the full backlog (PROTOCOL.md §6.1-6.3) — only these get a workable-backlog
-# count and a stale flag; claude-tradeos/claude-worklane work their
-# product's full backlog, so "lane backlog" doesn't mean anything for them.
-_LANE_PULSE_LABEL_IDS: Tuple[str, ...] = ("cursor", "grok", "codex")
-_LANE_PULSE_STALE_HOURS = 3
-
-
-def _agent_pulse_stats(*, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Per dispatch-lane telemetry (wl-77): last activity + throughput +
-    workable backlog, derived entirely from existing comment/label data —
-    no new writes, no schema change. Backs GET /api/admin/agents/pulse.
-    """
-    now = now or datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    comments_by_agent: Dict[str, List[TaskComment]] = {a: [] for a in _LANE_PULSE_IDS}
-    for _spec, tracker in product_trackers():
-        fetch = getattr(tracker, "list_comments_by_authors", None)
-        if fetch is None:
-            continue  # non-SQLite tracker (e.g. HTTP-fed) — no bulk scan available
-        for c in fetch(_LANE_PULSE_IDS):
-            comments_by_agent.setdefault(c.author, []).append(c)
-    for comments in comments_by_agent.values():
-        comments.sort(key=lambda c: c.created_at or "", reverse=True)
-
-    # Workable (ungated) backlog, keyed by lane label — shared across products.
-    label_backlog: Dict[str, int] = {a: 0 for a in _LANE_PULSE_LABEL_IDS}
-    for _spec, tracker in product_trackers():
-        for t in tracker.list_tasks(status=TaskStatus.BACKLOG, limit=None):
-            if task_is_gated(t):
-                continue
-            for label in t.labels or []:
-                key = label.strip().lower()
-                if key.startswith("lane:"):
-                    agent = key[len("lane:"):]
-                    if agent in label_backlog:
-                        label_backlog[agent] += 1
-
-    stats: List[Dict[str, Any]] = []
-    for agent in _LANE_PULSE_IDS:
-        comments = comments_by_agent.get(agent, [])
-        last_comment_at = comments[0].created_at if comments else None
-        # A claim's Owner marker always carries a `Start:` line (§5); a bare
-        # reserve carries `Reserved:` instead — this distinguishes the two.
-        claim_at = next(
-            (c.created_at for c in comments if "\nStart:" in c.body), None
-        )
-        close_comments = [
-            c for c in comments if "Completed:" in c.body and "Verification:" in c.body
-        ]
-        last_close_at = close_comments[0].created_at if close_comments else None
-        closes_7d = sum(
-            1 for c in close_comments
-            if (_parse_task_date_utc(c.created_at) or now) >= now - timedelta(days=7)
-        )
-        closes_today = sum(
-            1 for c in close_comments
-            if (_parse_task_date_utc(c.created_at) or now) >= today_start
-        )
-        workable_backlog = label_backlog.get(agent) if agent in _LANE_PULSE_LABEL_IDS else None
-        stale = None
-        if workable_backlog is not None:
-            claim_dt = _parse_task_date_utc(claim_at) if claim_at else None
-            stale = workable_backlog > 0 and (
-                claim_dt is None
-                or (now - claim_dt) > timedelta(hours=_LANE_PULSE_STALE_HOURS)
-            )
-        stats.append({
-            "id": agent,
-            "last_comment_at": last_comment_at,
-            "last_claim_at": claim_at,
-            "last_close_at": last_close_at,
-            "closes_7d": closes_7d,
-            "closes_today": closes_today,
-            "workable_backlog": workable_backlog,
-            "stale": stale,
-        })
-    return stats
-
-
-def _render_lane_pulse_strip(stats: List[Dict[str, Any]], *, now: Optional[datetime] = None) -> str:
-    """Compact per-lane strip (wl-77) on the Pool header: id, last-worked,
-    closes today, and a stale flag distinct from healthy idle (empty/gated
-    queue renders neutral, not stale).
-    """
-    now = now or datetime.now(timezone.utc)
-    chips = ""
-    for s in stats:
-        agent_id = s["id"]
-        closes_today = s["closes_today"]
-        closes_7d = s["closes_7d"]
-        last_at = s["last_comment_at"]
-        age = _pulse_relative_time(last_at, now=now) if last_at else "—"
-        stale_cls = " lane-pulse-chip--stale" if s["stale"] else ""
-        backlog_html = (
-            f"<span class='lane-pulse-backlog'>{s['workable_backlog']} backlog</span>"
-            if s["workable_backlog"] is not None else ""
-        )
-        stale_html = (
-            "<span class='lane-pulse-stale-dot' title='Workable backlog with no claim in "
-            f"{_LANE_PULSE_STALE_HOURS}h+'></span>" if s["stale"] else ""
-        )
-        title = f"#{agent_id} · closes today {closes_today} · closes/7d {closes_7d}"
-        chips += (
-            f"<span class='lane-pulse-chip{stale_cls}' title='{_esc(title)}'>"
-            f"{stale_html}<span class='lane-pulse-id'>{_esc(agent_id)}</span>"
-            f"<span class='lane-pulse-age'>{_esc(age)}</span>"
-            f"{backlog_html}"
-            "</span>"
-        )
-    return (
-        "<div class='lane-pulse-strip' role='region' aria-label='Lane pulse'>"
-        + chips
-        + "</div>"
     )
 
 
@@ -328,6 +203,37 @@ def _render_tickets_surface_nav(
     )
 
 
+def _render_overview_scope_nav(scope: str) -> str:
+    """Segmented product control for the Overview landing — same scopes as the
+    Pool (All + every discovered project store), each filtering the whole page.
+    """
+    _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
+
+    def _item(slug: str, text: str, title: str) -> str:
+        on = (scope or "") == slug or (slug == "all" and not scope)
+        ac = ' aria-current="page"' if on else ""
+        return (
+            f"<a href='/admin/overview/{_esc(slug)}' class='{_seg(on)}' "
+            f"title='{_esc(title)}'{ac}>{_esc(text)}</a>"
+        )
+
+    items = [_item("all", "All", "Every ticket across all project stores")]
+    for spec in discover_products():
+        items.append(
+            _item(
+                spec.slug,
+                spec.display,
+                f"Overview for the {spec.display} project ({spec.db_path.name})",
+            )
+        )
+    return (
+        '<nav class="ts-tickets-surface-nav" aria-label="Overview scopes">'
+        '<div class="ts-segmented ts-segmented--tools" role="tablist">'
+        + "".join(items)
+        + "</div></nav>"
+    )
+
+
 def _ticket_create_surface_from_scope(scope: str) -> str:
     """Where new tasks go from the quick-add / create form for this Tickets tab."""
     s = (scope or "").strip().lower()
@@ -347,6 +253,7 @@ def _tickets_shell_kwargs(
 ) -> Dict[str, Any]:
     """Keyword args for :func:`_task_page` on ticket pages (Work Queue)."""
     return {
+        "page_scope": product or "",
         "tickets_product": product or "",
         "tickets_scope_path": scope_path,
         "tickets_view": view,
@@ -376,7 +283,8 @@ def _task_page(
     body: str,
     *,
     nav_active: str = "",
-    shell: str = "cockpit",
+    shell: str = "overview",
+    page_scope: str = "",
     product_tab: str = "",
     tickets_product: str = "",
     tickets_scope_path: str = "",
@@ -390,7 +298,7 @@ def _task_page(
     _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
     _brand_cls = (
         "task-server-brand active"
-        if (shell == "cockpit" and nav_active == "cockpit")
+        if (shell == "overview" and nav_active == "overview")
         else "task-server-brand"
     )
     _tickets_cur = ' aria-current="page"' if shell == "tickets" else ""
@@ -405,9 +313,11 @@ def _task_page(
             tickets_label,
             tickets_priority,
         )
-    # Status badges: Cockpit header only. Tickets shell uses per-page context strips.
+    elif shell == "overview" and nav_active == "overview":
+        _product_scope = _render_overview_scope_nav(page_scope)
+    # Status badges: Overview header only. Tickets shell uses per-page context strips.
     _ticket_header_widgets = ""
-    if shell == "cockpit":
+    if shell == "overview":
         _ticket_header_widgets = (
             """        <span id="ts-ready-badge" class="ts-ready-badge" hidden """
             """title="Backlog tickets with no unresolved blockers."></span>
@@ -438,7 +348,13 @@ def _task_page(
   /* Theme init (before paint) — Dispatch paper is the default (wl-37); dark
      and system remain fully supported via the existing toggle/persistence. */
   (function() {{
-    var stored = localStorage.getItem('tradeos-theme') || 'light';
+    /* wl-84: key renamed from 'tradeos-theme' — migrate old prefs once. */
+    var legacy = localStorage.getItem('tradeos-theme');
+    if (legacy && !localStorage.getItem('wl-theme')) {{
+      localStorage.setItem('wl-theme', legacy);
+      localStorage.removeItem('tradeos-theme');
+    }}
+    var stored = localStorage.getItem('wl-theme') || 'light';
     function resolve(p) {{
       if (p === 'system') return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       return p;
@@ -465,13 +381,13 @@ def _task_page(
   }}
   </script>
 </head>
-<body data-ops-shell="{_esc(shell)}">
+<body data-ops-shell="{_esc(shell)}" data-ops-scope="{_esc(page_scope)}">
   <header class="task-server-header task-server-header--stack">
     <div class="task-server-header-primary ops-main-nav" data-ops-region="main-nav">
-      <a href="/admin/cockpit" class="{_brand_cls}">WorkLane</a>
+      <a href="/admin/overview" class="{_brand_cls}">WorkLane</a>
       <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
-        <a href="/admin/cockpit" class="{_seg(shell == 'cockpit' and nav_active == 'cockpit')}"
-           title="Landing — live pulse + breakdown charts"{' aria-current="page"' if (shell == 'cockpit' and nav_active == 'cockpit') else ''}>Cockpit</a>
+        <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
+           title="Landing — the store visually interpreted: live metrics + breakdown charts"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
         <a href="{_tickets_primary_href}" class="{_seg(shell == 'tickets')}"
            title="SQLite ticket store — board and table"{_tickets_cur}>{_esc(_TICKETS_SYSTEM_LABEL)}</a>
       </nav>
@@ -497,9 +413,9 @@ def _task_page(
   var _themeIcons = {{ dark: '\\u263D', light: '\\u2600', system: '\\u25D1' }};
   function cycleTheme() {{
     var order = ['dark', 'light', 'system'];
-    var current = localStorage.getItem('tradeos-theme') || 'light';
+    var current = localStorage.getItem('wl-theme') || 'light';
     var next = order[(order.indexOf(current) + 1) % order.length];
-    localStorage.setItem('tradeos-theme', next);
+    localStorage.setItem('wl-theme', next);
     var resolved = (next === 'system')
       ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
       : next;
@@ -508,7 +424,7 @@ def _task_page(
     if (btn) btn.textContent = _themeIcons[next] || '\\u263D';
   }}
   (function() {{
-    var pref = localStorage.getItem('tradeos-theme') || 'light';
+    var pref = localStorage.getItem('wl-theme') || 'light';
     var btn = document.getElementById('theme-toggle');
     if (btn) btn.textContent = _themeIcons[pref] || '\\u263D';
   }})();
@@ -1329,25 +1245,39 @@ def _list_tasks_for_wq_multi_resolved(
     return out, prev
 
 
-def _merged_ready_count() -> int:
-    """Ready-to-dispatch count aggregated across every registered product
-    tracker (wl-40) — each product's WorkQueue resolves its own blockers
-    independently (blocker ids don't cross product boundaries), so this
-    sums per-tracker ready() counts rather than building one cross-product
-    queue. Local SQLite trackers only, same as list_tasks_for_scope_multi's
-    non-HTTP-feed branch below — the tradeOS live-HTTP-feed source is
-    wl-48 slice c's separate concern.
+def _scoped_product_trackers(scope: str = "") -> List[Tuple[ProductSpec, Any]]:
+    """Registered (spec, tracker) pairs, narrowed to one project store when a
+    scope slug is given ("" = every store) — wl-85: every page declares a
+    scope and everything on it honors that scope.
     """
-    return sum(len(WorkQueue(tracker).ready()) for _spec, tracker in product_trackers())
+    pairs = product_trackers()
+    if not scope:
+        return pairs
+    return [(s, t) for s, t in pairs if s.slug == scope]
 
 
-def _merged_in_flight_tasks() -> List[Task]:
-    """in_progress + in_review tasks aggregated across every registered
-    product tracker (wl-40), sorted newest-updated first. See
+def _merged_ready_count(scope: str = "") -> int:
+    """Ready-to-dispatch count aggregated across the in-scope product
+    trackers (wl-40; "" = all) — each product's WorkQueue resolves its own
+    blockers independently (blocker ids don't cross product boundaries), so
+    this sums per-tracker ready() counts rather than building one
+    cross-product queue. Local SQLite trackers only, same as
+    list_tasks_for_scope_multi's non-HTTP-feed branch below — the tradeOS
+    live-HTTP-feed source is wl-48 slice c's separate concern.
+    """
+    return sum(
+        len(WorkQueue(tracker).ready())
+        for _spec, tracker in _scoped_product_trackers(scope)
+    )
+
+
+def _merged_in_flight_tasks(scope: str = "") -> List[Task]:
+    """in_progress + in_review tasks aggregated across the in-scope product
+    trackers (wl-40; "" = all), sorted newest-updated first. See
     _merged_ready_count for the local-SQLite-only scope note.
     """
     out: List[Task] = []
-    for _spec, tracker in product_trackers():
+    for _spec, tracker in _scoped_product_trackers(scope):
         out.extend(
             t for t in WorkQueue(tracker).all_tasks
             if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)
@@ -1795,10 +1725,11 @@ def _render_activity_chart(tasks: List[Task], *, days: int = 14) -> str:
     )
 
 
-def _render_service_health_card() -> str:
-    """Service health pane for the WL cockpit (#485) — uptime, store size, queue depth."""
-    from worklane.trackers.sqlite import DEFAULT_DB_PATH
-
+def _render_service_health_card(scope: str = "") -> str:
+    """Service health pane for the Overview (#485) — uptime, store size, queue
+    depth. Store rows come from the discovered registry and the queue counts
+    from the in-scope trackers (wl-85) — nothing named in product code.
+    """
     # Uptime
     now = datetime.now(timezone.utc)
     delta = now - _SERVER_START
@@ -1830,12 +1761,19 @@ def _render_service_health_card() -> str:
             f"</div>"
         )
 
-    db_rows = _db_row("tradeos.db", DEFAULT_DB_PATH) + _db_row("ops_tickets.db", ops_tickets_db_path())
+    specs = [
+        spec for spec in discover_products()
+        if not scope or spec.slug == scope
+    ]
+    db_rows = "".join(_db_row(spec.db_path.name, spec.db_path) for spec in specs)
+    if not db_rows:
+        db_rows = "<span class='dim' style='font-size:11px;'>no stores discovered</span>"
 
-    # Queue depth from active tracker
+    # Queue depth across the in-scope stores
     try:
-        tracker_td = get_default_tracker()
-        all_td = tracker_td.list_tasks()
+        all_td: List[Task] = []
+        for _spec, tracker in _scoped_product_trackers(scope):
+            all_td.extend(tracker.list_tasks())
         ip_count = len([t for t in all_td if t.status == TaskStatus.IN_PROGRESS])
         ir_count = len([t for t in all_td if t.status == TaskStatus.IN_REVIEW])
         bl_count = len([t for t in all_td if t.status == TaskStatus.BACKLOG])
@@ -1864,18 +1802,19 @@ def _render_service_health_card() -> str:
         f"</div>"
         f"<div style='font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;'>Store</div>"
         f"{db_rows}"
-        f"<div style='font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 4px;'>Queue depth (tradeOS)</div>"
+        f"<div style='font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 4px;'>Queue depth</div>"
         f"{queue_html}"
     )
     return _task_card("Service Health", body)
 
 
-def _render_ticketing_cockpit_charts() -> str:
-    all_tasks = _merged_scope_tasks_for_filters("")
+def _render_ticketing_cockpit_charts(scope: str = "") -> str:
+    all_tasks = _merged_scope_tasks_for_filters(scope)
     tasks = [t for t in all_tasks if t.status != TaskStatus.DONE]
     total = len(tasks)
-    board = f"{_OPS_TASK_LIST_PATH}?view=board"
-    table = f"{_OPS_TASK_LIST_PATH}?view=table"
+    pool_path = f"/admin/tickets/{scope or 'all'}"
+    board = f"{pool_path}?view=board"
+    table = f"{pool_path}?view=table"
 
     status_fill = {
         TaskStatus.BACKLOG: "background:linear-gradient(90deg,#9c8468,#b58a5a);",
@@ -1920,23 +1859,28 @@ def _render_ticketing_cockpit_charts() -> str:
             )
         )
 
+    scope_text = (
+        "All tickets across configured stores"
+        if not scope
+        else f"Tickets in the {_esc(scope)} store"
+    )
     head = (
         "<p class='dim'>"
         "<span class='ts-plugin-tag'>analytics</span> "
-        f"All tickets across configured stores · <strong>{total}</strong> total · "
+        f"{scope_text} · <strong>{total}</strong> total · "
         f"<a href='{board}'>Open board</a> · <a href='{table}'>Open table</a>"
         "</p>"
     )
 
     grid = (
         "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;'>"
-        + _render_service_health_card()
+        + _render_service_health_card(scope)
         + _task_card("By status", _render_count_bars(status_rows, empty_text="No ticket statuses yet."))
         + _task_card("By priority", _render_count_bars(pri_rows, empty_text="No priority data yet."))
         + _task_card("Recent activity", _render_activity_chart(tasks, days=14))
         + "</div>"
     )
-    return _task_card("WorkLane · Cockpit", head + grid + _cockpit_live_js())
+    return _task_card("WorkLane · Overview", head + grid + _cockpit_live_js())
 
 
 def _cockpit_live_js() -> str:
@@ -1994,7 +1938,9 @@ def _cockpit_live_js() -> str:
 
   async function tpCockpitRefresh() {
     try {
-      var resp = await fetch('/api/admin/cockpit/summary?_=' + Date.now(), {
+      var scope = document.body.getAttribute('data-ops-scope') || '';
+      var resp = await fetch('/api/admin/overview/summary?scope=' +
+          encodeURIComponent(scope) + '&_=' + Date.now(), {
         cache: 'no-store',
         headers: { 'Accept': 'application/json' }
       });
@@ -2076,18 +2022,18 @@ def _render_product_tradeos_hub() -> str:
 def _render_product_ops_page() -> str:
     task_port = _esc(os.environ.get("TASK_PORT", "8799"))
     body = (
-        "<p class='dim'>Builder cockpit: <strong>Pool</strong> (board / table on a "
-        "<strong>separate port</strong> from tradeOS so the app can restart without losing the "
-        "board (ADR-019).</p>"
+        "<p class='dim'><strong>Pool</strong> (board / table) runs on a "
+        "<strong>separate port</strong> from the host product so the host can restart "
+        "without losing the board (ADR-019).</p>"
         f"<p class='dim'>You are on port <code>{task_port}</code> — landing: "
-        "<code>/admin/cockpit</code>. Use <strong>Pool</strong> in the header for "
-        "the tracker; <strong>Projects → tradeOS</strong> for the trading project hub.</p>"
+        "<code>/admin/overview</code>. Use <strong>Pool</strong> in the header for "
+        "the tracker; <strong>Projects</strong> for the per-project hubs.</p>"
     )
     return f"<div class='ts-prod-page'>{_task_card('Ticketing (this console)', body)}</div>"
 
 
-def _render_ops_cockpit() -> str:
-    return _render_ticketing_cockpit_charts()
+def _render_ops_cockpit(scope: str = "") -> str:
+    return _render_ticketing_cockpit_charts(scope)
 
 
 # ── Pulse — live operator dashboard ─────────────────────────────────────
@@ -2220,7 +2166,7 @@ def _render_active_agents_panel(
     for t in inflight_tasks:
         preview = previews.get(t.id) or {}
         worker = _detect_worker(preview) if preview else None
-        icon, label = _WORKER_ICONS.get(worker, ("●", "unknown"))
+        icon, label = worker if worker else ("●", "unknown")
         ts = preview.get("created_at") or t.updated_at or t.created_at
         age = _pulse_relative_time(ts, now=now)
         rows += (
@@ -2235,12 +2181,12 @@ def _render_active_agents_panel(
     return f"<div class='agent-rows'>{rows}</div>"
 
 
-def _render_pulse_page() -> str:
-    """Live operator dashboard — 'what's happening in tradeOS right now'.
+def _render_pulse_page(scope: str = "") -> str:
+    """Live metrics strip — 'what's happening in the in-scope stores right now'.
 
     Auto-refreshes every 6s. Dark, monospace, neon-accented. No user input.
     """
-    all_tasks = _merged_scope_tasks_for_filters("")
+    all_tasks = _merged_scope_tasks_for_filters(scope)
 
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2653,30 +2599,43 @@ DEFAULT_AGENT_ID = "founder-terminal"
 
 @router.get("/", response_class=HTMLResponse)
 def index():
-    return RedirectResponse("/admin/cockpit", status_code=302)
+    return RedirectResponse("/admin/overview", status_code=302)
 
 
-@router.get("/admin/cockpit", response_class=HTMLResponse)
-def ops_cockpit() -> str:
-    """WorkLane landing — live pulse on top, breakdown charts below.
-
-    Cockpit and Pulse were two takes on the same question; merged 2026-07-10
-    (/admin/pulse now redirects here).
+@router.get("/admin/overview", response_class=HTMLResponse)
+@router.get("/admin/overview/{scope}", response_class=HTMLResponse)
+def ops_overview(scope: str = "all") -> Any:
+    """WorkLane landing — the store visually interpreted (wl-85):
+    live metrics on top, breakdown charts below, everything filtered to the
+    chosen scope (All or one project store, same tabs as the Pool).
     """
+    scope = (scope or "all").strip().lower()
+    if scope != "all" and get_product(scope) is None:
+        raise HTTPException(status_code=404, detail="Unknown overview scope")
+    prod = "" if scope == "all" else scope
     body = (
-        _render_pulse_page()
+        _render_pulse_page(prod)
         + "<div class='ts-ops-page'>"
-        + _render_ops_cockpit()
+        + _render_ops_cockpit(prod)
         + "</div>"
         + _task_server_extra_css()
     )
-    return _task_page("Ticketing", body, nav_active="cockpit")
+    return _task_page(
+        "Ticketing", body, nav_active="overview", page_scope=prod
+    )
+
+
+@router.get("/admin/cockpit")
+def admin_cockpit_legacy() -> RedirectResponse:
+    """Legacy: Cockpit renamed Overview (wl-85) — the old name was host
+    (tradeOS) vocabulary. Pulse had already merged into it (2026-07-10)."""
+    return RedirectResponse("/admin/overview", status_code=302)
 
 
 @router.get("/admin/pulse")
 def admin_pulse() -> RedirectResponse:
-    """Legacy: Pulse merged into the Cockpit landing (2026-07-10)."""
-    return RedirectResponse("/admin/cockpit", status_code=302)
+    """Legacy: Pulse merged into the landing (2026-07-10), now Overview."""
+    return RedirectResponse("/admin/overview", status_code=302)
 
 
 def _product_next_id(spec: ProductSpec, tracker: Any) -> str:
@@ -2799,10 +2758,10 @@ def admin_settings() -> str:
     )
 
     identity_html = (
-        "<p>Canonical agent ids (PROTOCOL.md §5.2): "
-        "<code>work-pool</code> <code>founder-terminal</code> <code>cursor</code> "
-        "<code>grok</code> <code>cowork</code> <code>wl-pool</code> — plus system "
-        "authors <code>cli-label</code>, <code>cli-update</code>, <code>dependency-guard</code>.</p>"
+        "<p>Agent ids are stable identities the host deployment defines "
+        "(PROTOCOL.md §5.2 holds the roster) — any signed id is rendered as-is. "
+        "Reserved system authors: <code>cli-label</code>, <code>cli-update</code>, "
+        "<code>dependency-guard</code>.</p>"
         "<table class='tos-table'><thead><tr><th>Guard</th><th>State</th></tr></thead><tbody>"
         "<tr><td>Signed comments (§3.8) — API rejects empty <code>author</code></td><td>enforced</td></tr>"
         "<tr><td>Close-out contract (§5) — <code>Completed:</code> requires <code>Verification:</code> + <code>Links:</code></td><td>enforced</td></tr>"
@@ -3114,7 +3073,6 @@ def _tickets_app_html(
     )
 
     wq_notif = _render_tickets_context_strip()
-    lane_pulse = _render_lane_pulse_strip(_agent_pulse_stats())
     # Fetched once: chips count the whole scope; column headers count the
     # scope narrowed to the active filters (wl-47) — the capped page fetch
     # must not masquerade as either.
@@ -3165,7 +3123,6 @@ def _tickets_app_html(
         body = (
             "<div class='ts-wq-shell'>"
             + wq_notif
-            + lane_pulse
             + dispatched_banner
             + _board_styles()
             + extra_css
@@ -3187,7 +3144,6 @@ def _tickets_app_html(
         body = (
             "<div class='ts-wq-shell'>"
             + wq_notif
-            + lane_pulse
             + dispatched_banner
             + _board_styles()
             + extra_css
@@ -4826,14 +4782,19 @@ def api_dev_activity(limit: int = 30):
 
 
 @router.get("/api/dev/board-summary")
-def api_dev_board_summary():
+def api_dev_board_summary(scope: str = ""):
     """Lightweight summary for header pills: ready, in-flight, stalled counts
-    (wl-28), aggregated across every registered product tracker (wl-40) —
-    matches the All board's merged view instead of counting only the
-    default product.
+    (wl-28). ``scope`` narrows to one project store (wl-85); empty/"all"
+    aggregates across every registered product tracker (wl-40), matching the
+    All board's merged view.
     """
-    ready_count = _merged_ready_count()
-    in_flight_tasks = _merged_in_flight_tasks()
+    prod = "" if scope.strip().lower() in ("", "all") else scope.strip().lower()
+    if prod and get_product(prod) is None:
+        return JSONResponse(
+            {"ok": False, "error": "Unknown scope"}, status_code=404
+        )
+    ready_count = _merged_ready_count(prod)
+    in_flight_tasks = _merged_in_flight_tasks(prod)
     now = datetime.now(timezone.utc)
     stale_cutoff = now - timedelta(minutes=90)
     stalled_count = 0
@@ -4849,10 +4810,18 @@ def api_dev_board_summary():
     })
 
 
-@router.get("/api/admin/cockpit/summary")
-def api_admin_cockpit_summary() -> JSONResponse:
-    """Live status/priority counts for the WorkLane cockpit cards."""
-    all_tasks = _merged_scope_tasks_for_filters("")
+@router.get("/api/admin/overview/summary")
+def api_admin_overview_summary(scope: str = "") -> JSONResponse:
+    """Live status/priority counts for the Overview cards. ``scope`` narrows
+    to one project store (wl-85); empty/"all" merges every store. Formerly
+    /api/admin/cockpit/summary — renamed with the landing page.
+    """
+    prod = "" if scope.strip().lower() in ("", "all") else scope.strip().lower()
+    if prod and get_product(prod) is None:
+        return JSONResponse(
+            {"ok": False, "error": "Unknown scope"}, status_code=404
+        )
+    all_tasks = _merged_scope_tasks_for_filters(prod)
     tasks = [t for t in all_tasks if t.status != TaskStatus.DONE]
     status_counts: Dict[str, int] = {s: 0 for s in TaskStatus.ALL if s != TaskStatus.DONE}
     priority_counts: Dict[str, int] = {"1": 0, "2": 0, "3": 0, "4": 0}
@@ -4884,16 +4853,6 @@ def api_admin_cockpit_summary() -> JSONResponse:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     resp = JSONResponse(payload)
-    resp.headers["Cache-Control"] = "no-store, max-age=0"
-    return resp
-
-
-@router.get("/api/admin/agents/pulse")
-def api_admin_agents_pulse() -> JSONResponse:
-    """Per dispatch-lane telemetry (wl-77): last activity + throughput +
-    workable backlog for the five canonical lanes (PROTOCOL.md §5.2).
-    """
-    resp = JSONResponse({"ok": True, "agents": _agent_pulse_stats()})
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
 
@@ -5084,10 +5043,14 @@ def _task_server_extra_js() -> str:
     }
   }, 30000);
 
-  /* ── Header pills: ready / in flight / stalled (wl-28) ───────────── */
+  /* ── Header pills: ready / in flight / stalled (wl-28) ─────────────
+     wl-85: pills honor the page's declared scope (body[data-ops-scope])
+     and their click-throughs land on the same scope's Pool. */
   async function tsFetchBoardSummary() {
     try {
-      var resp = await fetch('/api/dev/board-summary', {
+      var scope = document.body.getAttribute('data-ops-scope') || '';
+      var poolPath = '/admin/tickets/' + (scope || 'all');
+      var resp = await fetch('/api/dev/board-summary?scope=' + encodeURIComponent(scope), {
         headers: { 'Accept': 'application/json' }
       });
       var j = await resp.json();
@@ -5098,7 +5061,7 @@ def _task_server_extra_js() -> str:
         if (j.ready_count > 0) {
           readyEl.textContent = j.ready_count + ' ready';
           readyEl.hidden = false;
-          readyEl.onclick = function() { window.location.href = '/admin/tickets/all?view=table&status=backlog'; };
+          readyEl.onclick = function() { window.location.href = poolPath + '?view=table&status=backlog'; };
         } else {
           readyEl.hidden = true;
         }
@@ -5107,7 +5070,7 @@ def _task_server_extra_js() -> str:
         if (j.in_flight_count > 0) {
           inflightEl.textContent = j.in_flight_count + ' in flight';
           inflightEl.hidden = false;
-          inflightEl.onclick = function() { window.location.href = '/admin/tickets/all?view=board'; };
+          inflightEl.onclick = function() { window.location.href = poolPath + '?view=board'; };
         } else {
           inflightEl.hidden = true;
         }
@@ -5117,7 +5080,7 @@ def _task_server_extra_js() -> str:
           stalledEl.textContent = j.stalled_count + ' stalled';
           stalledEl.hidden = false;
           stalledEl.onclick = function() {
-            window.location.href = '/admin/tickets/all?view=board';
+            window.location.href = poolPath + '?view=board';
           };
         } else {
           stalledEl.hidden = true;

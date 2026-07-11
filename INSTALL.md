@@ -71,7 +71,7 @@ See [README.md#native-startup](README.md#native-startup) for details and
 Verify it's up:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8799/admin/cockpit   # expect 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8799/admin/overview   # expect 200
 ```
 
 ## 4. Bootstrap your project

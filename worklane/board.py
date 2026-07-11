@@ -87,13 +87,10 @@ _BOARD_COLUMNS: List[str] = [
     TaskStatus.DONE,
 ]
 
-_WORKER_ICONS: Dict[str, Tuple[str, str]] = {
-    "terminal":  ("⚡", "Terminal"),
-    "work-pool": ("⚒", "Work-pool"),
-    "cowork":    ("🔄", "Cowork"),
-    "grok":      ("🛰", "Grok"),
-    "cursor":    ("✦", "Cursor"),
-}
+# Byline icon for any worker identity. Identities come from the store's
+# signed comments and render verbatim — no baked-in agent roster (wl-84):
+# which agents exist is the host deployment's business, not the product's.
+WORKER_BYLINE_ICON = "·"
 
 
 # ── Badge / label helpers ─────────────────────────────────────────────────
@@ -690,37 +687,20 @@ def _render_work_queue_filters(
 
 # ── Board rendering ───────────────────────────────────────────────────────
 
-def _known_worker_key(candidate: str) -> Optional[str]:
-    c = candidate.strip().lower()
-    if not c:
-        return None
-    if c in _WORKER_ICONS:
-        return c
-    for key in ("grok", "cursor", "cowork"):
-        if key in c:
-            return key
-    if "terminal" in c:
-        return "terminal"
-    if "work-pool" in c or "work pool" in c or "workpool" in c:
-        return "work-pool"
-    return None
-
-
 def _detect_worker(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
     # Newest Owner: marker wins, then the signed latest-comment author
-    # (PROTOCOL.md §3.8 canonical ids). A signed-but-unrecognized id is still
-    # an identity — render it verbatim rather than dropping the byline.
+    # (PROTOCOL.md §3.8: any stable signed id is an identity) — rendered
+    # verbatim, no roster (wl-84).
     for candidate in (preview.get("owner") or "", preview.get("author") or ""):
         candidate = candidate.strip()
-        if not candidate:
-            continue
-        key = _known_worker_key(candidate)
-        if key:
-            return _WORKER_ICONS[key]
-        return ("·", candidate)
-    # Fallback: sniff the coordination text for unsigned history.
-    key = _known_worker_key(preview.get("body") or "")
-    return _WORKER_ICONS[key] if key else None
+        if candidate:
+            return (WORKER_BYLINE_ICON, candidate)
+    # Fallback for unsigned history: parse an Owner: line out of the
+    # coordination text itself.
+    m = _OWNER_LINE_RE.search(preview.get("body") or "")
+    if m and m.group(1).strip():
+        return (WORKER_BYLINE_ICON, m.group(1).strip())
+    return None
 
 
 def _scoped_labels(labels: Optional[List[str]], scope_product: str) -> List[str]:
@@ -793,7 +773,9 @@ def _render_task_card(
                 f"</div>"
             )
     decision_html = ""
-    if "needs:decision" in (t.labels or []) or "needs:founder-decision" in (t.labels or []):
+    # Any needs:* label reads as "waiting on somebody" — label vocabulary is
+    # store data, so no specific label names are special-cased here (wl-84).
+    if any((l or "").strip().lower().startswith("needs:") for l in (t.labels or [])):
         decision_html = "<div class='tb-card-decision'>Needs input</div>"
     gate_html = ""
     if task_is_gated(t):
@@ -1202,20 +1184,6 @@ def _board_styles() -> str:
 .tb-qa-actions { display:flex; gap:10px; align-items:center;
                  justify-content:flex-end; margin-top:4px; }
 .tb-qa-actions #admin-qa-status { margin-right:auto; font-size:var(--fs-xs); }
-
-/* Lane pulse strip (wl-77): per dispatch-lane last-worked + throughput,
-   on the Pool header — one row, no cross-lane comparison bars. */
-.lane-pulse-strip { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
-.lane-pulse-chip { display:inline-flex; align-items:center; gap:6px;
-                   border:1px solid var(--border); border-radius:999px;
-                   padding:3px 10px; font-size:var(--fs-xs); color:var(--dim);
-                   background:var(--bg2); }
-.lane-pulse-chip--stale { border-color:var(--red); color:var(--fg); }
-.lane-pulse-id { font-weight:600; color:var(--fg); }
-.lane-pulse-age { font-variant-numeric:tabular-nums; }
-.lane-pulse-backlog { color:var(--dim); }
-.lane-pulse-stale-dot { width:6px; height:6px; border-radius:50%;
-                        background:var(--red); flex:0 0 auto; }
 </style>
 """
 
