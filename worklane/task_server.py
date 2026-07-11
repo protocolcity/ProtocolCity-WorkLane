@@ -5306,6 +5306,9 @@ def _task_server_extra_css() -> str:
     box-sizing: border-box;
     font-variant-numeric: tabular-nums;
   }
+  /* display:flex would otherwise beat the hidden attribute's UA
+     display:none — keep the empty popover invisible (wl-82). */
+  .wq-jump-ambiguous[hidden] { display: none; }
   .wq-jump-ambiguous {
     position: absolute;
     top: 32px;

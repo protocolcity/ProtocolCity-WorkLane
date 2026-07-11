@@ -648,7 +648,10 @@ def _render_work_queue_filters(
     jump_form = (
         "<form class='wq-jump-form' "
         f"data-scope-prefix='{_esc(scoped_prefix)}' "
-        "onsubmit=\"return adminBoardJumpSubmit(this);\">"
+        # adminBoardJumpSubmit is async; its return value is a Promise
+        # (truthy), so it can't cancel the native submit itself — cancel
+        # unconditionally and let the handler drive navigation (wl-82).
+        "onsubmit=\"adminBoardJumpSubmit(this); return false;\">"
         "<label class='dim' for='wq-jump-id'>Jump&nbsp;#</label>"
         "<input id='wq-jump-id' name='id' type='text' inputmode='text' "
         f"placeholder='{_esc(jump_placeholder)}' autocomplete='off' "
