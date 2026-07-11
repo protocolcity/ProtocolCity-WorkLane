@@ -201,11 +201,15 @@ def product_slugs() -> List[str]:
 def product_tracker(spec_or_slug: Any) -> Any:
     """Fresh tracker bound to the product's store.
 
-    The configured default product (see :func:`default_product_slug`) goes
-    through :func:`get_default_tracker` so its adapter selection and
-    DB-path env overrides (host-specific, e.g. tradeOS's ``TRADEOS_TRACKER``
-    / ``TRADEOS_TRACKER_DB``) keep working; every other product binds
-    SQLite directly to its file.
+    The ``tradeos`` product specifically goes through
+    :func:`get_default_tracker` so its adapter selection and DB-path env
+    overrides (``TRADEOS_TRACKER`` / ``TRADEOS_TRACKER_DB``) keep working;
+    every other product — including one that happens to be the
+    *configured* default via :func:`default_product_slug` — binds SQLite
+    directly to its own file. Comparing against the configured default
+    instead of the literal ``"tradeos"`` would make any product whose
+    slug matches that default silently collide with tradeos.db, since
+    :func:`get_default_tracker` ignores ``spec.db_path`` entirely.
     """
     from worklane.trackers import get_default_tracker
     from worklane.trackers.sqlite import SQLiteTracker
@@ -215,7 +219,7 @@ def product_tracker(spec_or_slug: Any) -> Any:
         if isinstance(spec_or_slug, ProductSpec)
         else get_product(str(spec_or_slug))
     )
-    if spec is None or spec.slug == default_product_slug():
+    if spec is None or spec.slug == "tradeos":
         return get_default_tracker()
     return SQLiteTracker(
         db_path=spec.db_path,

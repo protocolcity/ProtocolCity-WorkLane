@@ -188,6 +188,32 @@ class ProductRegistryTest(unittest.TestCase):
         self.assertEqual(products.discover_products(), [])
         self.assertEqual(products.split_task_id("12"), ("", "12"))
 
+    # ── product_tracker routing (wl-52) ─────────────────────────────
+
+    def test_product_tracker_binds_own_file_even_when_configured_default(
+        self,
+    ) -> None:
+        """A non-tradeos product configured as the process default (this
+        repo's own .mcp.json sets WL_PRODUCT=worklane for the MCP
+        subprocess) must still bind its own db file, not silently collide
+        with get_default_tracker()'s tradeos.db."""
+        self._seed("worklane", "WL ticket")
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ["WL_PRODUCT"] = "worklane"
+        self.assertEqual(products.default_product_slug(), "worklane")
+        tracker = products.product_tracker("worklane")
+        self.assertEqual(
+            tracker._db_path.resolve(),
+            (self.root / "data" / "worklane.db").resolve(),
+        )
+
+    def test_product_tracker_tradeos_goes_through_default_tracker(self) -> None:
+        tracker = products.product_tracker("tradeos")
+        self.assertEqual(
+            tracker._db_path.resolve(),
+            (self.root / "data" / "tradeos.db").resolve(),
+        )
+
 
 class SurfaceRoutingTest(unittest.TestCase):
     def setUp(self) -> None:
