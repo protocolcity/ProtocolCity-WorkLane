@@ -1199,6 +1199,20 @@ def _board_styles() -> str:
 .tb-qa-actions { display:flex; gap:10px; align-items:center;
                  justify-content:flex-end; margin-top:4px; }
 .tb-qa-actions #admin-qa-status { margin-right:auto; font-size:var(--fs-xs); }
+
+/* Lane pulse strip (wl-77): per dispatch-lane last-worked + throughput,
+   on the Pool header — one row, no cross-lane comparison bars. */
+.lane-pulse-strip { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
+.lane-pulse-chip { display:inline-flex; align-items:center; gap:6px;
+                   border:1px solid var(--border); border-radius:999px;
+                   padding:3px 10px; font-size:var(--fs-xs); color:var(--dim);
+                   background:var(--bg2); }
+.lane-pulse-chip--stale { border-color:var(--red); color:var(--fg); }
+.lane-pulse-id { font-weight:600; color:var(--fg); }
+.lane-pulse-age { font-variant-numeric:tabular-nums; }
+.lane-pulse-backlog { color:var(--dim); }
+.lane-pulse-stale-dot { width:6px; height:6px; border-radius:50%;
+                        background:var(--red); flex:0 0 auto; }
 </style>
 """
 

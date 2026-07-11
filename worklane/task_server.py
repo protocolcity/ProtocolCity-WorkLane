@@ -157,6 +157,130 @@ def _render_tickets_context_strip() -> str:
     )
 
 
+# wl-77: canonical dispatch-lane agent ids (PROTOCOL.md §5.2). founder-terminal,
+# cowork, and doc-audit are peers on the pool but not dispatch lanes (they
+# don't work a backlog on a schedule), so lane pulse excludes them.
+_LANE_PULSE_IDS: Tuple[str, ...] = (
+    "claude-tradeos", "claude-worklane", "cursor", "grok", "codex",
+)
+# Label-lane agents pull from a `lane:<id>` label filter rather than working
+# the full backlog (PROTOCOL.md §6.1-6.3) — only these get a workable-backlog
+# count and a stale flag; claude-tradeos/claude-worklane work their
+# product's full backlog, so "lane backlog" doesn't mean anything for them.
+_LANE_PULSE_LABEL_IDS: Tuple[str, ...] = ("cursor", "grok", "codex")
+_LANE_PULSE_STALE_HOURS = 3
+
+
+def _agent_pulse_stats(*, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Per dispatch-lane telemetry (wl-77): last activity + throughput +
+    workable backlog, derived entirely from existing comment/label data —
+    no new writes, no schema change. Backs GET /api/admin/agents/pulse.
+    """
+    now = now or datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    comments_by_agent: Dict[str, List[TaskComment]] = {a: [] for a in _LANE_PULSE_IDS}
+    for _spec, tracker in product_trackers():
+        fetch = getattr(tracker, "list_comments_by_authors", None)
+        if fetch is None:
+            continue  # non-SQLite tracker (e.g. HTTP-fed) — no bulk scan available
+        for c in fetch(_LANE_PULSE_IDS):
+            comments_by_agent.setdefault(c.author, []).append(c)
+    for comments in comments_by_agent.values():
+        comments.sort(key=lambda c: c.created_at or "", reverse=True)
+
+    # Workable (ungated) backlog, keyed by lane label — shared across products.
+    label_backlog: Dict[str, int] = {a: 0 for a in _LANE_PULSE_LABEL_IDS}
+    for _spec, tracker in product_trackers():
+        for t in tracker.list_tasks(status=TaskStatus.BACKLOG, limit=None):
+            if task_is_gated(t):
+                continue
+            for label in t.labels or []:
+                key = label.strip().lower()
+                if key.startswith("lane:"):
+                    agent = key[len("lane:"):]
+                    if agent in label_backlog:
+                        label_backlog[agent] += 1
+
+    stats: List[Dict[str, Any]] = []
+    for agent in _LANE_PULSE_IDS:
+        comments = comments_by_agent.get(agent, [])
+        last_comment_at = comments[0].created_at if comments else None
+        # A claim's Owner marker always carries a `Start:` line (§5); a bare
+        # reserve carries `Reserved:` instead — this distinguishes the two.
+        claim_at = next(
+            (c.created_at for c in comments if "\nStart:" in c.body), None
+        )
+        close_comments = [
+            c for c in comments if "Completed:" in c.body and "Verification:" in c.body
+        ]
+        last_close_at = close_comments[0].created_at if close_comments else None
+        closes_7d = sum(
+            1 for c in close_comments
+            if (_parse_task_date_utc(c.created_at) or now) >= now - timedelta(days=7)
+        )
+        closes_today = sum(
+            1 for c in close_comments
+            if (_parse_task_date_utc(c.created_at) or now) >= today_start
+        )
+        workable_backlog = label_backlog.get(agent) if agent in _LANE_PULSE_LABEL_IDS else None
+        stale = None
+        if workable_backlog is not None:
+            claim_dt = _parse_task_date_utc(claim_at) if claim_at else None
+            stale = workable_backlog > 0 and (
+                claim_dt is None
+                or (now - claim_dt) > timedelta(hours=_LANE_PULSE_STALE_HOURS)
+            )
+        stats.append({
+            "id": agent,
+            "last_comment_at": last_comment_at,
+            "last_claim_at": claim_at,
+            "last_close_at": last_close_at,
+            "closes_7d": closes_7d,
+            "closes_today": closes_today,
+            "workable_backlog": workable_backlog,
+            "stale": stale,
+        })
+    return stats
+
+
+def _render_lane_pulse_strip(stats: List[Dict[str, Any]], *, now: Optional[datetime] = None) -> str:
+    """Compact per-lane strip (wl-77) on the Pool header: id, last-worked,
+    closes today, and a stale flag distinct from healthy idle (empty/gated
+    queue renders neutral, not stale).
+    """
+    now = now or datetime.now(timezone.utc)
+    chips = ""
+    for s in stats:
+        agent_id = s["id"]
+        closes_today = s["closes_today"]
+        closes_7d = s["closes_7d"]
+        last_at = s["last_comment_at"]
+        age = _pulse_relative_time(last_at, now=now) if last_at else "—"
+        stale_cls = " lane-pulse-chip--stale" if s["stale"] else ""
+        backlog_html = (
+            f"<span class='lane-pulse-backlog'>{s['workable_backlog']} backlog</span>"
+            if s["workable_backlog"] is not None else ""
+        )
+        stale_html = (
+            "<span class='lane-pulse-stale-dot' title='Workable backlog with no claim in "
+            f"{_LANE_PULSE_STALE_HOURS}h+'></span>" if s["stale"] else ""
+        )
+        title = f"#{agent_id} · closes today {closes_today} · closes/7d {closes_7d}"
+        chips += (
+            f"<span class='lane-pulse-chip{stale_cls}' title='{_esc(title)}'>"
+            f"{stale_html}<span class='lane-pulse-id'>{_esc(agent_id)}</span>"
+            f"<span class='lane-pulse-age'>{_esc(age)}</span>"
+            f"{backlog_html}"
+            "</span>"
+        )
+    return (
+        "<div class='lane-pulse-strip' role='region' aria-label='Lane pulse'>"
+        + chips
+        + "</div>"
+    )
+
+
 # UI region vocabulary: docs/operations/ui-chrome.md (data-ops-region in HTML).
 
 # ── Lightweight page wrapper ────────────────────────────────────────────
@@ -2990,6 +3114,7 @@ def _tickets_app_html(
     )
 
     wq_notif = _render_tickets_context_strip()
+    lane_pulse = _render_lane_pulse_strip(_agent_pulse_stats())
     # Fetched once: chips count the whole scope; column headers count the
     # scope narrowed to the active filters (wl-47) — the capped page fetch
     # must not masquerade as either.
@@ -3040,6 +3165,7 @@ def _tickets_app_html(
         body = (
             "<div class='ts-wq-shell'>"
             + wq_notif
+            + lane_pulse
             + dispatched_banner
             + _board_styles()
             + extra_css
@@ -3061,6 +3187,7 @@ def _tickets_app_html(
         body = (
             "<div class='ts-wq-shell'>"
             + wq_notif
+            + lane_pulse
             + dispatched_banner
             + _board_styles()
             + extra_css
@@ -4757,6 +4884,16 @@ def api_admin_cockpit_summary() -> JSONResponse:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     resp = JSONResponse(payload)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@router.get("/api/admin/agents/pulse")
+def api_admin_agents_pulse() -> JSONResponse:
+    """Per dispatch-lane telemetry (wl-77): last activity + throughput +
+    workable backlog for the five canonical lanes (PROTOCOL.md §5.2).
+    """
+    resp = JSONResponse({"ok": True, "agents": _agent_pulse_stats()})
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
 
