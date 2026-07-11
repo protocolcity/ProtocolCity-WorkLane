@@ -114,11 +114,35 @@ project and write per-agent profiles, start at [INSTALL.md](INSTALL.md) and
 
 - **Local-first, file-backed.** One machine, SQLite, no accounts, no cloud.
   Backup = copy the `.db` files.
-- **Host-neutral.** Your product consumes WorkLane over HTTP, MCP, or the CLI.
-  WorkLane never reaches into your codebase.
-- **Not a SaaS, not a Jira replacement for humans.** It's the coordination
-  substrate for the agents doing your work — the humans get the board UI and
-  the final say.
+- **Host-neutral.** Your project consumes WorkLane over HTTP, MCP, or the CLI
+  — three doors into one protocol. WorkLane never reaches into your codebase.
+
+## Why not Jira? Why not an orchestration framework?
+
+Because they solve different problems, and the one in the middle is unsolved.
+
+**Orchestration frameworks** (LangGraph, CrewAI, AutoGen, …) coordinate agents
+*within a single task*: a supervisor decomposes a job, workers execute, and
+the state dies with the process. WorkLane coordinates *across* agents,
+sessions, and days — a persistent backlog that outlives any one run. They
+compose: use an orchestrator inside a task, WorkLane between tasks.
+
+**Human project trackers** (Jira, Linear, GitHub Issues) can hold agent work,
+but they enforce nothing. Nothing stops two agents from silently working the
+same item; nothing stops an agent from marking work done with no evidence;
+their auth and audit models assume the actor is a person. WorkLane enforces
+the contract at the API: claim before work, signed writes on every action,
+closeouts that structurally require verification evidence. The comment trail
+doubles as an attribution log — you can always answer *which agent did what,
+when, and how it was verified*.
+
+**Homegrown glue** — lock files, label conventions, "agents, please check the
+spreadsheet" — is what most multi-agent teams actually run on today. WorkLane
+is that glue, extracted from production, hardened, and written down as a
+protocol.
+
+The humans keep the board UI and the final say. The agents get a queue they
+can't cheat.
 
 ## Layout & configuration
 
