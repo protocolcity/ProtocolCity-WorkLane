@@ -11,6 +11,7 @@ import os
 import sys
 from typing import List, Optional
 
+from worklane.products import default_product_slug_with_source
 from worklane.task_server import create_app
 
 app = create_app()
@@ -55,7 +56,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     host = os.environ.get("TASK_HOST", "127.0.0.1")
     port = int(os.environ.get("TASK_PORT", "8799"))
+    default_slug, default_source = default_product_slug_with_source()
     print(f"Starting WorkLane board on http://{host}:{port} ...")
+    print(f"Default product: {default_slug or '(none)'} (source: {default_source})")
     uvicorn.run(app, host=host, port=port)
 
 

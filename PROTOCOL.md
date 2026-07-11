@@ -50,6 +50,8 @@ Multi-agent routing on WL is a negative-space default, not an explicit gate. Thi
 
 This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Cursor's `--label lane:cursor`, Grok's `--label lane:grok`) are narrowings of the default-lane pool's scan, never replacements for it.
 
+One addendum (ratified 2026-07-11): a narrower lane whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok) may, when its lane is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-lane pool, and a lane without a self-service clause in its profile (e.g. Cursor, §6.1) has none.
+
 ## 3) Rules
 
 1. **No orphan work** — any TODO, gap, fix, or refactor starts with a ticket.
@@ -169,7 +171,7 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
    `backlog`. A claim under 3 hours is active — leave it alone. Each agent
    rescues only its own `Owner:` markers.
 5. **Docs drift (added 2026-07-10).** If the change altered structural truth —
-   entrypoints, HTTP surface, runtime layout, product/store model, process
+   entrypoints, HTTP surface, runtime layout, project/store model, process
    rules — the same close-out updates the truth docs (`PROTOCOL.md`, `README.md` as applicable) in the same commit, and the
    `Completed:` section names the doc updates (or states "docs: no drift").
    Stale truth files are orphan work with better manners; don't leave them.
@@ -204,6 +206,8 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `grok` | Grok CLI lane (§6.2) |
 | `cowork` | Claude cowork sessions |
 | `claude-worklane` | Claude CLI dispatch, WL's own tickets (§8; launchd :15; fka `wl-pool`, renamed 2026-07-11) |
+| `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane) |
+| `codex` | Codex CLI lane (§6.3; added 2026-07-11) — visuals/content production |
 
 Reserved system authors — written by automation only, never by an agent:
 `cli-label`, `cli-update`, `dependency-guard` (WL internals), and
@@ -215,21 +219,57 @@ Rules:
   trailing whitespace) are deprecated — do not write them; they exist only in
   pre-2026-07-10 history.
 - **New lane, new row.** A new agent lane registers its id in this table (same
-  commit that adds its §6 profile) before posting its first comment.
+  commit that adds its §6 profile) before posting its first comment. The full
+  onboarding bar is §5.3 — the row and profile are necessary, not sufficient.
 - **Ghost-audits key on these ids** — each agent audits only markers bearing
   its own id (§6.1/§6.2 reciprocity rule).
+
+### 5.3) New lane onboarding checklist (added 2026-07-11, wl-72)
+
+Registering a lane is more than the §5.2 row. Evidence for the rule: the
+codex lane was registered and dispatching headless before any
+`AGENTS.md` existed anywhere — an interactive Codex session in the host repo
+would have auto-loaded nothing, in a repo whose CLAUDE.md carries real-money
+safety rules. All four items land **before the lane's first ticket**:
+
+1. **Identity + profile** — §5.2 id row and the lane's §6 profile, same
+   commit (the existing "new lane, new row" rule).
+2. **Entry file in every workdir** — the tool's *native auto-loaded
+   instruction file* must exist at the root of every repo the lane operates
+   in: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex CLI, Cursor — the
+   cross-tool standard), `GROK.md` (Grok CLI; symlink to `AGENTS.md` is
+   fine), `.cursor/rules/*.mdc` (Cursor, when repo rules are preferred over
+   `AGENTS.md`). Written as a **thin router** — identity, pointer to the §6
+   profile, that repo's safety rules — never duplicated normative content;
+   PROTOCOL.md stays the single source. House pattern: a host's
+   `.cursor/rules/<host>.mdc` (or thin `AGENTS.md` router at repo root).
+3. **Packaged run form** — a dispatched (headless) lane ships its prompt in
+   the host repo (`ops/tasks/<lane>/prompt.md`) and the prompt states that
+   PROTOCOL.md wins on conflict (house pattern: host
+   `ops/tasks/<lane>/prompt.md`).
+4. **Docs-surface candidate** — if the tool auto-loads a filename WL's docs
+   nav doesn't know yet, extend `_AGENT_DOCS` in
+   `worklane/task_server.py` (wl-71 mechanism: tabs appear only for
+   files that exist, so registering a candidate is free).
+
+Interactive use counts as a workdir: if a founder can open the tool by hand
+in a checkout, item 2 applies to that checkout — "the launchd prompt covers
+it" is not a pass.
 
 ## 7) API and Surface
 
 WL exposes API/UI so other cockpits can read ticket state. Board/table and API reflect the same DB truth. External aggregators should be read-first unless write is explicitly enabled. Host products are WL clients; a host must never depend on WL availability to start.
 
-**One product, one store:** every product tracked by WL has its
-own SQLite file (`worklane/local/data/<slug>.db`) and its own Pool
-surface tab; "All" is a merged read view. Products are independent — an agent
-working one product's tickets never writes another product's store. Composite
-ids (`wl-…` WorkLane, `<slug>-…` your product) address tickets across stores;
+**One project, one store** (2026-07-10; canonical term since wl-64): every
+project tracked by WL has its own SQLite file
+(`worklane/local/data/<slug>.db`) and its own Pool surface tab;
+"All" is a merged read view. Projects are independent — an agent working one
+project's tickets never writes another project's store. Composite ids
+(`wl-…` WorkLane, `<slug>-…` your product) address tickets across stores;
 WL's own development work is tracked in `worklane.db` under the same
-rules as any other product.
+rules as any other project. (`product` remains a silent back-compat alias on
+API/MCP/CLI param names — e.g. `?product=` query params not yet migrated to
+`?project=` — see wl-64/wl-46.)
 
 
 ## 6) Host Profiles

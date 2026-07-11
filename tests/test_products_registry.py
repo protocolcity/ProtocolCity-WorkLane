@@ -175,6 +175,32 @@ class ProductRegistryTest(unittest.TestCase):
         slugs = [s.slug for s in products.discover_products()]
         self.assertEqual(slugs[0], "worklane")
 
+    def test_default_product_slug_config_wins_over_tp_product_env(self) -> None:
+        """wl-68: a client-scoping WL_PRODUCT leaking into the server env
+        must not override an operator's configured products.json default."""
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"default": "tradeos"}')
+        os.environ["WL_PRODUCT"] = "worklane"
+        self.assertEqual(products.default_product_slug(), "tradeos")
+
+    def test_default_product_slug_with_source(self) -> None:
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ.pop("WL_PRODUCT", None)
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"default": "worklane"}')
+        self.assertEqual(
+            products.default_product_slug_with_source(),
+            ("worklane", "config:products.json"),
+        )
+        os.environ["WL_DEFAULT_PRODUCT"] = "myapp"
+        self.assertEqual(
+            products.default_product_slug_with_source(),
+            ("myapp", "env:WL_DEFAULT_PRODUCT"),
+        )
+
     def test_default_product_slug_falls_back_to_first_discovered(self) -> None:
         os.environ.pop("WL_DEFAULT_PRODUCT", None)
         os.environ.pop("WL_PRODUCT", None)
@@ -337,9 +363,22 @@ class SurfaceRoutingTest(unittest.TestCase):
         self.assertIn("ts-doc-body", r.text)
 
     def test_docs_page_renders_all_known_docs(self) -> None:
-        for slug in ("process", "truth", "readme", "claude"):
+        # "agents" and "grok" are agent-instruction files discovered at the
+        # repo root (AGENTS.md, GROK.md); the rest are the canonical four.
+        for slug in ("process", "truth", "readme", "claude", "agents", "grok"):
             r = self.client.get(f"/admin/docs/{slug}")
             self.assertEqual(r.status_code, 200, msg=slug)
+
+    def test_docs_nav_hides_missing_agent_docs(self) -> None:
+        # GEMINI.md / .cursorrules don't exist in this repo, so their tabs
+        # must not render and their slugs must 404 instead of showing a
+        # read-error page.
+        r = self.client.get("/admin/docs/process")
+        self.assertNotIn("GEMINI.md", r.text)
+        self.assertNotIn(".cursorrules", r.text)
+        for slug in ("gemini", "cursorrules"):
+            r = self.client.get(f"/admin/docs/{slug}")
+            self.assertEqual(r.status_code, 404, msg=slug)
 
     def test_docs_page_unknown_doc_404s(self) -> None:
         r = self.client.get("/admin/docs/nope")

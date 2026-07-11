@@ -22,7 +22,7 @@ works. Never write WL's SQLite stores directly from host code.
 
 ```bash
 # fill in whichever interface you picked above, e.g.:
-wl list --product <your-slug> --status backlog
+wl list --project <your-slug> --status backlog
 ```
 
 **Agent identity:** every agent lane your host runs needs its own

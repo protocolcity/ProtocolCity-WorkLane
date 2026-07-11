@@ -187,13 +187,13 @@ def _render_tickets_surface_nav(
             f"title='{_esc(title)}'{ac}>{_esc(text)}</a>"
         )
 
-    items = [_item(TICKETS_APP_ALL, "All", "Every ticket across all product stores")]
+    items = [_item(TICKETS_APP_ALL, "All", "Every ticket across all project stores")]
     for spec in discover_products():
         items.append(
             _item(
                 f"/admin/tickets/{spec.slug}",
                 spec.display,
-                f"Pool for the {spec.display} product ({spec.db_path.name})",
+                f"Pool for the {spec.display} project ({spec.db_path.name})",
             )
         )
     return (
@@ -355,9 +355,9 @@ def _task_page(
       <div class="task-server-header-end">
 {_ticket_header_widgets}
         <span class="task-server-hint dim">WL · port {_esc(_port)}</span>
-        <a href="/admin/docs" title="Docs — PROCESS/TRUTH/README/CLAUDE rendered in-app"
+        <a href="/admin/docs" title="Docs — PROCESS/TRUTH/README + per-agent instruction files rendered in-app"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'docs' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#128220;</a>
-        <a href="/admin/settings" title="Settings — products, prefixes, numbering, service"
+        <a href="/admin/settings" title="Settings — projects, prefixes, numbering, service"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'settings' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#9881;</a>
         <span class="ts-dev-badge">WL</span>
         <button id="theme-toggle" onclick="cycleTheme()" title="Toggle theme"
@@ -1957,7 +1957,7 @@ def _render_product_ops_page() -> str:
         "board (ADR-019).</p>"
         f"<p class='dim'>You are on port <code>{task_port}</code> — landing: "
         "<code>/admin/cockpit</code>. Use <strong>Pool</strong> in the header for "
-        "the tracker; <strong>Products → tradeOS</strong> for the trading product hub.</p>"
+        "the tracker; <strong>Projects → tradeOS</strong> for the trading project hub.</p>"
     )
     return f"<div class='ts-prod-page'>{_task_card('Ticketing (this console)', body)}</div>"
 
@@ -2076,7 +2076,7 @@ def _render_fleet_section(
             "</a>"
         )
     if not rows:
-        return "<div class='pulse-empty'>No product stores discovered.</div>"
+        return "<div class='pulse-empty'>No project stores discovered.</div>"
     return f"<div class='fleet-rows'>{rows}</div>"
 
 
@@ -2306,7 +2306,7 @@ def _render_pulse_page() -> str:
         <div class='pulse-panel pulse-panel--wide'>
           <div class='pulse-panel-head'>
             <span class='pulse-panel-title'>Fleet</span>
-            <span class='pulse-panel-meta'>{len(discover_products())} product stores</span>
+            <span class='pulse-panel-meta'>{len(discover_products())} project stores</span>
           </div>
           {fleet_html}
         </div>
@@ -2476,34 +2476,39 @@ def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
         return "<p class='dim'>No tasks match the current filters.</p>"
     rows = "".join(_render_task_row(t, scope_product) for t in tasks)
     return (
-        "<table class='tos-table'>"
+        "<div class='ts-timetable'><table class='ts-timetable-table'>"
         "<thead><tr>"
-        "<th>Task</th><th style='width:140px;'>Status</th>"
-        "<th style='width:90px;'>Priority</th><th>Labels</th>"
-        "<th style='width:160px;'>Updated</th>"
+        "<th class='tt-c-age'>Age</th>"
+        "<th class='tt-c-no'>No.</th>"
+        "<th class='tt-c-ticket'>Ticket</th>"
+        "<th class='tt-c-labels'>Labels</th>"
+        "<th class='tt-c-status'>Status</th>"
+        "<th class='tt-c-pri'>Pri.</th>"
         "</tr></thead>"
         f"<tbody>{rows}</tbody>"
-        "</table>"
+        "</table></div>"
     )
 
 
 def _render_task_row(t: Task, scope_product: str = "") -> str:
-    ext = (
-        f"<div class='dim' style='font-size:var(--fs-xs);'>{_esc(t.ext_id)}</div>"
-        if t.ext_id else ""
-    )
-    title_link = (
-        f"<a href='/admin/tasks/{_esc(t.id)}' style='text-decoration:none;'>"
-        f"<strong>{_esc(t.title)}</strong></a>"
+    # wl-38: timetable row — whole row opens the ticket (no inline status
+    # edit here; that stays on the task detail page's _status_select).
+    href = f"/admin/tasks/{_esc(t.id)}"
+    ext = f" <span class='dim'>{_esc(t.ext_id)}</span>" if t.ext_id else ""
+    updated_attr = _esc(t.updated_at or "")
+    age_html = (
+        f"<span class='tb-card-ago' data-iso='{updated_attr}'>"
+        f"{_esc((t.updated_at or '')[:10])}</span>"
+        if t.updated_at else "<span class='dim'>—</span>"
     )
     return (
-        "<tr>"
-        f"<td>{title_link}{ext}</td>"
-        f"<td>{_status_select(t.id, t.status)}</td>"
-        f"<td>{_render_priority_badge(int(t.priority or 3))}</td>"
-        f"<td>{_render_labels(_scoped_labels(t.labels, scope_product))}</td>"
-        f"<td class='dim' style='font-size:var(--fs-xs);'>"
-        f"{_esc(t.updated_at[:19] if t.updated_at else '')}</td>"
+        f"<tr class='tt-row' onclick=\"location.href='{href}'\">"
+        f"<td class='tt-c-age'>{age_html}</td>"
+        f"<td class='tt-c-no'><span class='tb-card-id'>{_esc(t.id)}</span>{ext}</td>"
+        f"<td class='tt-c-ticket'><a href='{href}'>{_esc(t.title)}</a></td>"
+        f"<td class='tt-c-labels'>{_render_labels(_scoped_labels(t.labels, scope_product))}</td>"
+        f"<td class='tt-c-status'>{_render_status_badge(t.status)}</td>"
+        f"<td class='tt-c-pri'>{_render_priority_badge(int(t.priority or 3))}</td>"
         "</tr>"
     )
 
@@ -2601,7 +2606,7 @@ def admin_settings() -> str:
             f"<td><code>{_esc(spec.prefix)}-{_esc(_product_next_id(spec, tracker))}</code></td>"
             f"<td>{open_n} open · {len(tasks)} total</td>"
             f"<td><button class='btn btn-sm go' type='button' "
-            f"onclick=\"tsSettingsSaveProduct('{slug_attr}')\">Save</button></td>"
+            f"onclick=\"tsSettingsSaveProject('{slug_attr}')\">Save</button></td>"
             "</tr>"
         )
     overlay_example = (
@@ -2616,7 +2621,7 @@ def admin_settings() -> str:
         "<input class='ts-settings-input ts-settings-input--narrow' type='text' "
         "id='ts-new-prod-prefix' placeholder='prefix (optional)' maxlength='8' />"
         "<button class='btn btn-sm go' type='button' "
-        "onclick='tsSettingsAddProduct()'>Add product</button>"
+        "onclick='tsSettingsAddProject()'>Add project</button>"
         "</div>"
     )
     products_html = (
@@ -2626,9 +2631,9 @@ def admin_settings() -> str:
         f"<tbody>{''.join(rows)}</tbody></table>"
         f"{add_product_html}"
         "<p class='dim' style='margin-top:8px;'>Numbering is per store (SQLite "
-        "AUTOINCREMENT) — products count independently; the prefix keeps merged "
+        "AUTOINCREMENT) — projects count independently; the prefix keeps merged "
         "views collision-free. Display names and prefixes: shipped defaults in "
-        "<code>worklane/products.py</code>, overridable per product in "
+        "<code>worklane/products.py</code>, overridable per project in "
         f"<code>{_esc(str(cfg_path))}</code> "
         f"({'present' if cfg_exists else 'not created yet'}) as "
         f"<code>{overlay_example}</code>. "
@@ -2659,7 +2664,7 @@ def admin_settings() -> str:
         "<table class='tos-table'>"
         "<thead><tr><th>Slug</th><th>Hot tickets</th><th>Archived</th>"
         "<th>Archive store</th><th></th></tr></thead>"
-        f"<tbody>{''.join(archive_rows) if archive_rows else '<tr><td colspan=5 class=dim>No products</td></tr>'}"
+        f"<tbody>{''.join(archive_rows) if archive_rows else '<tr><td colspan=5 class=dim>No projects</td></tr>'}"
         "</tbody></table>"
         "<p class='dim' style='margin-top:8px;'>Compact moves done/canceled tickets "
         f"untouched for {archival.DEFAULT_ARCHIVE_AGE_DAYS} days into a sibling "
@@ -2698,7 +2703,7 @@ def admin_settings() -> str:
 
     settings_js = """
 <script>
-  async function tsSettingsSaveProduct(slug) {
+  async function tsSettingsSaveProject(slug) {
     var dEl = document.getElementById('ts-prod-display-' + slug);
     var pEl = document.getElementById('ts-prod-prefix-' + slug);
     var payload = {};
@@ -2719,7 +2724,7 @@ def admin_settings() -> str:
     }
   }
 
-  async function tsSettingsAddProduct() {
+  async function tsSettingsAddProject() {
     var slugEl = document.getElementById('ts-new-prod-slug');
     var dEl = document.getElementById('ts-new-prod-display');
     var pEl = document.getElementById('ts-new-prod-prefix');
@@ -2768,7 +2773,7 @@ def admin_settings() -> str:
 """
     body = (
         "<div class='ts-ops-page'>"
-        + _task_card("Products · stores · numbering", products_html)
+        + _task_card("Projects · stores · numbering", products_html)
         + _task_card("Done-ticket archival", archival_html)
         + _task_card("Identity & enforcement", identity_html)
         + _task_card("Service", service_html)
@@ -2780,19 +2785,36 @@ def admin_settings() -> str:
 
 
 # Docs surface (wl-27): read-only render of the repo's own truth files.
-# PROTOCOL.md/README.md live at the repo root; TRUTH.md/CLAUDE.md live inside
+# PROTOCOL.md/README.md/CLAUDE.md live at the repo root; TRUTH.md lives inside
 # the worklane/ package dir alongside this module.
 _DOCS: List[Tuple[str, str, str]] = [
     ("process", "PROTOCOL.md", os.path.join(_ROOT, "PROTOCOL.md")),
     ("truth", "TRUTH.md", os.path.join(_ROOT, "worklane", "TRUTH.md")),
     ("readme", "README.md", os.path.join(_ROOT, "README.md")),
-    ("claude", "CLAUDE.md", os.path.join(_ROOT, "worklane", "CLAUDE.md")),
+    ("claude", "CLAUDE.md", os.path.join(_ROOT, "CLAUDE.md")),
 ]
+
+# Per-agent instruction files. Lane operating rules are normative in
+# PROTOCOL.md §6; these are the per-tool entry files each agent's runtime
+# loads (Claude Code → CLAUDE.md above; Cursor/Codex → AGENTS.md;
+# Grok CLI → GROK.md; Gemini CLI → GEMINI.md). Candidates that don't exist
+# on disk are hidden from the nav rather than rendered as read errors, so
+# the tab list always reflects the instruction files agents actually load.
+_AGENT_DOCS: List[Tuple[str, str, str]] = [
+    ("agents", "AGENTS.md", os.path.join(_ROOT, "AGENTS.md")),
+    ("grok", "GROK.md", os.path.join(_ROOT, "GROK.md")),
+    ("gemini", "GEMINI.md", os.path.join(_ROOT, "GEMINI.md")),
+    ("cursorrules", ".cursorrules", os.path.join(_ROOT, ".cursorrules")),
+]
+
+
+def _docs_entries() -> List[Tuple[str, str, str]]:
+    return list(_DOCS) + [d for d in _AGENT_DOCS if os.path.isfile(d[2])]
 
 
 def _docs_nav(active: str) -> str:
     items = []
-    for slug, label, _path in _DOCS:
+    for slug, label, _path in _docs_entries():
         cls = "ts-seg ts-seg--on" if slug == active else "ts-seg"
         items.append(f'<a href="/admin/docs/{slug}" class="{cls}">{_esc(label)}</a>')
     return (
@@ -2809,7 +2831,7 @@ def admin_docs_index() -> RedirectResponse:
 
 @router.get("/admin/docs/{doc}", response_class=HTMLResponse)
 def admin_docs_page(doc: str) -> str:
-    match = next((d for d in _DOCS if d[0] == doc), None)
+    match = next((d for d in _docs_entries() if d[0] == doc), None)
     if match is None:
         raise HTTPException(status_code=404, detail=f"Unknown doc: {doc}")
     slug, label, path = match
@@ -3258,7 +3280,7 @@ async def api_create_product(request: Request) -> JSONResponse:
     existing = get_product(slug)
     if existing is not None and (existing.db_path.exists() or slug == live_feed_product_slug()):
         return JSONResponse(
-            {"ok": False, "error": f"product {slug!r} already exists"},
+            {"ok": False, "error": f"project {slug!r} already exists"},
             status_code=409,
         )
 
@@ -3276,7 +3298,7 @@ async def api_create_product(request: Request) -> JSONResponse:
         taken = {spec.prefix for spec in discover_products()}
         if prefix in taken:
             return JSONResponse(
-                {"ok": False, "error": f"prefix {prefix!r} is already used by another product"},
+                {"ok": False, "error": f"prefix {prefix!r} is already used by another project"},
                 status_code=400,
             )
 
@@ -3290,7 +3312,7 @@ async def api_create_product(request: Request) -> JSONResponse:
     spec = get_product(slug)
     if spec is None:
         return JSONResponse(
-            {"ok": False, "error": "product store created but not discoverable — check runtime dir"},
+            {"ok": False, "error": "project store created but not discoverable — check runtime dir"},
             status_code=500,
         )
     return JSONResponse(
@@ -3318,7 +3340,7 @@ async def api_update_product(slug: str, request: Request) -> JSONResponse:
 
     spec = get_product(slug)
     if spec is None:
-        return JSONResponse({"ok": False, "error": f"unknown product {slug!r}"}, status_code=404)
+        return JSONResponse({"ok": False, "error": f"unknown project {slug!r}"}, status_code=404)
 
     try:
         payload: Dict[str, Any] = await request.json()
@@ -3354,7 +3376,7 @@ async def api_update_product(slug: str, request: Request) -> JSONResponse:
         taken = {s.prefix for s in discover_products() if s.slug != slug}
         if prefix in taken:
             return JSONResponse(
-                {"ok": False, "error": f"prefix {prefix!r} is already used by another product"},
+                {"ok": False, "error": f"prefix {prefix!r} is already used by another project"},
                 status_code=400,
             )
 
@@ -3362,7 +3384,7 @@ async def api_update_product(slug: str, request: Request) -> JSONResponse:
     updated = get_product(slug)
     if updated is None:
         return JSONResponse(
-            {"ok": False, "error": "product updated but no longer discoverable"},
+            {"ok": False, "error": "project updated but no longer discoverable"},
             status_code=500,
         )
     return JSONResponse(
@@ -3388,7 +3410,7 @@ async def api_compact_product(slug: str, request: Request) -> JSONResponse:
     s = (slug or "").strip().lower()
     spec = get_product(s)
     if spec is None:
-        return JSONResponse({"ok": False, "error": f"unknown product {s!r}"}, status_code=404)
+        return JSONResponse({"ok": False, "error": f"unknown project {s!r}"}, status_code=404)
 
     older_than_days = archival.DEFAULT_ARCHIVE_AGE_DAYS
     try:
@@ -3530,7 +3552,7 @@ async def api_create_task(request: Request) -> JSONResponse:
         return JSONResponse(
             {
                 "ok": False,
-                "error": f"unknown ticket surface {surface!r} — no {surface}.db product store",
+                "error": f"unknown ticket surface {surface!r} — no {surface}.db project store",
             },
             status_code=400,
         )
@@ -3623,7 +3645,7 @@ def api_tasks_ready(
         return JSONResponse(
             {
                 "ok": False,
-                "error": "product query param is required (single product store)",
+                "error": "product query param is required (single project store)",
             },
             status_code=400,
         )
@@ -3634,7 +3656,7 @@ def api_tasks_ready(
         spec = get_product(prod)
         if spec is None:
             return JSONResponse(
-                {"ok": False, "error": f"unknown product {prod!r}"},
+                {"ok": False, "error": f"unknown project {prod!r}"},
                 status_code=400,
             )
         tracker = product_tracker(spec)
@@ -3644,7 +3666,7 @@ def api_tasks_ready(
         db_path = _tracker_db_path(tracker)
     except HTTPException:
         return JSONResponse(
-            {"ok": False, "error": "product store is not a local SQLite tracker"},
+            {"ok": False, "error": "project store is not a local SQLite tracker"},
             status_code=400,
         )
 
@@ -3727,7 +3749,7 @@ def api_list_task_relations(task_id: str) -> JSONResponse:
         db_path = _tracker_db_path(tracker)
     except HTTPException:
         return JSONResponse(
-            {"ok": False, "error": "product store is not a local SQLite tracker"},
+            {"ok": False, "error": "project store is not a local SQLite tracker"},
             status_code=400,
         )
     rels = relmod.list_relations(db_path, task_id=raw_id)
@@ -3785,7 +3807,7 @@ async def api_create_task_relation(task_id: str, request: Request) -> JSONRespon
             return JSONResponse(
                 {
                     "ok": False,
-                    "error": "cross-product relations are not supported",
+                    "error": "cross-project relations are not supported",
                 },
                 status_code=400,
             )
@@ -3807,7 +3829,7 @@ async def api_create_task_relation(task_id: str, request: Request) -> JSONRespon
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     except HTTPException:
         return JSONResponse(
-            {"ok": False, "error": "product store is not a local SQLite tracker"},
+            {"ok": False, "error": "project store is not a local SQLite tracker"},
             status_code=400,
         )
 
@@ -3831,7 +3853,7 @@ def api_delete_task_relation(task_id: str, relation_id: str) -> JSONResponse:
         db_path = _tracker_db_path(tracker)
     except HTTPException:
         return JSONResponse(
-            {"ok": False, "error": "product store is not a local SQLite tracker"},
+            {"ok": False, "error": "project store is not a local SQLite tracker"},
             status_code=400,
         )
     existing = relmod.get_relation(db_path, relation_id)
@@ -5306,6 +5328,43 @@ def _task_server_extra_css() -> str:
     background: rgba(255, 193, 7, 0.08); color: var(--fg);
     font-size: var(--fs-sm);
   }
+
+  /* wl-38: Table view as a Dispatch timetable — dense row grid. */
+  .ts-timetable { overflow-x: auto; }
+  .ts-timetable-table {
+    table-layout: fixed; width: 100%; border-collapse: collapse;
+  }
+  .ts-timetable-table th {
+    text-align: left; text-transform: uppercase; letter-spacing: .16em;
+    font-size: var(--fs-xs); font-weight: 600; color: var(--dim);
+    padding: 6px 8px; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .ts-timetable-table td {
+    padding: 0 8px; height: 29px; border-bottom: 1px solid var(--border);
+    font-size: var(--fs-sm); vertical-align: middle; overflow: hidden;
+  }
+  .ts-timetable-table tbody tr.tt-row { cursor: pointer; }
+  .ts-timetable-table tbody tr.tt-row:nth-child(even) { background: var(--bg2); }
+  .ts-timetable-table tbody tr.tt-row:hover { background: var(--hover-tint); }
+  .ts-timetable-table .tt-c-age, .ts-timetable-table .tt-c-no {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ts-timetable-table th.tt-c-age, .ts-timetable-table td.tt-c-age { width: 84px; }
+  .ts-timetable-table th.tt-c-no, .ts-timetable-table td.tt-c-no { width: 96px; }
+  .ts-timetable-table th.tt-c-status, .ts-timetable-table td.tt-c-status { width: 110px; }
+  .ts-timetable-table th.tt-c-pri, .ts-timetable-table td.tt-c-pri { width: 90px; text-align: right; }
+  .ts-timetable-table td.tt-c-pri { text-align: right; }
+  .ts-timetable-table .tt-c-ticket, .ts-timetable-table .tt-c-labels {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ts-timetable-table .tt-c-ticket a {
+    color: var(--fg); text-decoration: none; font-weight: 500;
+  }
+  .ts-timetable-table .tt-c-ticket a:hover { color: var(--accent); }
+  .ts-timetable-table .tt-c-labels { font-family: var(--font-mono); color: var(--dim); }
+  .ts-timetable-table .tt-c-labels .label-chip { color: inherit; text-decoration-color: var(--border); }
 </style>
 """
 

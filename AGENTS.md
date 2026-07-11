@@ -10,7 +10,7 @@ Read this file when:
 
 ## Reading order
 
-0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a product → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROTOCOL.md §6-style profile. Start here if WL isn't running yet in your host.
+0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a project → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROTOCOL.md §6-style profile. Start here if WL isn't running yet in your host.
 1. **[PROTOCOL.md](PROTOCOL.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket work.**
 2. **[README.md](README.md)** — product overview, install, launch, host-integration examples.
 

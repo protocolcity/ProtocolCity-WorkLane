@@ -95,23 +95,37 @@ def _config_overrides() -> Dict[str, Dict[str, str]]:
     }
 
 
-def default_product_slug() -> str:
-    """Resolve the host's bootstrap-default product slug — no code literal.
+def default_product_slug_with_source() -> Tuple[str, str]:
+    """Resolve the host's bootstrap-default product slug and where it came from.
 
-    Order: ``WL_DEFAULT_PRODUCT`` env, ``WL_PRODUCT`` env (the existing
-    client-scoping convention, reused here for the server's own bootstrap),
-    the ``"default"`` key in the ``products.json`` config overlay, then the
-    first product discovered on disk. Empty only on a fresh install with
-    nothing configured and nothing on disk yet — callers treat that as "no
-    default product" rather than substituting a literal.
+    Order: ``WL_DEFAULT_PRODUCT`` env (explicit, always wins), the
+    ``"default"`` key in the ``products.json`` config overlay (an operator's
+    persisted choice), ``WL_PRODUCT`` env (the client-scoping convention,
+    used here only as a fresh-install fallback when no config overlay has
+    picked a default yet), then the first product discovered on disk.
+
+    The config overlay outranks ``WL_PRODUCT`` deliberately: ``WL_PRODUCT``
+    is a *client* identity var (which store a given CLI/MCP session talks
+    to), not server config. A lane exporting it and then restarting the
+    server (wl-68, 2026-07-11) must not silently override an operator's
+    configured default — that flips routing for every other client. Fresh
+    installs with no ``products.json`` yet still get a sane default via the
+    ``WL_PRODUCT`` fallback, and ``WL_DEFAULT_PRODUCT`` remains available as
+    an explicit, intentional override for either case.
+
+    Empty slug only on a fresh install with nothing configured and nothing
+    on disk yet — callers treat that as "no default product" rather than
+    substituting a literal.
     """
-    for var in ("WL_DEFAULT_PRODUCT", "WL_PRODUCT"):
-        val = (os.environ.get(var) or "").strip().lower()
-        if val:
-            return val
+    val = (os.environ.get("WL_DEFAULT_PRODUCT") or "").strip().lower()
+    if val:
+        return val, "env:WL_DEFAULT_PRODUCT"
     configured = _raw_products_config().get("default")
     if isinstance(configured, str) and configured.strip():
-        return configured.strip().lower()
+        return configured.strip().lower(), "config:products.json"
+    val = (os.environ.get("WL_PRODUCT") or "").strip().lower()
+    if val:
+        return val, "env:WL_PRODUCT (fresh-install fallback)"
     data = wl_data_dir()
     if data.is_dir():
         found = sorted(
@@ -120,8 +134,17 @@ def default_product_slug() -> str:
             if _is_product_db_stem(p.stem)
         )
         if found:
-            return found[0]
-    return ""
+            return found[0], "disk:first-discovered"
+    return "", "none"
+
+
+def default_product_slug() -> str:
+    """Resolve the host's bootstrap-default product slug — no code literal.
+
+    See :func:`default_product_slug_with_source` for the resolution order
+    and rationale; this is the slug-only convenience most callers want.
+    """
+    return default_product_slug_with_source()[0]
 
 
 def live_feed_product_slug() -> str:

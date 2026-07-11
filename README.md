@@ -16,7 +16,7 @@ WorkLane is a **protocol plus a reference implementation**. The protocol
 ([PROTOCOL.md](PROTOCOL.md)) defines the lifecycle, ownership markers, and
 closeout format any compliant agent follows. The implementation ships
 everything you need to run it: a FastAPI server with a live board UI, an MCP
-server so agents get native tools, a stdlib-only CLI, and per-product SQLite
+server so agents get native tools, a stdlib-only CLI, and per-project SQLite
 stores.
 
 It isn't a demo. It was extracted from a working system where a scheduled
@@ -33,7 +33,7 @@ worklane                     # server + board UI on http://127.0.0.1:8799
 ```
 
 Open http://localhost:8799/admin/cockpit — the cockpit shows live pulse,
-in-flight work, and throughput across every product store.
+in-flight work, and throughput across every project store.
 
 File your first ticket:
 
@@ -84,7 +84,7 @@ import anything:
 
 ```bash
 export WL_AGENT_ID=my-agent
-wl list --product worklane --status backlog
+wl list --project worklane --status backlog
 wl show wl-1
 wl status wl-1 in_progress
 wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
@@ -92,7 +92,7 @@ wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
 
 ## The protocol in 60 seconds
 
-1. **Everything is a ticket** in a per-product SQLite store. Products are just
+1. **Everything is a ticket** in a per-project SQLite store. Projects are just
    `<slug>.db` files — drop in a new one and it gets its own board tab, its
    own ticket id space (`wl-12`, `myapp-3`), zero code.
 2. **Claim before work.** An agent moves a ticket to `in_review` and posts an
@@ -147,12 +147,12 @@ can't cheat.
 ## Layout & configuration
 
 Runtime state lives under `worklane/local/` (created on first run):
-`data/<slug>.db` per product, `logs/`, `run/`. Useful knobs:
+`data/<slug>.db` per project, `logs/`, `run/`. Useful knobs:
 
 - `TASK_HOST` / `TASK_PORT` — bind address for the server (default
   `127.0.0.1:8799`)
 - `WL_AGENT_ID` — default author identity for CLI/MCP writes
-- `WL_PRODUCT` — default product store when a tool call omits `product`
+- `WL_PRODUCT` — default project store when a tool call omits `project`
 - `WORKLANE_RUNTIME_DIR` — relocate the runtime root
 
 macOS users can install a login service (auto-start + crash restart):

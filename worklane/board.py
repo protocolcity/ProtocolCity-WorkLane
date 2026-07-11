@@ -1515,8 +1515,12 @@ def _client_js() -> str:
   function adminBoardInit() {
     var hasBoard = !!document.getElementById('admin-task-board');
     var hasStrip = !!document.getElementById('admin-activity-strip');
-    if (!hasBoard && !hasStrip) return;
+    // wl-38: Table view has no live poll target, but its Age column reuses
+    // the same .tb-card-ago[data-iso] relative-time hook as Board cards.
+    var hasTable = !!document.querySelector('.ts-timetable-table');
+    if (!hasBoard && !hasStrip && !hasTable) return;
     adminBoardTouchRelativeTime();
+    if (!hasBoard && !hasStrip) return;
     adminBoardFetch();
     if (__ADMIN_BOARD_POLL_HANDLE) clearInterval(__ADMIN_BOARD_POLL_HANDLE);
     __ADMIN_BOARD_POLL_HANDLE = setInterval(function() {

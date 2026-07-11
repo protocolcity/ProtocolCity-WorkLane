@@ -53,8 +53,8 @@ wl demo
 worklane --demo
 ```
 
-This writes **only** the isolated `demo` product store
-(`worklane/local/data/demo.db`). It never touches any other product
+This writes **only** the isolated `demo` project store
+(`worklane/local/data/demo.db`). It never touches any other project
 store you have configured. Re-run is a no-op unless
 you pass `--force` (demo store only). Open
 http://127.0.0.1:8799/admin/tickets/demo?view=board after the server is up.
@@ -74,10 +74,10 @@ Verify it's up:
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8799/admin/cockpit   # expect 200
 ```
 
-## 4. Bootstrap your product
+## 4. Bootstrap your project
 
-WL is **one SQLite store per product**, auto-discovered — there is no
-separate "create a product" step to run. A product appears the moment
+WL is **one SQLite store per project**, auto-discovered — there is no
+separate "create a project" step to run. A project appears the moment
 either of these happens:
 
 - a ticket is filed with `"surface": "<your-slug>"` (via the API, CLI, or
@@ -95,10 +95,10 @@ wl comment --help   # confirm the CLI is on PATH first
 
 curl -s -X POST http://localhost:8799/api/admin/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"title":"First ticket","description":"Bootstrapping myproduct.","surface":"myproduct","author":"you"}'
+  -d '{"title":"First ticket","description":"Bootstrapping myproject.","surface":"myproject","author":"you"}'
 ```
 
-Give the product a friendlier display name / short id prefix (defaults to
+Give the project a friendlier display name / short id prefix (defaults to
 the slug itself) via `/admin/settings`, or by adding an entry to
 `worklane/local/config/products.json` — see
 `worklane/products.py` for the shape.
@@ -118,7 +118,7 @@ Three ways to read/write tickets, in order of preference:
    export WL_BASE_URL=http://localhost:8799   # default if unset
    export WL_AGENT_ID=you                     # signs comments (PROTOCOL.md §3.8)
 
-   wl list --product myproduct --status backlog
+   wl list --project myproject --status backlog
    wl show wl-1
    wl comment wl-1 "starting work" --author you
    wl status wl-1 in_progress
