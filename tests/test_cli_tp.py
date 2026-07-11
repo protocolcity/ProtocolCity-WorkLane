@@ -1,6 +1,6 @@
 """Tests for worklane.cli.wl (wl-13) — the host-neutral HTTP CLI.
 
-Unlike cli/task.py (direct SQLite tracker access), this CLI only speaks
+This CLI only speaks
 HTTP, so these tests mock urllib.request.urlopen and assert on the request
 that would have gone out (method, URL, JSON body) rather than hitting a
 live server.
@@ -84,6 +84,92 @@ class RequestBuildingTest(unittest.TestCase):
         wl_cli.cmd_show(args)
         sent_req = mock_urlopen.call_args[0][0]
         self.assertTrue(sent_req.full_url.endswith("/api/admin/tasks/wl-13"))
+
+    def test_create_requires_title(self) -> None:
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["create", "--description", "d", "--product", "p", "--author", "wl-pool"]
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            wl_cli.cmd_create(args)
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_create_requires_description(self) -> None:
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["create", "--title", "t", "--product", "p", "--author", "wl-pool"]
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            wl_cli.cmd_create(args)
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_create_requires_signed_author(self) -> None:
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["create", "--title", "t", "--description", "d", "--product", "p"]
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            wl_cli.cmd_create(args)
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_create_requires_product(self) -> None:
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["create", "--title", "t", "--description", "d", "--author", "wl-pool"]
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            wl_cli.cmd_create(args)
+        self.assertEqual(ctx.exception.code, 1)
+
+    @mock.patch("urllib.request.urlopen")
+    def test_create_sends_expected_body(self, mock_urlopen) -> None:
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "task": {"id": "wl-99", "title": "New ticket"}}
+        )
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            [
+                "create",
+                "--title", "New ticket",
+                "--description", "Problem + expected outcome",
+                "--product", "worklane",
+                "--priority", "2",
+                "--label", "area:install",
+                "--label", "size:S",
+                "--author", "wl-pool",
+            ]
+        )
+        wl_cli.cmd_create(args)
+
+        sent_req = mock_urlopen.call_args[0][0]
+        self.assertEqual(sent_req.get_method(), "POST")
+        self.assertTrue(sent_req.full_url.endswith("/api/admin/tasks"))
+        sent_body = json.loads(sent_req.data.decode("utf-8"))
+        self.assertEqual(
+            sent_body,
+            {
+                "title": "New ticket",
+                "description": "Problem + expected outcome",
+                "author": "wl-pool",
+                "surface": "worklane",
+                "priority": 2,
+                "labels": ["area:install", "size:S"],
+            },
+        )
+
+    @mock.patch("urllib.request.urlopen")
+    def test_create_falls_back_to_tp_product_env(self, mock_urlopen) -> None:
+        os.environ["WL_PRODUCT"] = "worklane"
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "task": {"id": "wl-99", "title": "t"}}
+        )
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["create", "--title", "t", "--description", "d", "--author", "wl-pool"]
+        )
+        wl_cli.cmd_create(args)
+        sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_body["surface"], "worklane")
 
     def test_comment_requires_signed_author(self) -> None:
         parser = wl_cli._build_parser()

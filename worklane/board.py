@@ -730,7 +730,7 @@ def _render_work_queue_filters(
 def _detect_worker(preview: Dict[str, str]) -> Optional[str]:
     author = (preview.get("author") or "").strip().lower()
     body = (preview.get("body") or "").lower()
-    # Signed author field wins (PROCESS.md §3.8 canonical ids).
+    # Signed author field wins (PROTOCOL.md §3.8 canonical ids).
     if author in _WORKER_ICONS:
         return author
     if author == "founder-terminal":

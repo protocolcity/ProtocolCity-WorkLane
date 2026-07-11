@@ -218,7 +218,7 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
         prog="worklane.mcp",
         description=(
             "WorkLane stdio MCP server. "
-            "Author identity is required (PROCESS.md §3.8)."
+            "Author identity is required (PROTOCOL.md §3.8)."
         ),
     )
     p.add_argument(
@@ -243,7 +243,7 @@ def main(argv: Optional[list] = None) -> None:
             "  python -m worklane.mcp --author <agent-id>\n"
             "  or set WL_AGENT_ID=<agent-id>\n"
             "Canonical ids: work-pool, founder-terminal, cursor, grok, "
-            "cowork, wl-pool (PROCESS.md §5.2).",
+            "cowork, wl-pool (PROTOCOL.md §5.2).",
             file=sys.stderr,
         )
         sys.exit(2)

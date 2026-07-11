@@ -99,7 +99,7 @@ Three ways to read/write tickets, in order of preference:
 
    ```bash
    export WL_BASE_URL=http://localhost:8799   # default if unset
-   export WL_AGENT_ID=you                     # signs comments (PROCESS.md §3.8)
+   export WL_AGENT_ID=you                     # signs comments (PROTOCOL.md §3.8)
 
    wl list --product myproduct --status backlog
    wl show wl-1
@@ -114,7 +114,7 @@ Three ways to read/write tickets, in order of preference:
 3. **Direct HTTP** (for non-Python hosts, or a custom passthrough): see
    [worklane/TRUTH.md](worklane/TRUTH.md#http-surface)
    for the full route list. Every write requires a signed `author` field
-   (PROCESS.md §3.8) — unsigned writes are rejected with a 400.
+   (PROTOCOL.md §3.8) — unsigned writes are rejected with a 400.
 
 ## 6. Write your host's agent docs
 
@@ -124,11 +124,11 @@ verification bar is before closing a ticket. Don't skip this: it's what
 keeps multiple agents from clobbering each other's claims.
 
 Start from [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md), which has
-a fill-in-the-blanks PROCESS.md §6-style profile plus an agent-instructions snippet.
-See PROCESS.md §6 (Host Profiles).
+a fill-in-the-blanks PROTOCOL.md §6-style profile plus an agent-instructions snippet.
+See PROTOCOL.md §6 (Host Profiles).
 
 ## Read next
 
-- [PROCESS.md](PROCESS.md) — the normative ticket lifecycle/ownership
+- [PROTOCOL.md](PROTOCOL.md) — the normative ticket lifecycle/ownership
   rulebook every agent (yours included) follows.
 - [README.md](README.md) — product overview, quickstart, MCP setup.

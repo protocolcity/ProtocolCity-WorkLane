@@ -1,7 +1,7 @@
 # Host profile template
 
-Copy this into your host repo (e.g. as a `PROCESS.md` section or standalone
-`TICKETING.md`) and fill in the blanks. It mirrors the host-profile shape described in [PROCESS.md](PROCESS.md) §6 (Host Profiles). Setup steps live in [INSTALL.md](INSTALL.md); this is the
+Copy this into your host repo (e.g. as a `PROTOCOL.md` section or standalone
+`TICKETING.md`) and fill in the blanks. It mirrors the host-profile shape described in [PROTOCOL.md](PROTOCOL.md) §6 (Host Profiles). Setup steps live in [INSTALL.md](INSTALL.md); this is the
 *process* doc that goes in your host repo once WL is running.
 
 Why this exists: WL enforces signed writes and status transitions, but it
@@ -27,19 +27,19 @@ wl list --product <your-slug> --status backlog
 
 **Agent identity:** every agent lane your host runs needs its own
 canonical id (lowercase kebab-case, no spaces) — register it in a table
-like PROCESS.md §5.2's, one row per lane:
+like PROTOCOL.md §5.2's, one row per lane:
 
 | Agent id | Who |
 | --- | --- |
 | `<your-agent-id>` | `<human description, e.g. "hourly scheduled worker">` |
 
 Every comment's `author` field and every `Owner:` marker must carry this
-id (PROCESS.md §3.8/§5.2) — sign every write, no exceptions.
+id (PROTOCOL.md §3.8/§5.2) — sign every write, no exceptions.
 
 **Working copy:** `<absolute path>` — state whether this is the primary
 checkout or a git worktree, and whether the lane is allowed to create its
 own worktrees. (WL's own lanes default to "primary checkout, no
-worktrees" — see PROCESS.md §6.1's rationale: a stray worktree stranded
+worktrees" — see PROTOCOL.md §6.1's rationale: a stray worktree stranded
 five closed tickets' commits off `main` for ~5 hours.)
 
 **Scan filter:** does this lane pull the full backlog, or only tickets
@@ -61,7 +61,7 @@ only useful if the next agent knows which command to run.
 service? Name the exact command and the health-check to confirm it came
 back up.
 
-**Claim / close-out / ghost-audit:** state that PROCESS.md §2 (agent flow)
+**Claim / close-out / ghost-audit:** state that PROTOCOL.md §2 (agent flow)
 and §5 (intake/closeout, including the §5.1 commit-or-abandon guard) apply
 unchanged, with this lane's `Owner:` id. Ghost-audits are reciprocal — this
 lane audits only its own `Owner:` markers, never another lane's.
@@ -84,11 +84,11 @@ This repo tracks work in WorkLane (WL), a standalone local-first
 ticketing service — not GitHub Issues, not a TODO file. Before touching
 any ticket:
 
-1. Read `<path-to-your-copy-of>/PROCESS.md` (or your host profile section
+1. Read `<path-to-your-copy-of>/PROTOCOL.md` (or your host profile section
    above) — the lifecycle/ownership rulebook every agent follows.
 2. Use `<MCP | the wl CLI | curl>` for every read/write — never open WL's
    SQLite files directly.
-3. Sign every comment with `<your-agent-id>` (PROCESS.md §3.8).
+3. Sign every comment with `<your-agent-id>` (PROTOCOL.md §3.8).
 4. Close tickets with the four-section contract: `Completed:` /
    `Verification:` / `Links:` / `Follow-ups:` — malformed close-outs are
    rejected by the API (or by `wl_close` if you're on MCP).

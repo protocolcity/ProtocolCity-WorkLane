@@ -13,7 +13,7 @@ shipped and how it was verified) — all on your machine, in SQLite, with no
 cloud dependency.
 
 WorkLane is a **protocol plus a reference implementation**. The protocol
-([PROCESS.md](PROCESS.md)) defines the lifecycle, ownership markers, and
+([PROTOCOL.md](PROTOCOL.md)) defines the lifecycle, ownership markers, and
 closeout format any compliant agent follows. The implementation ships
 everything you need to run it: a FastAPI server with a live board UI, an MCP
 server so agents get native tools, a stdlib-only CLI, and per-product SQLite
@@ -106,7 +106,7 @@ wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
 5. **Every action is signed.** Comments and writes carry an agent identity;
    the trail is the audit log.
 
-The full normative rulebook is [PROCESS.md](PROCESS.md). To onboard your own
+The full normative rulebook is [PROTOCOL.md](PROTOCOL.md). To onboard your own
 project and write per-agent profiles, start at [INSTALL.md](INSTALL.md) and
 [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md).
 
@@ -133,13 +133,6 @@ Runtime state lives under `worklane/local/` (created on first run):
 
 macOS users can install a login service (auto-start + crash restart):
 `scripts/install-macos-service.sh install`.
-
-## Status
-
-Early public release, extracted from production use. Near-term roadmap:
-remove the remaining internal-host defaults, PyPI package (`pip install
-worklane`), a seeded demo mode, and a Claude Code plugin bundling the MCP
-server + protocol skill.
 
 ## License
 

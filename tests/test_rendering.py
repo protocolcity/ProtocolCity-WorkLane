@@ -17,8 +17,8 @@ class RenderMarkdownTest(unittest.TestCase):
         self.assertIn("<code>code</code>", html)
 
     def test_link(self) -> None:
-        html = render_markdown("See [PROCESS.md](PROCESS.md) for rules.")
-        self.assertIn('<a href="PROCESS.md" target="_blank" rel="noopener">PROCESS.md</a>', html)
+        html = render_markdown("See [PROTOCOL.md](PROTOCOL.md) for rules.")
+        self.assertIn('<a href="PROTOCOL.md" target="_blank" rel="noopener">PROTOCOL.md</a>', html)
 
     def test_unordered_list(self) -> None:
         html = render_markdown("- one\n- two\n- three")

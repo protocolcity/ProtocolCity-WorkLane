@@ -97,7 +97,7 @@ _HEADING_RE = re.compile(
 _SEO_TICKET_RE = re.compile(r"\bSEO-(\d+)\b", re.IGNORECASE)
 _LOCAL_TICKET_RE = re.compile(r"(?:^|[^A-Za-z0-9_])#(\d+)\b")
 _BLOCKER_KEYWORDS = ("depend", "blocked by", "blockers", "requires")
-# Inline blocker declarations (PROCESS.md: "use `Depends on #NNN`").
+# Inline blocker declarations (PROTOCOL.md: "use `Depends on #NNN`").
 # Only refs immediately following the keyword count — a run of ticket
 # refs separated by commas/"and"/etc., ending at the first non-ref token.
 _REF_TOKEN = r"(?:#\d+|SEO-\d+)\b"
@@ -627,7 +627,7 @@ class SQLiteTracker(ProjectTracker):
             # Ownership marker fallback: if an agent posts Owner/Start/Plan
             # without explicit status claim, reserve the ticket in in_review
             # so it leaves the free pool. Agents promote to in_progress
-            # explicitly when they start coding (see PROCESS.md §2).
+            # explicitly when they start coding (see PROTOCOL.md §2).
             if _OWNER_RE.search(text) and (_PLAN_RE.search(text) or _START_RE.search(text)):
                 conn.execute(
                     "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",

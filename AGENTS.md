@@ -10,8 +10,8 @@ Read this file when:
 
 ## Reading order
 
-0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a product → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROCESS.md §6-style profile. Start here if WL isn't running yet in your host.
-1. **[PROCESS.md](PROCESS.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket work.**
+0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a product → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROTOCOL.md §6-style profile. Start here if WL isn't running yet in your host.
+1. **[PROTOCOL.md](PROTOCOL.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket work.**
 2. **[README.md](README.md)** — product overview, install, launch, host-integration examples.
 
 ## Boundary rules
@@ -21,15 +21,15 @@ Read this file when:
 - **WL is not a SaaS dependency.** Everything is file-backed SQLite on the local machine.
 - **Host products consume WL as a client** — via the CLI, the HTTP API, or an in-tree tracker adapter when the host ships one. WL itself never reaches back into the host.
 
-If a change would cross any of these lines, it needs an ADR in the host repo's `docs/decisions/` (explaining the coupling). Don't silently couple.
+If a change would cross any of these lines, open an issue proposing it first — boundary changes need explicit design sign-off. Don't silently couple.
 
 ## Code conventions
 
 WL ships Python and uses FastAPI. When writing WL code:
 
 - Python 3.9+ is the version floor — use `Optional[X]`, `List[X]`, `Dict[K, V]` from `typing` in signatures and pydantic models; no `X | None` or built-in generics at annotation positions FastAPI evaluates at import time.
-- Keep WL importable without the host. `worklane/*` must not `from core.*` or `from <host>.*`. If you need host-specific behavior, hide it behind a host profile flag (PROCESS.md §6) and keep the default path host-neutral.
-- Follow the lifecycle contract in PROCESS.md §3 when emitting status changes, including the auto-transition guard semantics (`Owner:`, `Completed:`+`Verification:`, `Blocked:`+`Next step:`).
+- Keep WL importable without the host. `worklane/*` must not `from core.*` or `from <host>.*`. If you need host-specific behavior, hide it behind a host profile flag (PROTOCOL.md §6) and keep the default path host-neutral.
+- Follow the lifecycle contract in PROTOCOL.md §3 when emitting status changes, including the auto-transition guard semantics (`Owner:`, `Completed:`+`Verification:`, `Blocked:`+`Next step:`).
 
 ## Host-specific instructions
 

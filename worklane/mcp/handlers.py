@@ -42,7 +42,7 @@ class TPHandlers:
         if not author:
             raise ValueError(
                 "author identity is required at connect time "
-                "(--author / WL_AGENT_ID) — PROCESS.md §3.8"
+                "(--author / WL_AGENT_ID) — PROTOCOL.md §3.8"
             )
         self.author = author
         self.default_product = (
@@ -242,7 +242,7 @@ class TPHandlers:
         priority: int = 3,
         labels: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """File a ticket with signed intake (PROCESS.md §5 / wl-26)."""
+        """File a ticket with signed intake (PROTOCOL.md §5 / wl-26)."""
         title = (title or "").strip()
         description = (description or "").strip()
         if not title:
@@ -250,7 +250,7 @@ class TPHandlers:
         if not description:
             raise ToolError(
                 "description is required — state the problem and expected "
-                "outcome (PROCESS.md §5 intake)"
+                "outcome (PROTOCOL.md §5 intake)"
             )
         prio = int(priority if priority is not None else 3)
         if prio not in (1, 2, 3, 4):
@@ -280,7 +280,7 @@ class TPHandlers:
     ) -> Dict[str, Any]:
         """Atomic reserve+promote to in_progress with a signed Owner marker.
 
-        PROCESS.md §2 splits reserve (→ in_review) from promote (→ in_progress).
+        PROTOCOL.md §2 splits reserve (→ in_review) from promote (→ in_progress).
         MCP claim collapses both: single-ticket agents start work immediately.
         Soft-lock-only reserve remains available via the host CLI status path.
         """
@@ -345,11 +345,11 @@ class TPHandlers:
             if "Verification:" not in body or "Links:" not in body:
                 raise ToolError(
                     "close-out comments must carry literal 'Verification:' and "
-                    "'Links:' sections (PROCESS.md §5) — prefer wl_close"
+                    "'Links:' sections (PROTOCOL.md §5) — prefer wl_close"
                 )
         if first_line.startswith("Blocked") and "Next step:" not in body:
             raise ToolError(
-                "Blocked comments must include a 'Next step:' line (PROCESS.md §5)"
+                "Blocked comments must include a 'Next step:' line (PROTOCOL.md §5)"
             )
 
         slug, raw_id, tr, _task = self._resolve_task(task_id, product)
@@ -602,7 +602,7 @@ class TPHandlers:
     ) -> Dict[str, Any]:
         """Soft-lock a ticket to in_review without promoting to in_progress.
 
-        PROCESS.md §2 step 2/3 — reserve while reading or park siblings in a
+        PROTOCOL.md §2 step 2/3 — reserve while reading or park siblings in a
         bundle. Promote later with ``wl_claim``.
         """
         slug, raw_id, tr, task = self._resolve_task(task_id, product)
@@ -653,7 +653,7 @@ class TPHandlers:
     ) -> Dict[str, Any]:
         """Park a live ticket (in_progress → in_review) for bundle rotate.
 
-        PROCESS.md §2 step 5 — soft-lock the current live ticket so a sibling
+        PROTOCOL.md §2 step 5 — soft-lock the current live ticket so a sibling
         can be promoted via ``wl_claim`` without releasing the parked one
         back to the free pool.
         """
@@ -921,7 +921,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "name": "wl_claim",
             "description": (
                 "Claim a ticket: move to in_progress and post a signed "
-                "Owner marker (PROCESS.md §2/§5)."
+                "Owner marker (PROTOCOL.md §2/§5)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -963,7 +963,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
         {
             "name": "wl_close",
             "description": (
-                "Close a ticket with structured PROCESS.md §5 sections. "
+                "Close a ticket with structured PROTOCOL.md §5 sections. "
                 "Malformed close-outs are rejected by construction."
             ),
             "inputSchema": {
@@ -1099,7 +1099,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "name": "wl_reserve",
             "description": (
                 "Soft-lock a ticket to in_review without starting work "
-                "(PROCESS.md §2 reserve / bundle). Promote later with wl_claim."
+                "(PROTOCOL.md §2 reserve / bundle). Promote later with wl_claim."
             ),
             "inputSchema": {
                 "type": "object",

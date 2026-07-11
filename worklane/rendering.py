@@ -31,11 +31,11 @@ def _esc(s: str) -> str:
 
 # ── Markdown renderer (wl-27) ────────────────────────────────────────────────
 #
-# Dependency-light by design (PROCESS.md's docs surface must not add a pip
+# Dependency-light by design (PROTOCOL.md's docs surface must not add a pip
 # dependency just to render the repo's own truth files) — a small line-based
 # block parser plus a regex inline pass. Not CommonMark-complete: nested list
 # indentation is flattened to one level, no images, no reference-style links.
-# Sized to what PROCESS.md/TRUTH.md/README.md/CLAUDE.md actually use.
+# Sized to what PROTOCOL.md/TRUTH.md/README.md/CLAUDE.md actually use.
 
 _MD_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _MD_HR_RE = re.compile(r"^(-{3,}|\*{3,})\s*$")

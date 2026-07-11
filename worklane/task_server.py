@@ -138,7 +138,7 @@ def _render_tickets_context_strip() -> str:
         '<span id="ts-inflight-badge" class="ts-inflight-badge" hidden '
         'title="Tickets actively in progress or in review."></span>'
         '<span id="ts-stalled-badge" class="ts-stalled-badge" hidden '
-        'title="In-progress/in-review tickets with no update in over 90 minutes (PROCESS.md §4)."></span>'
+        'title="In-progress/in-review tickets with no update in over 90 minutes (PROTOCOL.md §4)."></span>'
         '<span id="ts-last-updated" class="ts-last-updated dim"></span>'
         "</div>"
         "</div></div>"
@@ -278,7 +278,7 @@ def _task_page(
         <span id="ts-inflight-badge" class="ts-inflight-badge" hidden
               title="Tickets actively in progress or in review."></span>
         <span id="ts-stalled-badge" class="ts-stalled-badge" hidden
-              title="In-progress/in-review tickets with no update in over 90 minutes (PROCESS.md §4)."></span>
+              title="In-progress/in-review tickets with no update in over 90 minutes (PROTOCOL.md §4)."></span>
         <span id="ts-last-updated" class="ts-last-updated dim"></span>
 """
         )
@@ -2504,7 +2504,7 @@ def admin_settings() -> str:
     )
 
     identity_html = (
-        "<p>Canonical agent ids (PROCESS.md §5.2): "
+        "<p>Canonical agent ids (PROTOCOL.md §5.2): "
         "<code>work-pool</code> <code>founder-terminal</code> <code>cursor</code> "
         "<code>grok</code> <code>cowork</code> <code>wl-pool</code> — plus system "
         "authors <code>cli-label</code>, <code>cli-update</code>, <code>dependency-guard</code>.</p>"
@@ -2516,7 +2516,7 @@ def admin_settings() -> str:
         "</tbody></table>"
         "<p class='dim'>Toggles for these guards are deliberately not offered — "
         "consistency was the point (2026-07-10). If a host ever needs a relaxed "
-        "profile, that's a PROCESS.md change first.</p>"
+        "profile, that's a PROTOCOL.md change first.</p>"
     )
 
     service_html = (
@@ -2542,10 +2542,10 @@ def admin_settings() -> str:
 
 
 # Docs surface (wl-27): read-only render of the repo's own truth files.
-# PROCESS.md/README.md live at the repo root; TRUTH.md/CLAUDE.md live inside
+# PROTOCOL.md/README.md live at the repo root; TRUTH.md/CLAUDE.md live inside
 # the worklane/ package dir alongside this module.
 _DOCS: List[Tuple[str, str, str]] = [
-    ("process", "PROCESS.md", os.path.join(_ROOT, "PROCESS.md")),
+    ("process", "PROTOCOL.md", os.path.join(_ROOT, "PROTOCOL.md")),
     ("truth", "TRUTH.md", os.path.join(_ROOT, "worklane", "TRUTH.md")),
     ("readme", "README.md", os.path.join(_ROOT, "README.md")),
     ("claude", "CLAUDE.md", os.path.join(_ROOT, "worklane", "CLAUDE.md")),
@@ -2905,7 +2905,7 @@ def task_detail(task_id: str) -> str:
     comment_form = (
         "<div style='display:flex; flex-direction:column; gap:8px;'>"
         "<input id='admin-task-comment-author' required "
-        "placeholder='Author — canonical agent id (PROCESS.md §5.2)' "
+        "placeholder='Author — canonical agent id (PROTOCOL.md §5.2)' "
         "style='width:280px;'/>"
         "<textarea id='admin-task-comment-body' rows='4' "
         "style='width:100%; font-family:var(--font-mono);' "
@@ -2913,7 +2913,7 @@ def task_detail(task_id: str) -> str:
         "<div><button class='btn go' "
         f"onclick='adminTaskComment(\"{_esc(task_id)}\")'>Add comment</button></div>"
         "</div>"
-        # Remember the signer between visits (PROCESS.md §3.8).
+        # Remember the signer between visits (PROTOCOL.md §3.8).
         "<script>(function(){try{var v=localStorage.getItem('wl-comment-author');"
         "var el=document.getElementById('admin-task-comment-author');"
         "if(v&&el&&!el.value)el.value=v;}catch(e){}})();</script>"
@@ -3052,7 +3052,7 @@ async def api_create_task(request: Request) -> JSONResponse:
     if not title:
         return JSONResponse({"ok": False, "error": "title is required"}, status_code=400)
 
-    # PROCESS.md §5 intake + §3.8 identity: tickets are filed by a signed
+    # PROTOCOL.md §5 intake + §3.8 identity: tickets are filed by a signed
     # agent with a real problem statement — not bare titles.
     author = str(payload.get("author") or payload.get("created_by") or "").strip()
     if not author:
@@ -3060,7 +3060,7 @@ async def api_create_task(request: Request) -> JSONResponse:
             {
                 "ok": False,
                 "error": "author is required — sign ticket intake with your "
-                         "canonical agent id (PROCESS.md §3.8/§5.2), e.g. "
+                         "canonical agent id (PROTOCOL.md §3.8/§5.2), e.g. "
                          '"author": "work-pool"',
             },
             status_code=400,
@@ -3071,7 +3071,7 @@ async def api_create_task(request: Request) -> JSONResponse:
             {
                 "ok": False,
                 "error": "description is required — state the problem and the "
-                         "expected outcome (PROCESS.md §5 intake)",
+                         "expected outcome (PROTOCOL.md §5 intake)",
             },
             status_code=400,
         )
@@ -3585,19 +3585,19 @@ async def api_update_labels(task_id: str, request: Request) -> JSONResponse:
 
 _CLOSEOUT_HINT = (
     "close-out comments must carry literal 'Verification:' and 'Links:' "
-    "sections (PROCESS.md §5 — Completed/Verification/Links/Follow-ups)"
+    "sections (PROTOCOL.md §5 — Completed/Verification/Links/Follow-ups)"
 )
 
 
 def _comment_process_violation(body: str, author: str) -> Optional[str]:
-    """PROCESS.md guard: §3.8 signed comments + §5 close-out contract.
+    """PROTOCOL.md guard: §3.8 signed comments + §5 close-out contract.
 
     Returns an error string when the comment must be rejected, else None.
     """
     if not author.strip():
         return (
             "author is required — sign every comment with your canonical "
-            "agent id (PROCESS.md §3.8/§5.2), e.g. --author work-pool"
+            "agent id (PROTOCOL.md §3.8/§5.2), e.g. --author work-pool"
         )
     first_line = next(
         (ln.strip() for ln in body.split("\n") if ln.strip()), ""
@@ -3608,7 +3608,7 @@ def _comment_process_violation(body: str, author: str) -> Optional[str]:
     if first_line.startswith("Blocked") and "Next step:" not in body:
         return (
             "Blocked comments must include a 'Next step:' line "
-            "(PROCESS.md §5)"
+            "(PROTOCOL.md §5)"
         )
     return None
 

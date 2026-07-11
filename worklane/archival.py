@@ -5,7 +5,7 @@ render and pulse scan. This module moves *cold* terminal tickets (done or
 canceled, untouched for N days) out of the hot DB into a sibling
 ``<stem>_archive.db`` that shares the exact same schema.
 
-This is **archival, not deletion** (PROCESS.md §Prohibited-adjacent): the rows
+This is **archival, not deletion** (PROTOCOL.md §Prohibited-adjacent): the rows
 are copied with their internal ``id`` preserved, so comments and relations stay
 consistent and a ticket can be moved back with :func:`restore_archived_tickets`.
 The archive DB is a plain WL store — read it with an ordinary

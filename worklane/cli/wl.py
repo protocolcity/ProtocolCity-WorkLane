@@ -5,7 +5,7 @@ Unlike :mod:`worklane.cli.task` (which imports the tracker and
 reads/writes the SQLite store for day-to-day CRUD), this CLI speaks the
 HTTP API on ``TASK_PORT`` for list/show/comment/status/label. That keeps
 it the thing a *host* vendors for ticket access without a passthrough
-(PROCESS.md §6): stdlib-only for the HTTP surface, composite ids
+(PROTOCOL.md §6): stdlib-only for the HTTP surface, composite ids
 (``t-1095``, ``wl-13``) as the API resolves them.
 
 Export/import (wl-22) are the exception: they are pure store operations
@@ -14,6 +14,7 @@ with no server routes yet, so those two subcommands import
 never call the live HTTP API and import only CREATES rows.
 
 Usage:
+    wl create --title T --description D --product P [--priority N] [--label L ...] [--author A]
     wl list [--status S] [--label L] [--priority N] [--product P] [--limit N] [--json]
     wl show <ID> [--json]
     wl comment <ID> "body..." [--author A] [--stdin]
@@ -24,7 +25,7 @@ Usage:
 
 Base URL:  WL_BASE_URL env var, default http://127.0.0.1:8799
 Product:   --product flag, default WL_PRODUCT env var, else server default
-Signing:   --author flag or WL_AGENT_ID env var (PROCESS.md §3.8) — required
+Signing:   --author flag or WL_AGENT_ID env var (PROTOCOL.md §3.8) — required
            for `comment` (the API rejects unsigned writes with a 400)
 """
 from __future__ import annotations
@@ -96,6 +97,48 @@ def _resolve_author(cli_value: str) -> str:
     return (cli_value or os.environ.get("WL_AGENT_ID") or "").strip()
 
 
+def cmd_create(args: argparse.Namespace) -> None:
+    title = (args.title or "").strip()
+    if not title:
+        print("Error: --title is required", file=sys.stderr)
+        sys.exit(1)
+    description = args.description or ""
+    if not description.strip():
+        print(
+            "Error: --description is required (PROTOCOL.md §5 intake — "
+            "state the problem and expected outcome)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    author = _resolve_author(args.author)
+    if not author:
+        print(
+            "Error: ticket intake must be signed (PROTOCOL.md §3.8). "
+            "Pass --author <agent-id> or set WL_AGENT_ID.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    product = (args.product or "").strip()
+    if not product:
+        print("Error: --product is required (or set WL_PRODUCT)", file=sys.stderr)
+        sys.exit(1)
+
+    body: Dict[str, Any] = {
+        "title": title,
+        "description": description,
+        "author": author,
+        "surface": product,
+    }
+    if args.priority is not None:
+        body["priority"] = args.priority
+    if args.label:
+        body["labels"] = args.label
+
+    payload = _request("POST", "/api/admin/tasks", body=body)
+    task = payload["task"]
+    print(f"Created {task['id']}: {task['title']}")
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     payload = _request(
         "GET",
@@ -154,7 +197,7 @@ def cmd_comment(args: argparse.Namespace) -> None:
     author = _resolve_author(args.author)
     if not author:
         print(
-            "Error: comments must be signed (PROCESS.md §3.8). "
+            "Error: comments must be signed (PROTOCOL.md §3.8). "
             "Pass --author <agent-id> or set WL_AGENT_ID.",
             file=sys.stderr,
         )
@@ -246,6 +289,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
+    p_create = sub.add_parser("create", help="Create a new task (signed intake)")
+    p_create.add_argument("--title")
+    p_create.add_argument("--description", default="")
+    p_create.add_argument(
+        "--product",
+        default=os.environ.get("WL_PRODUCT", ""),
+        help="Ticket surface/product slug (required; or set WL_PRODUCT)",
+    )
+    p_create.add_argument("--priority", type=int, choices=[1, 2, 3, 4])
+    p_create.add_argument("--label", action="append", metavar="LABEL")
+    p_create.add_argument("--author", default="")
+
     p_list = sub.add_parser("list", help="List tasks")
     p_list.add_argument("--status", choices=_STATUS_CHOICES)
     p_list.add_argument("--label")
@@ -300,6 +355,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 _COMMANDS = {
+    "create": cmd_create,
     "list": cmd_list,
     "show": cmd_show,
     "comment": cmd_comment,

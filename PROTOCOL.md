@@ -160,7 +160,7 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
 5. **Docs drift (added 2026-07-10).** If the change altered structural truth —
    entrypoints, HTTP surface, runtime layout, product/store model, process
    rules — the same close-out updates the truth docs (`TRUTH.md`,
-   `PROCESS.md`, `README.md` as applicable) in the same commit, and the
+   `PROTOCOL.md`, `README.md` as applicable) in the same commit, and the
    `Completed:` section names the doc updates (or states "docs: no drift").
    Stale truth files are orphan work with better manners; don't leave them.
 

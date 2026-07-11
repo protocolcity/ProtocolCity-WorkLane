@@ -4,7 +4,7 @@ Covers:
 - discovery of ``<slug>.db`` stores in the runtime data dir,
 - composite task-id namespacing (``t-`` / ``wl-`` / unknown fallback),
 - the Pool surface routing (tab per product, 404 for unknown slugs),
-- PROCESS.md enforcement on the comments API (§3.8 signed comments,
+- PROTOCOL.md enforcement on the comments API (§3.8 signed comments,
   §5 close-out contract).
 """
 
@@ -202,7 +202,7 @@ class SurfaceRoutingTest(unittest.TestCase):
     def test_docs_page_renders_process_md(self) -> None:
         r = self.client.get("/admin/docs/process")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("PROCESS.md", r.text)
+        self.assertIn("PROTOCOL.md", r.text)
         self.assertIn("ts-doc-body", r.text)
 
     def test_docs_page_renders_all_known_docs(self) -> None:
@@ -279,7 +279,7 @@ class SurfaceRoutingTest(unittest.TestCase):
             self.client.get("/admin/tickets/nosuch?view=board").status_code, 404
         )
 
-    # ── PROCESS.md enforcement on comments ──────────────────────────
+    # ── PROTOCOL.md enforcement on comments ──────────────────────────
 
     def _mk_task(self) -> str:
         r = self.client.post("/api/admin/tasks", json={"title": "guard target", "author": "work-pool", "description": "test intake body"})

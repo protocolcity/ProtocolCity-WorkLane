@@ -117,7 +117,7 @@ class TestDependencyFreeze(unittest.TestCase):
         self.assertIsNotNone(child_now)
         # Owner/Start/Plan marker on a backlog ticket reserves it into
         # in_review (it leaves the free pool); the agent promotes to
-        # in_progress explicitly when coding starts (PROCESS.md §2).
+        # in_progress explicitly when coding starts (PROTOCOL.md §2).
         self.assertEqual(parent_now.status, TaskStatus.IN_REVIEW)
         self.assertEqual(child_now.status, TaskStatus.IN_REVIEW)
         self.assertIn("queue:frozen-dependency", child_now.labels)
