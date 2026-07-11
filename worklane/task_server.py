@@ -56,6 +56,7 @@ from worklane.devqueue import (
 from worklane.trackers import Task, TaskComment, TaskStatus, get_default_tracker
 from worklane.products import (
     ProductSpec,
+    default_product_slug,
     discover_products,
     get_product,
     product_tracker,
@@ -102,6 +103,7 @@ from worklane.board import (
     _WORKER_ICONS,
     _WORK_QUEUE_PATH,
     _wq_query_for_view,
+    _wq_column_counts,
     _wq_status_counts,
     ops_tickets_db_path,
 )
@@ -197,7 +199,7 @@ def _ticket_create_surface_from_scope(scope: str) -> str:
     s = (scope or "").strip().lower()
     if s and get_product(s) is not None:
         return s
-    return "tradeos"
+    return default_product_slug()
 
 
 def _tickets_shell_kwargs(
@@ -248,7 +250,7 @@ def _task_page(
     tickets_status: str = "",
     tickets_label: str = "",
     tickets_priority: Optional[int] = None,
-    tickets_create_surface: str = "tradeos",
+    tickets_create_surface: str = "",
 ) -> str:
     """Render the Ticketing shell for the Pool (work queue) app."""
     _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
@@ -2742,6 +2744,16 @@ def _tickets_app_html(
     )
 
     wq_notif = _render_tickets_context_strip()
+    # Fetched once: chips count the whole scope; column headers count the
+    # scope narrowed to the active filters (wl-47) — the capped page fetch
+    # must not masquerade as either.
+    merged_scope = _merged_scope_tasks_for_filters(prod)
+    column_counts = _wq_column_counts(
+        merged_scope,
+        status=st,
+        label=label or None,
+        priority=prio_int,
+    )
     # One command bar (wl-36): counts + jump + filters toggle + view toggle.
     # The old "Scope & filters" card, standalone jump row, and page-tools band
     # are gone — the count chips ARE the scope UI.
@@ -2752,7 +2764,7 @@ def _tickets_app_html(
         label=label,
         priority=prio_int,
         product=prod,
-        merged_scope_tasks=_merged_scope_tasks_for_filters(prod),
+        merged_scope_tasks=merged_scope,
         view_toggle_html=_render_view_toggle(
             view_norm,
             status,
@@ -2789,7 +2801,7 @@ def _tickets_app_html(
             + _OPS_WORKSPACE_OPEN
             + poll_inject
             + command_bar
-            + _render_task_board(tasks, previews)
+            + _render_task_board(tasks, previews, column_counts)
             + _OPS_WORKSPACE_CLOSE
             + _OPS_READING_SHEET_CLOSE
             + dispatch_hygiene
@@ -3114,7 +3126,7 @@ async def api_create_task(request: Request) -> JSONResponse:
         except Exception:
             pass
 
-    surface = (payload.get("ticket_surface") or payload.get("surface") or "tradeos")
+    surface = (payload.get("ticket_surface") or payload.get("surface") or default_product_slug())
     surface = str(surface).strip().lower()
     if surface in ("ops", "op"):
         tracker = get_ops_ticket_tracker()
@@ -3730,6 +3742,14 @@ def api_list_tasks(
     scope_tasks = list_tasks_for_scope_multi(products, prod, limit=None)
     scope_counts = _wq_status_counts(scope_tasks)
     scope_total = sum(scope_counts.get(s, 0) for s in TaskStatus.ALL)
+    # wl-47: board column headers show the filtered-scope truth, not the
+    # capped fetch; chips keep the unfiltered scope_counts.
+    column_counts = _wq_column_counts(
+        scope_tasks,
+        status=status or None,
+        label=label or None,
+        priority=prio_int,
+    )
 
     return JSONResponse(
         {
@@ -3738,6 +3758,7 @@ def api_list_tasks(
             "tasks": task_dicts,
             "scope_counts": scope_counts,
             "scope_total": scope_total,
+            "column_counts": column_counts,
         }
     )
 
@@ -4405,14 +4426,16 @@ def _task_server_extra_js() -> str:
   /* After every board rebuild, inject elapsed time badges, animate
      cards that changed columns, and refresh the activity feed. */
   var _origAdminBoardRebuild = (typeof adminBoardRebuild === 'function') ? adminBoardRebuild : null;
-  adminBoardRebuild = function(tasks) {
+  adminBoardRebuild = function(tasks, columnCounts) {
     /* Snapshot current statuses before rebuild */
     var newStatuses = {};
     for (var i = 0; i < tasks.length; i++) {
       newStatuses[tasks[i].id] = tasks[i].status;
     }
 
-    if (_origAdminBoardRebuild) _origAdminBoardRebuild(tasks);
+    /* Forward every arg — the wrapped fn takes (tasks, columnCounts) and
+       dropping the counts clobbers the wl-47 header totals. */
+    if (_origAdminBoardRebuild) _origAdminBoardRebuild(tasks, columnCounts);
 
     /* Animate cards that moved columns */
     for (var tid in newStatuses) {

@@ -9,8 +9,8 @@ discovered product plus a merged read-only "All" view. Dropping a new
 
 Composite task ids namespace tickets across stores in merged views:
 ``<prefix>-<rowid>`` (e.g. ``t-1095`` for tradeos, ``wl-3`` for
-worklane). Bare numeric ids resolve to tradeos for backward
-compatibility.
+worklane). Bare numeric ids resolve to the configured default
+product (see :func:`default_product_slug`) for backward compatibility.
 """
 
 from __future__ import annotations
@@ -34,11 +34,6 @@ _KNOWN_PRODUCT_META: Dict[str, Tuple[str, str]] = {
 # retired Ops Cockpit store (empty; surface removed from the UI).
 _IGNORED_DB_STEMS = {"ops_tickets"}
 
-# tradeos honors env overrides handled inside SQLiteTracker (WORKLANE_DB
-# / TRADEOS_TRACKER_DB + legacy path fallbacks), so its spec is always present
-# even before the DB file exists on disk.
-_ALWAYS_PRESENT = ("tradeos",)
-
 
 @dataclass(frozen=True)
 class ProductSpec:
@@ -59,27 +54,62 @@ def wl_data_dir() -> Path:
 def products_config_path() -> Path:
     """Operator overlay for product metadata: ``local/config/products.json``.
 
-    Shape: ``{"<slug>": {"display": "...", "prefix": "..."}}``. Entries win
-    over the shipped ``_KNOWN_PRODUCT_META`` defaults; absent keys fall
-    through. Surfaced (and eventually edited) via /admin/settings.
+    Shape: ``{"<slug>": {"display": "...", "prefix": "..."}, "default": "<slug>"}``.
+    Per-slug entries win over the shipped ``_KNOWN_PRODUCT_META`` defaults;
+    absent keys fall through. The top-level ``"default"`` string key is the
+    host's bootstrap-default product (see :func:`default_product_slug`).
+    Surfaced (and eventually edited) via /admin/settings.
     """
     return wl_data_dir().parent / "config" / "products.json"
 
 
-def _config_overrides() -> Dict[str, Dict[str, str]]:
+def _raw_products_config() -> Dict[str, Any]:
     cfg = products_config_path()
     try:
         if cfg.exists():
             raw = json.loads(cfg.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
-                return {
-                    str(k).strip().lower(): v
-                    for k, v in raw.items()
-                    if isinstance(v, dict)
-                }
+                return raw
     except Exception:
         pass  # malformed overlay never takes the board down
     return {}
+
+
+def _config_overrides() -> Dict[str, Dict[str, str]]:
+    return {
+        str(k).strip().lower(): v
+        for k, v in _raw_products_config().items()
+        if isinstance(v, dict)
+    }
+
+
+def default_product_slug() -> str:
+    """Resolve the host's bootstrap-default product slug — no code literal.
+
+    Order: ``WL_DEFAULT_PRODUCT`` env, ``WL_PRODUCT`` env (the existing
+    client-scoping convention, reused here for the server's own bootstrap),
+    the ``"default"`` key in the ``products.json`` config overlay, then the
+    first product discovered on disk. Empty only on a fresh install with
+    nothing configured and nothing on disk yet — callers treat that as "no
+    default product" rather than substituting a literal.
+    """
+    for var in ("WL_DEFAULT_PRODUCT", "WL_PRODUCT"):
+        val = (os.environ.get(var) or "").strip().lower()
+        if val:
+            return val
+    configured = _raw_products_config().get("default")
+    if isinstance(configured, str) and configured.strip():
+        return configured.strip().lower()
+    data = wl_data_dir()
+    if data.is_dir():
+        found = sorted(
+            p.stem.strip().lower()
+            for p in data.glob("*.db")
+            if p.stem.strip() and p.stem.strip().lower() not in _IGNORED_DB_STEMS
+        )
+        if found:
+            return found[0]
+    return ""
 
 
 def register_product_meta(
@@ -88,20 +118,21 @@ def register_product_meta(
     """Persist a display/prefix override for ``slug`` into the config overlay.
 
     Merges into the existing ``local/config/products.json`` (creating it if
-    absent) rather than replacing it, so unrelated overrides survive.
+    absent) rather than replacing it, so unrelated overrides — including the
+    top-level ``"default"`` key — survive.
     """
     cfg = products_config_path()
-    overrides = _config_overrides()
-    entry = dict(overrides.get(slug) or {})
+    raw = _raw_products_config()
+    entry = dict(raw.get(slug) or {}) if isinstance(raw.get(slug), dict) else {}
     if display:
         entry["display"] = display
     if prefix:
         entry["prefix"] = prefix
     if not entry:
         return
-    overrides[slug] = entry
+    raw[slug] = entry
     cfg.parent.mkdir(parents=True, exist_ok=True)
-    cfg.write_text(json.dumps(overrides, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    cfg.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _spec_for_slug(slug: str, db_path: Path) -> ProductSpec:
@@ -117,22 +148,27 @@ def _spec_for_slug(slug: str, db_path: Path) -> ProductSpec:
 def discover_products() -> List[ProductSpec]:
     """Product specs for every ticket store in the data dir.
 
-    Ordering: tradeos first (primary host), then alphabetical. Fresh from
-    disk on every call — the server picks up a newly installed product DB
-    without a restart.
+    Ordering: the configured default product first (see
+    :func:`default_product_slug`), then alphabetical. Fresh from disk on
+    every call — the server picks up a newly installed product DB without
+    a restart. The default's spec is present even before its DB file
+    exists on disk (its tracker honors env path overrides, e.g. tradeOS's
+    ``WORKLANE_DB`` / ``TRADEOS_TRACKER_DB``).
     """
+    default = default_product_slug()
     data = wl_data_dir()
     slugs: Dict[str, Path] = {}
-    for name in _ALWAYS_PRESENT:
-        slugs[name] = data / f"{name}.db"
+    if default:
+        slugs[default] = data / f"{default}.db"
     if data.is_dir():
         for p in sorted(data.glob("*.db")):
             stem = p.stem.strip().lower()
             if not stem or stem in _IGNORED_DB_STEMS:
                 continue
             slugs.setdefault(stem, p)
-    ordered = [s for s in _ALWAYS_PRESENT if s in slugs] + sorted(
-        s for s in slugs if s not in _ALWAYS_PRESENT
+    always_present = (default,) if default else ()
+    ordered = [s for s in always_present if s in slugs] + sorted(
+        s for s in slugs if s not in always_present
     )
     specs: List[ProductSpec] = []
     taken_prefixes = {"o"}  # reserved: legacy ops store ids
@@ -165,9 +201,11 @@ def product_slugs() -> List[str]:
 def product_tracker(spec_or_slug: Any) -> Any:
     """Fresh tracker bound to the product's store.
 
-    tradeos goes through :func:`get_default_tracker` so the
-    ``TRADEOS_TRACKER`` adapter selection and DB-path env overrides keep
-    working; every other product binds SQLite directly to its file.
+    The configured default product (see :func:`default_product_slug`) goes
+    through :func:`get_default_tracker` so its adapter selection and
+    DB-path env overrides (host-specific, e.g. tradeOS's ``TRADEOS_TRACKER``
+    / ``TRADEOS_TRACKER_DB``) keep working; every other product binds
+    SQLite directly to its file.
     """
     from worklane.trackers import get_default_tracker
     from worklane.trackers.sqlite import SQLiteTracker
@@ -177,7 +215,7 @@ def product_tracker(spec_or_slug: Any) -> Any:
         if isinstance(spec_or_slug, ProductSpec)
         else get_product(str(spec_or_slug))
     )
-    if spec is None or spec.slug == "tradeos":
+    if spec is None or spec.slug == default_product_slug():
         return get_default_tracker()
     return SQLiteTracker(
         db_path=spec.db_path,
@@ -197,10 +235,11 @@ def prefixed_task_id(slug: str, raw_id: Any) -> str:
 
 
 def split_task_id(task_id: str) -> Tuple[str, str]:
-    """``"wl-3"`` → ``("worklane", "3")``; bare ids → tradeos.
+    """``"wl-3"`` → ``("worklane", "3")``; bare ids → the default product.
 
-    Unknown prefixes fall back to tradeos with the id untouched, matching
-    the legacy behavior of ``parse_surface_task_id``.
+    Unknown prefixes fall back to the configured default product (see
+    :func:`default_product_slug`) with the id untouched, matching the
+    legacy behavior of ``parse_surface_task_id``.
     """
     s = str(task_id or "").strip()
     if "-" in s:
@@ -211,4 +250,4 @@ def split_task_id(task_id: str) -> Tuple[str, str]:
             for spec in discover_products():
                 if spec.prefix == prefix:
                     return spec.slug, rest
-    return "tradeos", s
+    return default_product_slug(), s

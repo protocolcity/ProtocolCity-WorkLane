@@ -448,6 +448,32 @@ def _wq_status_counts(tasks: List[Task]) -> Dict[str, int]:
     return counts
 
 
+def _wq_column_counts(
+    scope_tasks: List[Task],
+    *,
+    status: Optional[str] = None,
+    label: Optional[str] = None,
+    priority: Optional[int] = None,
+) -> Dict[str, int]:
+    """Per-status counts of the *filtered* scope — what each board column
+    would hold if the page fetch were uncapped. Must mirror the
+    list_tasks_for_wq filter semantics (exact label membership, priority
+    equality) or headers drift from the cards under active filters."""
+    counts: Dict[str, int] = {s: 0 for s in TaskStatus.ALL}
+    st = (status or "").strip()
+    lb = (label or "").strip()
+    for t in scope_tasks:
+        if st and t.status != st:
+            continue
+        if lb and lb not in (t.labels or []):
+            continue
+        if priority is not None and t.priority != priority:
+            continue
+        if t.status in counts:
+            counts[t.status] += 1
+    return counts
+
+
 def _render_wq_quick_buckets(
     *,
     list_path: str,
@@ -878,6 +904,7 @@ def _render_column_body(
 def _render_task_board(
     tasks: List[Task],
     previews: Dict[str, Dict[str, str]],
+    column_counts: Optional[Dict[str, int]] = None,
 ) -> str:
     grouped: Dict[str, List[Task]] = {col: [] for col in _BOARD_COLUMNS}
     for t in tasks:
@@ -898,6 +925,16 @@ def _render_task_board(
         # header and the rail label are always in the DOM; CSS shows one
         # based on .tb-col--rail, so the JS poll only toggles the class.
         rail_cls = " tb-col--rail" if not col_tasks else ""
+        # Header count is the true scope count (wl-47) — the page fetch is
+        # capped, so len(col_tasks) may be only the most-recent slice. The
+        # cap-note span is always in the DOM so the poll can toggle it.
+        shown = len(col_tasks)
+        scope_n = shown
+        if column_counts:
+            scope_n = max(shown, int(column_counts.get(col_status, 0) or 0))
+        truncated = shown > 0 and scope_n > shown
+        note_hidden = "" if truncated else " hidden"
+        note_text = f"most recent {shown} shown" if truncated else ""
         cols_html_parts.append(
             f"<section class='tb-col{rail_cls}'"
             f" data-status='{_esc(col_status)}'"
@@ -906,11 +943,13 @@ def _render_task_board(
             f" ondrop='adminBoardDrop(event)'>"
             "<header class='tb-col-head'>"
             f"<h3>{_esc(label)}</h3>"
-            f"<span class='tb-col-count' data-count>{len(col_tasks)}</span>"
+            f"<span class='tb-col-cap-note' data-cap-note{note_hidden}>"
+            f"{_esc(note_text)}</span>"
+            f"<span class='tb-col-count' data-count>{scope_n}</span>"
             "</header>"
             "<div class='tb-rail-label' aria-hidden='true'>"
             f"<span class='tb-rail-name'>{_esc(label)}</span>"
-            f"<span class='tb-rail-count' data-count>{len(col_tasks)}</span>"
+            f"<span class='tb-rail-count' data-count>{scope_n}</span>"
             "</div>"
             f"<div class='tb-col-body'>{body_html}</div>"
             "</section>"
@@ -1004,6 +1043,10 @@ def _board_styles() -> str:
 .tb-col-count { font-size:10px; color:var(--dim);
                 border:1px solid var(--border); border-radius:999px;
                 padding:0 8px; font-variant-numeric:tabular-nums; }
+.tb-col-cap-note { font-size:10px; color:var(--dim); font-style:italic;
+                   margin-left:auto; padding-right:8px; white-space:nowrap;
+                   font-variant-numeric:tabular-nums; }
+.tb-col-cap-note[hidden] { display:none; }
 .tb-col-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 6px 6px; }
 .tb-col-body > * + * { margin-top:6px; }
 .tb-col-empty { padding:10px 0; font-size:var(--fs-xs); text-align:center; }
@@ -1402,7 +1445,7 @@ def _client_js() -> str:
     bar.innerHTML = parts.join(' &middot; ');
   }
 
-  function adminBoardRebuild(tasks) {
+  function adminBoardRebuild(tasks, columnCounts) {
     adminActivityStripRebuild(tasks);
     adminSummaryRebuild(tasks);
     var board = document.getElementById('admin-task-board');
@@ -1424,8 +1467,22 @@ def _client_js() -> str:
         });
       }
       var body = col.querySelector('.tb-col-body');
+      // wl-47: header shows the true (uncapped) scope count for the current
+      // filters; the cap note says how much of it the capped fetch holds.
+      var scopeN = list.length;
+      if (columnCounts && typeof columnCounts === 'object') {
+        var n = Number(columnCounts[status] || 0);
+        if (isFinite(n) && n > scopeN) scopeN = n;
+      }
       var countEls = col.querySelectorAll('[data-count]');
-      countEls.forEach(function(el) { el.textContent = String(list.length); });
+      countEls.forEach(function(el) { el.textContent = String(scopeN); });
+      var capNote = col.querySelector('[data-cap-note]');
+      if (capNote) {
+        var truncated = list.length > 0 && scopeN > list.length;
+        capNote.hidden = !truncated;
+        capNote.textContent = truncated
+          ? 'most recent ' + list.length + ' shown' : '';
+      }
       // Empty columns collapse to rails (wl-36); a rail inflating back into
       // a column is itself the signal that work entered that state.
       col.classList.toggle('tb-col--rail', !list.length);
@@ -1526,7 +1583,7 @@ def _client_js() -> str:
       });
       var j = await resp.json();
       if (!j || !j.ok) return;
-      adminBoardRebuild(j.tasks || []);
+      adminBoardRebuild(j.tasks || [], j.column_counts || null);
       adminBoardUpdateFilterBuckets(j.scope_counts || {}, j.scope_total);
     } catch (e) {
       /* Silent — a transient 500 or network blip shouldn't nuke the UI. */

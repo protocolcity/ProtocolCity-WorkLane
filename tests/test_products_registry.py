@@ -23,12 +23,19 @@ from worklane.trackers.sqlite import SQLiteTracker
 
 
 def _make_env(tmp: Path) -> None:
-    """Point the registry + default tracker at an isolated runtime dir."""
+    """Point the registry + default tracker at an isolated runtime dir.
+
+    Sets ``WL_DEFAULT_PRODUCT`` explicitly — the registry no longer
+    hardcodes a default product slug (wl-43), so tests configure the
+    tradeos host profile the same way a real host would.
+    """
     (tmp / "data").mkdir(parents=True, exist_ok=True)
     os.environ["WORKLANE_RUNTIME_DIR"] = str(tmp)
     os.environ["WORKLANE_DB"] = str(tmp / "data" / "tradeos.db")
     os.environ.pop("TRADEOS_TRACKER_DB", None)
     os.environ["TRADEOS_TICKETS_SOURCE"] = "sqlite"
+    os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+    os.environ.pop("WL_PRODUCT", None)
 
 
 class ProductRegistryTest(unittest.TestCase):
@@ -42,6 +49,8 @@ class ProductRegistryTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PRODUCT",
+                "WL_PRODUCT",
             )
         }
         _make_env(self.root)
@@ -124,6 +133,16 @@ class ProductRegistryTest(unittest.TestCase):
         assert spec is not None
         self.assertEqual((spec.display, spec.prefix), ("My App", "ma"))
 
+    def test_register_product_meta_preserves_default_key(self) -> None:
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ.pop("WL_PRODUCT", None)
+        self._seed("myapp", "hello")
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"default": "worklane"}')
+        products.register_product_meta("myapp", display="My App")
+        self.assertEqual(products.default_product_slug(), "worklane")
+
     def test_split_task_id(self) -> None:
         self._seed("worklane", "WL ticket")
         self.assertEqual(products.split_task_id("t-12"), ("tradeos", "12"))
@@ -134,6 +153,40 @@ class ProductRegistryTest(unittest.TestCase):
         self.assertEqual(products.split_task_id("o-9"), ("ops", "9"))
         # unknown prefix falls back to tradeos, id untouched
         self.assertEqual(products.split_task_id("zz-9"), ("tradeos", "zz-9"))
+
+    # ── default product resolution (wl-43) ──────────────────────────
+
+    def test_default_product_slug_env_wins_over_config(self) -> None:
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"default": "worklane"}')
+        os.environ["WL_DEFAULT_PRODUCT"] = "myapp"
+        self.assertEqual(products.default_product_slug(), "myapp")
+
+    def test_default_product_slug_falls_back_to_config_overlay(self) -> None:
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ.pop("WL_PRODUCT", None)
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"default": "worklane"}')
+        self.assertEqual(products.default_product_slug(), "worklane")
+        # and it actually drives discovery/ordering, not just the getter
+        self._seed("worklane", "WL ticket")
+        slugs = [s.slug for s in products.discover_products()]
+        self.assertEqual(slugs[0], "worklane")
+
+    def test_default_product_slug_falls_back_to_first_discovered(self) -> None:
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ.pop("WL_PRODUCT", None)
+        self._seed("myapp", "hello")
+        self.assertEqual(products.default_product_slug(), "myapp")
+
+    def test_default_product_slug_empty_on_fresh_install(self) -> None:
+        os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ.pop("WL_PRODUCT", None)
+        self.assertEqual(products.default_product_slug(), "")
+        self.assertEqual(products.discover_products(), [])
+        self.assertEqual(products.split_task_id("12"), ("", "12"))
 
 
 class SurfaceRoutingTest(unittest.TestCase):
@@ -147,6 +200,8 @@ class SurfaceRoutingTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PRODUCT",
+                "WL_PRODUCT",
             )
         }
         _make_env(self.root)
