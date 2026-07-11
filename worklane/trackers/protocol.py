@@ -1,0 +1,110 @@
+"""ProjectTracker Protocol and shared value types (SEO-164).
+
+Any module that wants to read or write work items talks to this interface,
+never directly to Linear, SQLite, or any other backing store. Two concrete
+adapters live alongside: :mod:`worklane.trackers.sqlite` (default) and
+:mod:`worklane.trackers.linear` (optional bridge).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+
+
+# Canonical status vocabulary used across adapters. Adapters are free to
+# map these to their own internal vocab — Linear uses "Backlog / In
+# Progress / In Review / Done / Canceled"; SQLiteTracker stores the raw
+# string below in the ``status`` column.
+class TaskStatus:
+    BACKLOG = "backlog"
+    IN_PROGRESS = "in_progress"
+    IN_REVIEW = "in_review"
+    DONE = "done"
+    CANCELED = "canceled"
+
+    ALL = (BACKLOG, IN_PROGRESS, IN_REVIEW, DONE, CANCELED)
+
+
+@dataclass
+class TaskComment:
+    id: Optional[str]
+    task_id: str
+    body: str
+    author: str = ""
+    created_at: str = ""
+
+
+@dataclass
+class Task:
+    """Shared task shape — one row per work item across all adapters.
+
+    ``id`` is the adapter's internal identifier (integer PK stringified
+    for SQLiteTracker, Linear's ``SEO-171`` identifier for LinearTracker).
+    ``ext_id`` is an optional cross-system reference — e.g. SQLiteTracker
+    stores the original Linear identifier here after the migration script
+    imports it, so cross-references in old doc links keep resolving.
+    """
+
+    id: str
+    title: str
+    description: str = ""
+    status: str = TaskStatus.BACKLOG
+    priority: int = 3  # 1=urgent, 2=high, 3=normal, 4=low (matches Linear)
+    labels: List[str] = field(default_factory=list)
+    ext_id: Optional[str] = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "ext_id": self.ext_id,
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "priority": self.priority,
+            "labels": list(self.labels),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@runtime_checkable
+class ProjectTracker(Protocol):
+    """Interface every tracker adapter implements.
+
+    Methods are deliberately synchronous — tracker calls happen from
+    request handlers and CLI scripts, and both adapters are either local
+    SQLite (no network) or MCP-fronted (caller decides async boundary).
+    """
+
+    name: str
+
+    def list_tasks(
+        self,
+        *,
+        status: Optional[str] = None,
+        label: Optional[str] = None,
+        priority: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[Task]: ...
+
+    def get_task(self, task_id: str) -> Optional[Task]: ...
+
+    def create_task(
+        self,
+        *,
+        title: str,
+        description: str = "",
+        status: str = TaskStatus.BACKLOG,
+        priority: int = 3,
+        labels: Optional[List[str]] = None,
+        ext_id: Optional[str] = None,
+    ) -> Task: ...
+
+    def update_status(self, task_id: str, status: str) -> Optional[Task]: ...
+
+    def add_comment(self, task_id: str, body: str, author: str = "") -> TaskComment: ...
+
+    def list_comments(self, task_id: str) -> List[TaskComment]: ...

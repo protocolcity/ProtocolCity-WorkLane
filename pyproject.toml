@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worklane"
+version = "0.1.0"
+description = "Local-first ticketing backend — standalone FastAPI service with SQLite storage"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.95",
+    "uvicorn[standard]>=0.20",
+]
+
+[project.scripts]
+worklane = "worklane.server:main"
+worklane-mcp = "worklane.mcp.server:main"
+wl = "worklane.cli.wl:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["worklane*"]
+
+[tool.setuptools.package-data]
+worklane = ["py.typed"]
