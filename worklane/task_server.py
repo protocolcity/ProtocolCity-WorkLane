@@ -2513,8 +2513,8 @@ def _product_next_id(spec: ProductSpec, tracker: Any) -> str:
 def admin_settings() -> str:
     """Configuration truth: products/prefixes/numbering, identity, service.
 
-    Phase 1 is read-only — it shows where every knob lives and its current
-    value. Editing (rename display, set prefix, add product) is wl-17.
+    Rename/set-prefix and add-product (wl-17) post to
+    ``/api/admin/products[/{slug}]`` and reload on success.
     """
     from worklane.products import products_config_path, wl_data_dir
 
@@ -2528,24 +2528,44 @@ def admin_settings() -> str:
             [t for t in tasks if t.status not in (TaskStatus.DONE, TaskStatus.CANCELED)]
         )
         db = getattr(tracker, "_db_path", None) or spec.db_path
+        slug_attr = _esc(spec.slug)
         rows.append(
             "<tr>"
             f"<td><code>{_esc(spec.slug)}</code></td>"
-            f"<td>{_esc(spec.display)}</td>"
-            f"<td><code>{_esc(spec.prefix)}-</code></td>"
+            f"<td><input class='ts-settings-input' type='text' "
+            f"id='ts-prod-display-{slug_attr}' value='{_esc(spec.display)}' "
+            f"maxlength='80' /></td>"
+            f"<td><input class='ts-settings-input ts-settings-input--narrow' "
+            f"type='text' id='ts-prod-prefix-{slug_attr}' value='{_esc(spec.prefix)}' "
+            f"maxlength='8' /></td>"
             f"<td class='dim'>{_esc(str(db))}</td>"
             f"<td><code>{_esc(spec.prefix)}-{_esc(_product_next_id(spec, tracker))}</code></td>"
             f"<td>{open_n} open · {len(tasks)} total</td>"
+            f"<td><button class='btn btn-sm go' type='button' "
+            f"onclick=\"tsSettingsSaveProduct('{slug_attr}')\">Save</button></td>"
             "</tr>"
         )
     overlay_example = (
         '{"&lt;slug&gt;": {"display": "…", "prefix": "…"}}'
     )
+    add_product_html = (
+        "<div class='ts-settings-add-row'>"
+        "<input class='ts-settings-input' type='text' id='ts-new-prod-slug' "
+        "placeholder='slug (e.g. myapp)' maxlength='40' />"
+        "<input class='ts-settings-input' type='text' id='ts-new-prod-display' "
+        "placeholder='Display name (optional)' maxlength='80' />"
+        "<input class='ts-settings-input ts-settings-input--narrow' type='text' "
+        "id='ts-new-prod-prefix' placeholder='prefix (optional)' maxlength='8' />"
+        "<button class='btn btn-sm go' type='button' "
+        "onclick='tsSettingsAddProduct()'>Add product</button>"
+        "</div>"
+    )
     products_html = (
         "<table class='tos-table'>"
         "<thead><tr><th>Slug</th><th>Display</th><th>Id prefix</th>"
-        "<th>Store</th><th>Next id</th><th>Tickets</th></tr></thead>"
+        "<th>Store</th><th>Next id</th><th>Tickets</th><th></th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
+        f"{add_product_html}"
         "<p class='dim' style='margin-top:8px;'>Numbering is per store (SQLite "
         "AUTOINCREMENT) — products count independently; the prefix keeps merged "
         "views collision-free. Display names and prefixes: shipped defaults in "
@@ -2554,8 +2574,9 @@ def admin_settings() -> str:
         f"({'present' if cfg_exists else 'not created yet'}) as "
         f"<code>{overlay_example}</code>. "
         "Prefix changes only affect how ids render — stored rows never rewrite. "
-        "New products: drop a <code>&lt;slug&gt;.db</code> in the data dir "
-        "(first-class bootstrap is wl-12).</p>"
+        "Settings knobs beyond products (board poll interval, done-column cap, "
+        "accent color, stall thresholds, done-ticket archival) are tracked as "
+        "follow-ups, not covered here.</p>"
     )
 
     identity_html = (
@@ -2585,6 +2606,54 @@ def admin_settings() -> str:
         "</tbody></table>"
     )
 
+    settings_js = """
+<script>
+  async function tsSettingsSaveProduct(slug) {
+    var dEl = document.getElementById('ts-prod-display-' + slug);
+    var pEl = document.getElementById('ts-prod-prefix-' + slug);
+    var payload = {};
+    if (dEl) payload.display = dEl.value;
+    if (pEl) payload.prefix = pEl.value;
+    try {
+      var resp = await fetch('/api/admin/products/' + encodeURIComponent(slug), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var j = await resp.json();
+      if (!j.ok) { showToast('Save failed: ' + (j.error || resp.status), 'error'); return; }
+      showToast('Saved ' + slug, 'success');
+      setTimeout(function() { window.location.reload(); }, 600);
+    } catch (e) {
+      showToast('Network error', 'error');
+    }
+  }
+
+  async function tsSettingsAddProduct() {
+    var slugEl = document.getElementById('ts-new-prod-slug');
+    var dEl = document.getElementById('ts-new-prod-display');
+    var pEl = document.getElementById('ts-new-prod-prefix');
+    var slug = (slugEl && slugEl.value || '').trim();
+    if (!slug) { showToast('Slug is required', 'error'); return; }
+    var payload = { slug: slug };
+    if (dEl && dEl.value) payload.display = dEl.value;
+    if (pEl && pEl.value) payload.prefix = pEl.value;
+    try {
+      var resp = await fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var j = await resp.json();
+      if (!j.ok) { showToast('Add failed: ' + (j.error || resp.status), 'error'); return; }
+      showToast('Added ' + slug, 'success');
+      setTimeout(function() { window.location.reload(); }, 600);
+    } catch (e) {
+      showToast('Network error', 'error');
+    }
+  }
+</script>
+"""
     body = (
         "<div class='ts-ops-page'>"
         + _task_card("Products · stores · numbering", products_html)
@@ -2592,6 +2661,7 @@ def admin_settings() -> str:
         + _task_card("Service", service_html)
         + "</div>"
         + _task_server_extra_css()
+        + settings_js
     )
     return _task_page("Settings", body, nav_active="settings")
 
@@ -3103,6 +3173,78 @@ async def api_create_product(request: Request) -> JSONResponse:
                 "display": spec.display,
                 "prefix": spec.prefix,
                 "db_path": str(spec.db_path),
+            },
+        }
+    )
+
+
+@router.patch("/api/admin/products/{slug}")
+async def api_update_product(slug: str, request: Request) -> JSONResponse:
+    """Rename a product's display name / id prefix (wl-17): writes the
+    ``local/config/products.json`` overlay via :func:`register_product_meta`.
+    Editing only — the store itself is untouched, and ids already stored
+    with the old prefix keep rendering under the new one (composite ids are
+    computed at render time, never rewritten).
+    """
+    import re
+
+    spec = get_product(slug)
+    if spec is None:
+        return JSONResponse({"ok": False, "error": f"unknown product {slug!r}"}, status_code=404)
+
+    try:
+        payload: Dict[str, Any] = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body"}, status_code=400)
+
+    display = payload.get("display")
+    display = str(display).strip() if display is not None else None
+    prefix = payload.get("prefix")
+    prefix = str(prefix).strip().lower() if prefix is not None else None
+
+    if display is None and prefix is None:
+        return JSONResponse(
+            {"ok": False, "error": "at least one of display/prefix is required"},
+            status_code=400,
+        )
+    if display is not None and not display:
+        return JSONResponse({"ok": False, "error": "display cannot be blank"}, status_code=400)
+    if prefix is not None:
+        if not re.match(r"^[a-z][a-z0-9]{0,7}$", prefix):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "prefix must be 1-8 lowercase letters/digits, starting with a letter",
+                },
+                status_code=400,
+            )
+        if prefix == "o":
+            return JSONResponse(
+                {"ok": False, "error": "prefix 'o' is reserved (legacy ops store)"},
+                status_code=400,
+            )
+        taken = {s.prefix for s in discover_products() if s.slug != slug}
+        if prefix in taken:
+            return JSONResponse(
+                {"ok": False, "error": f"prefix {prefix!r} is already used by another product"},
+                status_code=400,
+            )
+
+    register_product_meta(slug, display=display, prefix=prefix)
+    updated = get_product(slug)
+    if updated is None:
+        return JSONResponse(
+            {"ok": False, "error": "product updated but no longer discoverable"},
+            status_code=500,
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "product": {
+                "slug": updated.slug,
+                "display": updated.display,
+                "prefix": updated.prefix,
+                "db_path": str(updated.db_path),
             },
         }
     )
@@ -4952,6 +5094,20 @@ def _task_server_extra_css() -> str:
   .wq-chip-more:hover { color: var(--neon); border-color: var(--neon); }
   .wq-filter-chips.wq-chips-searching .wq-chip-more { display: none; }
   .notif-filter-chip.wq-chip-search-hidden { display: none !important; }
+
+  /* Settings: editable products (wl-17) */
+  .ts-settings-input {
+    width: 100%; min-width: 100px; padding: 4px 8px;
+    border: 1px solid var(--border); border-radius: var(--r-md, 4px);
+    background: var(--bg); color: var(--fg); font-size: var(--fs-sm);
+    font-family: inherit;
+  }
+  .ts-settings-input--narrow { width: 80px; min-width: 60px; }
+  .ts-settings-add-row {
+    display: flex; gap: 8px; align-items: center; margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .ts-settings-add-row .ts-settings-input { width: auto; flex: 1 1 160px; }
 </style>
 """
 

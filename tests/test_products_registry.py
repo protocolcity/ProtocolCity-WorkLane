@@ -345,6 +345,62 @@ class SurfaceRoutingTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 400)
 
+    # ── product edit (wl-17) ─────────────────────────────────────────────
+
+    def test_update_product_renames_display_and_prefix(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "myapp"})
+        r = self.client.patch(
+            "/api/admin/products/myapp",
+            json={"display": "My App", "prefix": "ma"},
+        )
+        self.assertEqual(r.status_code, 200)
+        product = r.json()["product"]
+        self.assertEqual(product["display"], "My App")
+        self.assertEqual(product["prefix"], "ma")
+
+        # persisted, not just returned in the response — new tickets under
+        # this surface pick up the renamed prefix
+        spec = self.client.post(
+            "/api/admin/tasks",
+            json={"title": "t", "author": "work-pool", "description": "d", "surface": "myapp"},
+        )
+        self.assertTrue(spec.json()["task"]["id"].startswith("ma-"))
+
+    def test_update_product_unknown_slug_404s(self) -> None:
+        r = self.client.patch(
+            "/api/admin/products/nosuchproduct", json={"display": "X"}
+        )
+        self.assertEqual(r.status_code, 404)
+
+    def test_update_product_requires_a_field(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "myapp"})
+        r = self.client.patch("/api/admin/products/myapp", json={})
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_product_rejects_blank_display(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "myapp"})
+        r = self.client.patch("/api/admin/products/myapp", json={"display": "   "})
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_product_rejects_reserved_o_prefix(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "myapp"})
+        r = self.client.patch("/api/admin/products/myapp", json={"prefix": "o"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_product_rejects_prefix_collision(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
+        self.client.post("/api/admin/products", json={"slug": "two", "prefix": "y"})
+        r = self.client.patch("/api/admin/products/two", json={"prefix": "x"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_product_allows_keeping_own_prefix(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
+        r = self.client.patch(
+            "/api/admin/products/one", json={"display": "One", "prefix": "x"}
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["product"]["prefix"], "x")
+
     def test_board_page_per_surface(self) -> None:
         SQLiteTracker(
             db_path=self.root / "data" / "worklane.db"
