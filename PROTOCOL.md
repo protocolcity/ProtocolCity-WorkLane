@@ -81,7 +81,7 @@ Auto-transitions (lifecycle guard):
 - `Completed:` + `Verification:` comment on `in_progress`/`in_review` → `done`.
 - `Blocked:` + `Next step:` comment on `in_progress`/`in_review` → `backlog`.
 - Dependency guard: a ticket whose declared blockers aren't all `done` stays in `in_review` when promoted; auto-thaws to `backlog` once blockers clear.
-- Work Queue flags `in_progress`/`in_review` tickets as stalled after 90 min without updates.
+- The UI (header badges + the Overview's Attention panel) flags `in_progress`/`in_review` tickets as stalled after 90 min without updates.
 
 ## 5) Intake and Closeout
 
@@ -262,7 +262,7 @@ WL exposes API/UI so other cockpits can read ticket state. Board/table and API r
 
 **One project, one store** (2026-07-10; canonical term since wl-64): every
 project tracked by WL has its own SQLite file
-(`worklane/local/data/<slug>.db`) and its own Pool surface tab;
+(`worklane/local/data/<slug>.db`) and its own scope tab in the Board/Table views;
 "All" is a merged read view. Projects are independent — an agent working one
 project's tickets never writes another project's store. Composite ids
 (`wl-…` WorkLane, `<slug>-…` your product) address tickets across stores;

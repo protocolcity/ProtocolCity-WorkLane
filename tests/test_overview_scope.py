@@ -77,10 +77,12 @@ class OverviewScopeTest(unittest.TestCase):
         ):
             r = self.client.get(path)
             self.assertEqual(r.status_code, 200, path)
-            self.assertIn("WorkLane · Overview", r.text)
+            # wl-89: analytics live inside the Pulse grid — one themed surface.
+            self.assertIn("Breakdown", r.text)
+            self.assertIn("Service health", r.text)
             self.assertIn(f'data-ops-scope="{scope_attr}"', r.text)
-            # Scope tabs present on the landing
-            self.assertIn('aria-label="Overview scopes"', r.text)
+            # Scope tabs present on the landing (wl-91: unified vocabulary)
+            self.assertIn('aria-label="Project scopes"', r.text)
 
     def test_unknown_scope_404s(self) -> None:
         self.assertEqual(self.client.get("/admin/overview/nope").status_code, 404)

@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 
 # :mod:`worklane.trackers.sqlite` mirrors to Ops Cockpit HTTP; when this
 # server binds the same port as ``TASK_PORT``, suppress self-POST.
@@ -103,7 +104,6 @@ from worklane.board import (
     _render_status_badge,
     _render_task_board,
     _render_task_card,
-    _render_view_toggle,
     _render_work_queue_filters,
     _STATUS_LABELS,
     _STATUS_TIERS,
@@ -120,8 +120,9 @@ from worklane.board import (
 # Service start time — recorded at module load, used by the service-health pane (#485).
 _SERVER_START: datetime = datetime.now(timezone.utc)
 
-# Canonical Pool (work queue) home on this server (path = which surface; query = view/filters only).
-_TICKETS_SYSTEM_LABEL = "Pool"
+# Canonical ticket store label (wl-90: Board and Table are sibling top-level
+# views in the header; this names the store itself in card copy).
+_TICKETS_SYSTEM_LABEL = "Tickets"
 _OPS_TASK_LIST_PATH = TICKETS_APP_ALL
 
 # UI quick-create removed 2026-07-10 (wl-26): tickets are filed by agents
@@ -192,11 +193,11 @@ def _render_tickets_surface_nav(
             _item(
                 f"/admin/tickets/{spec.slug}",
                 spec.display,
-                f"Pool for the {spec.display} project ({spec.db_path.name})",
+                f"{spec.display} tickets ({spec.db_path.name})",
             )
         )
     return (
-        '<nav class="ts-tickets-surface-nav" aria-label="Pool surfaces">'
+        '<nav class="ts-tickets-surface-nav" aria-label="Project scopes">'
         '<div class="ts-segmented ts-segmented--tools" role="tablist">'
         + "".join(items)
         + "</div></nav>"
@@ -205,7 +206,7 @@ def _render_tickets_surface_nav(
 
 def _render_overview_scope_nav(scope: str) -> str:
     """Segmented product control for the Overview landing — same scopes as the
-    Pool (All + every discovered project store), each filtering the whole page.
+    Board/Table (All + every discovered project store), each filtering the whole page.
     """
     _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
 
@@ -227,7 +228,7 @@ def _render_overview_scope_nav(scope: str) -> str:
             )
         )
     return (
-        '<nav class="ts-tickets-surface-nav" aria-label="Overview scopes">'
+        '<nav class="ts-tickets-surface-nav" aria-label="Project scopes">'
         '<div class="ts-segmented ts-segmented--tools" role="tablist">'
         + "".join(items)
         + "</div></nav>"
@@ -301,7 +302,6 @@ def _task_page(
         if (shell == "overview" and nav_active == "overview")
         else "task-server-brand"
     )
-    _tickets_cur = ' aria-current="page"' if shell == "tickets" else ""
     _show_ticket_tools = shell == "tickets"
     _ticket_tools = ""
     _product_scope = ""
@@ -332,9 +332,26 @@ def _task_page(
     # subnav band is gone; one row of chrome instead of two.
     _subnav_html = ""
     _port = os.environ.get("TASK_PORT", "8799")
-    _tickets_primary_href = (
-        f"{(tickets_scope_path or TICKETS_APP_ALL)}?view=board"
-    )
+    # wl-90: Board and Table are sibling primary views. From a tickets page
+    # the links keep the current scope path and filters; elsewhere they lead
+    # to the scope's default view.
+    _view_scope_path = tickets_scope_path or TICKETS_APP_ALL
+    if shell == "tickets":
+        _board_href = f"{_view_scope_path}?" + _wq_query_for_view(
+            "board", tickets_status, tickets_label, tickets_priority,
+            product=tickets_product, list_path=_view_scope_path,
+        )
+        _table_href = f"{_view_scope_path}?" + _wq_query_for_view(
+            "table", tickets_status, tickets_label, tickets_priority,
+            product=tickets_product, list_path=_view_scope_path,
+        )
+    else:
+        _board_href = f"{_view_scope_path}?view=board"
+        _table_href = f"{_view_scope_path}?view=table"
+    _table_on = shell == "tickets" and (tickets_view or "board") == "table"
+    _board_on = shell == "tickets" and not _table_on
+    _board_cur = ' aria-current="page"' if _board_on else ""
+    _table_cur = ' aria-current="page"' if _table_on else ""
     # No app footer: it was fixed-position chrome duplicating the header
     # (brand · Cockpit · port) and overlapped page content (wl-25).
     return f"""<!doctype html>
@@ -388,8 +405,10 @@ def _task_page(
       <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
         <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
            title="Landing — the store visually interpreted: live metrics + breakdown charts"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
-        <a href="{_tickets_primary_href}" class="{_seg(shell == 'tickets')}"
-           title="SQLite ticket store — board and table"{_tickets_cur}>{_esc(_TICKETS_SYSTEM_LABEL)}</a>
+        <a href="{_board_href}" class="{_seg(_board_on)}"
+           title="Ticket board — cards by status column"{_board_cur}>Board</a>
+        <a href="{_table_href}" class="{_seg(_table_on)}"
+           title="Ticket table — dense timetable rows"{_table_cur}>Table</a>
       </nav>
 {_product_scope}
       <div class="task-server-header-end">
@@ -757,7 +776,7 @@ def _task_page(
     box-shadow: 0 1px 3px rgba(0,0,0,.08);
     color: var(--fg);
   }}
-  /* Primary Cockpit/Pool nav (wl-37): active item also gets a signal-orange underline. */
+  /* Primary nav (wl-37): active item also gets a signal-orange underline. */
   .ts-primary-shell .ts-seg--on {{
     border-bottom: 2px solid var(--neon);
   }}
@@ -769,27 +788,25 @@ def _task_page(
     align-items: center;
     gap: 8px;
   }}
-  /* Main content — readable width; --ops-module-gap aligns notification / sheet / footer rhythm. */
+  /* Main content — full-bleed fluid (wl-87): every page uses the real
+     viewport, like the board always did. No static max-width clamp;
+     line-length lives in content measures (.ts-doc-body etc.), not chrome.
+     --ops-module-gap aligns notification / sheet / footer rhythm.
+     margin:0, not auto — auto cross-axis margins defeat flex stretch and
+     let nowrap ticker content inflate the page to its min-content width. */
   .ts-ops-page.page-full {{
     --ops-module-gap: 12px;
     --ops-paper: color-mix(in srgb, var(--bg2) 97%, #fff 3%);
     --ops-paper-edge: color-mix(in srgb, var(--border) 82%, transparent);
     --ops-footer-h: 48px;
-    max-width: min(1320px, 100%);
-    margin: 0 auto;
+    margin: 0;
+    width: 100%;
     padding: var(--ops-module-gap) clamp(12px, 3vw, 24px)
       calc(var(--ops-module-gap) * 2 + var(--ops-footer-h));
     box-sizing: border-box;
   }}
-  /* Full-bleed Pool (wl-36): the board shares the real viewport, not a
-     centered 1320px clamp, and the module gap tightens. :has() is fine on
-     the supported browsers; if it ever misses, the page stays clamped. */
+  /* Board (wl-36): the board view tightens the module gap. */
   .ts-ops-page.page-full:has(.ts-wq-shell) {{
-    max-width: none;
-    /* margin:0, not auto — auto cross-axis margins defeat flex stretch and
-       let nowrap ticker content inflate the page to its min-content width. */
-    margin: 0;
-    width: 100%;
     --ops-module-gap: 4px;
     padding-top: 4px;
   }}
@@ -1603,13 +1620,14 @@ def _render_tickets_module() -> str:
 
     tbl = (
         "<table class='tos-table ts-tw-table ts-ticket-recent'>"
-        "<thead><tr><th>Task</th><th>Status</th><th>Pri</th><th>Updated</th></tr></thead>"
+        "<thead><tr><th>Ticket</th><th>Status</th><th>Pri</th><th>Updated</th></tr></thead>"
         "<tbody>"
         + (
             "".join(rows)
             if rows
-            else "<tr><td colspan='4' class='dim'>No open tasks — "
-            "check <a href='" + wq_board + "'>board</a> for Done, or use + Quick add.</td></tr>"
+            # wl-91: quick-add is gone (wl-26) — don't advertise it.
+            else "<tr><td colspan='4' class='dim'>No open tickets — "
+            "check the <a href='" + wq_board + "'>Board</a> for Done.</td></tr>"
         )
         + "</tbody></table>"
     )
@@ -1709,7 +1727,7 @@ def _render_activity_chart(tasks: List[Task], *, days: int = 14) -> str:
     last_lbl = day_list[-1].strftime("%m-%d")
     svg = (
         f"<svg viewBox='0 0 {w} {h}' role='img' aria-label='Ticket activity last {days} days' "
-        "style='width:100%;max-width:460px;height:auto;display:block;'>"
+        "style='width:100%;height:auto;display:block;'>"
         "<defs><linearGradient id='tpGrad' x1='0' y1='0' x2='1' y2='0'>"
         "<stop offset='0%' stop-color='var(--accent,#d94f1e)'/><stop offset='100%' stop-color='var(--accent2,#e8622c)'/>"
         "</linearGradient></defs>"
@@ -1718,17 +1736,18 @@ def _render_activity_chart(tasks: List[Task], *, days: int = 14) -> str:
         f"<text x='{w-34}' y='{h-2}' fill='var(--dim)' font-size='10'>{_esc(last_lbl)}</text>"
         "</svg>"
     )
+    # wl-89: no lead paragraph — the enclosing pulse panel head names the range.
     return (
-        f"<p class='dim' style='margin:0 0 8px'>Updates in the last {days} days</p>"
-        + svg
+        svg
         + f"<div id='cockpit-activity-meta' data-cockpit-activity-days='{days}' hidden></div>"
     )
 
 
-def _render_service_health_card(scope: str = "") -> str:
+def _render_service_health_body(scope: str = "") -> str:
     """Service health pane for the Overview (#485) — uptime, store size, queue
     depth. Store rows come from the discovered registry and the queue counts
     from the in-scope trackers (wl-85) — nothing named in product code.
+    Returns panel-body HTML; the Pulse grid wraps it (wl-89).
     """
     # Uptime
     now = datetime.now(timezone.utc)
@@ -1805,11 +1824,17 @@ def _render_service_health_card(scope: str = "") -> str:
         f"<div style='font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 4px;'>Queue depth</div>"
         f"{queue_html}"
     )
-    return _task_card("Service Health", body)
+    return body
 
 
-def _render_ticketing_cockpit_charts(scope: str = "") -> str:
-    all_tasks = _merged_scope_tasks_for_filters(scope)
+def _render_breakdown_panels(
+    scope: str, all_tasks: List[Task]
+) -> Tuple[str, str, str]:
+    """wl-89: status/priority count bars + 14-day activity chart for the
+    Pulse grid — the former cockpit cards, re-homed as themed panel bodies.
+    Returns (breakdown_body, breakdown_meta, activity_body). The live JS
+    (data-cockpit-* hooks, /api/admin/overview/summary) targets this markup.
+    """
     tasks = [t for t in all_tasks if t.status != TaskStatus.DONE]
     total = len(tasks)
     pool_path = f"/admin/tickets/{scope or 'all'}"
@@ -1859,28 +1884,21 @@ def _render_ticketing_cockpit_charts(scope: str = "") -> str:
             )
         )
 
-    scope_text = (
-        "All tickets across configured stores"
-        if not scope
-        else f"Tickets in the {_esc(scope)} store"
-    )
-    head = (
-        "<p class='dim'>"
-        "<span class='ts-plugin-tag'>analytics</span> "
-        f"{scope_text} · <strong>{total}</strong> total · "
-        f"<a href='{board}'>Open board</a> · <a href='{table}'>Open table</a>"
-        "</p>"
-    )
-
-    grid = (
-        "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;'>"
-        + _render_service_health_card(scope)
-        + _task_card("By status", _render_count_bars(status_rows, empty_text="No ticket statuses yet."))
-        + _task_card("By priority", _render_count_bars(pri_rows, empty_text="No priority data yet."))
-        + _task_card("Recent activity", _render_activity_chart(tasks, days=14))
+    breakdown_body = (
+        "<div class='pulse-breakdown'>"
+        "<div><div class='pulse-breakdown-title'>By status</div>"
+        + _render_count_bars(status_rows, empty_text="No ticket statuses yet.")
         + "</div>"
+        "<div><div class='pulse-breakdown-title'>By priority</div>"
+        + _render_count_bars(pri_rows, empty_text="No priority data yet.")
+        + "</div>"
+        "</div>"
     )
-    return _task_card("WorkLane · Overview", head + grid + _cockpit_live_js())
+    breakdown_meta = (
+        f"{total} open · <a href='{board}'>board</a> · <a href='{table}'>table</a>"
+    )
+    activity_body = _render_activity_chart(tasks, days=14)
+    return breakdown_body, breakdown_meta, activity_body
 
 
 def _cockpit_live_js() -> str:
@@ -1985,7 +2003,7 @@ def _render_product_tradeos_hub() -> str:
     wq = f"{_OPS_TASK_LIST_PATH}?view=board"
 
     lead = (
-        "<p class='ts-ops-lead dim'><strong>tradeOS</strong> is the primary product surface here. "
+        "<p class='ts-ops-lead dim'><strong>tradeOS</strong> is the primary project here. "
         "This page will aggregate ticket summaries, work-in-flight, ADR links, and other "
         "cross-cutting signals as we wire them up.</p>"
     )
@@ -1999,9 +2017,9 @@ def _render_product_tradeos_hub() -> str:
     )
     placeholders = (
         _task_card(
-            "Pool & work (next)",
+            "Tickets & work (next)",
             "<p class='dim'>Planned: counts and links into the shared SQLite tracker — same data as "
-            f"<a href='{wq}'>Work Queue</a> — scoped to work that touches this product.</p>",
+            f"the <a href='{wq}'>Board</a> — scoped to work that touches this project.</p>",
         )
         + _task_card(
             "ADRs & docs (next)",
@@ -2022,18 +2040,14 @@ def _render_product_tradeos_hub() -> str:
 def _render_product_ops_page() -> str:
     task_port = _esc(os.environ.get("TASK_PORT", "8799"))
     body = (
-        "<p class='dim'><strong>Pool</strong> (board / table) runs on a "
+        "<p class='dim'>The ticket store (<strong>Board</strong> / <strong>Table</strong>) runs on a "
         "<strong>separate port</strong> from the host product so the host can restart "
         "without losing the board (ADR-019).</p>"
         f"<p class='dim'>You are on port <code>{task_port}</code> — landing: "
-        "<code>/admin/overview</code>. Use <strong>Pool</strong> in the header for "
-        "the tracker; <strong>Projects</strong> for the per-project hubs.</p>"
+        "<code>/admin/overview</code>. Use <strong>Board</strong> or <strong>Table</strong> in the "
+        "header for the tracker; <strong>Projects</strong> for the per-project hubs.</p>"
     )
     return f"<div class='ts-prod-page'>{_task_card('Ticketing (this console)', body)}</div>"
-
-
-def _render_ops_cockpit(scope: str = "") -> str:
-    return _render_ticketing_cockpit_charts(scope)
 
 
 # ── Pulse — live operator dashboard ─────────────────────────────────────
@@ -2080,7 +2094,8 @@ def _pulse_status_color(s: str) -> str:
 
 
 # wl-29: cycled Dispatch tokens (theme-aware — no raw hex) so each product
-# store gets a stable dot color across the ticker and the fleet section.
+# store gets a stable dot color across the ticker and Next up rows (wl-96:
+# the fleet/Projects panel that introduced these is retired).
 _FLEET_DOT_VARS: Tuple[str, ...] = (
     "--neon", "--blue", "--mag", "--orange", "--purple", "--green", "--yellow",
 )
@@ -2093,65 +2108,9 @@ def _fleet_dot_vars_by_slug() -> Dict[str, str]:
     }
 
 
-def _render_fleet_section(
-    all_tasks: List[Task],
-    *,
-    now: datetime,
-    today_start: datetime,
-    day_ago: datetime,
-    parse_ts,
-    dot_vars: Dict[str, str],
-) -> str:
-    """wl-29: one row per product store — in-flight / ready / done-today / 24h spark."""
-    by_slug: Dict[str, List[Task]] = {}
-    for t in all_tasks:
-        slug, _ = split_task_id(t.id)
-        by_slug.setdefault(slug, []).append(t)
-
-    rows = ""
-    for spec in discover_products():
-        tasks = by_slug.get(spec.slug, [])
-        in_flight = [t for t in tasks
-                     if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)]
-        done_today = [t for t in tasks if t.status == TaskStatus.DONE
-                      and (parse_ts(t.updated_at) or now) >= today_start]
-        hourly = [0] * 24
-        for t in tasks:
-            if t.status != TaskStatus.DONE:
-                continue
-            ts = parse_ts(t.updated_at)
-            if ts is None or ts < day_ago:
-                continue
-            hrs_ago = int((now - ts).total_seconds() // 3600)
-            if 0 <= hrs_ago < 24:
-                hourly[23 - hrs_ago] += 1
-        spark_max = max(hourly) or 1
-        bars = "".join(
-            f"<span class='fleet-spark-bar' style='height:{max(3, int(18 * n / spark_max))}px;'></span>"
-            for n in hourly
-        )
-        try:
-            ready_count = len(WorkQueue(product_tracker(spec)).ready())
-        except Exception:
-            ready_count = 0
-        dot_var = dot_vars.get(spec.slug, "--dim")
-        rows += (
-            f"<a href='/admin/tickets/{_esc(spec.slug)}' class='fleet-row'>"
-            f"<span class='fleet-dot' style='background:var({dot_var});'></span>"
-            f"<span class='fleet-name'>{_esc(spec.display)}</span>"
-            f"<span class='fleet-stat'>{len(in_flight)}<i>in-flight</i></span>"
-            f"<span class='fleet-stat'>{ready_count}<i>ready</i></span>"
-            f"<span class='fleet-stat'>{len(done_today)}<i>done today</i></span>"
-            f"<span class='fleet-spark-bars'>{bars}</span>"
-            "</a>"
-        )
-    if not rows:
-        return "<div class='pulse-empty'>No project stores discovered.</div>"
-    return f"<div class='fleet-rows'>{rows}</div>"
-
-
 def _render_active_agents_panel(
-    inflight_tasks: List[Task], *, now: datetime
+    inflight_tasks: List[Task], *, now: datetime,
+    previews: Dict[str, Dict[str, str]],
 ) -> str:
     """wl-29: who's on what, derived from the latest comment per in-flight ticket.
 
@@ -2161,7 +2120,6 @@ def _render_active_agents_panel(
     """
     if not inflight_tasks:
         return "<div class='pulse-empty'>⚙ No agents active.</div>"
-    previews = _load_preview_comments_multi(product_trackers(), inflight_tasks)
     rows = ""
     for t in inflight_tasks:
         preview = previews.get(t.id) or {}
@@ -2179,6 +2137,247 @@ def _render_active_agents_panel(
             "</a>"
         )
     return f"<div class='agent-rows'>{rows}</div>"
+
+
+def _author_tally(
+    scope: str = "", pending: Optional[Dict[str, int]] = None
+) -> List[Dict[str, Any]]:
+    """wl-93: tickets worked per comment author across the in-scope stores.
+
+    Derived entirely from signed comments (wl-84: no hardcoded roster) via
+    read-only SQL: worked = distinct tickets the author commented on,
+    closed = distinct tickets where they posted a §5 closeout
+    (body starts 'Completed:'), last = most recent comment timestamp.
+    wl-95: ``pending`` maps author -> in-flight tickets they currently own
+    (latest Owner: marker); owners missing from the comment tally still get
+    a row so pending work is never hidden.
+    """
+    merged: Dict[str, Dict[str, Any]] = {}
+    for _spec, tracker in _scoped_product_trackers(scope):
+        db_path = _tracker_db_path(tracker)
+        if db_path is None or not Path(db_path).exists():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT author,
+                           COUNT(DISTINCT task_id) AS worked,
+                           COUNT(DISTINCT CASE WHEN body LIKE 'Completed:%'
+                                               THEN task_id END) AS closed,
+                           MAX(created_at) AS last_at
+                    FROM task_comments
+                    WHERE author != ''
+                    GROUP BY author
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception:
+            continue
+        for author, worked, closed, last_at in rows:
+            agg = merged.setdefault(
+                author,
+                {"author": author, "worked": 0, "closed": 0, "pending": 0,
+                 "last_at": ""},
+            )
+            agg["worked"] += int(worked or 0)
+            agg["closed"] += int(closed or 0)
+            if (last_at or "") > agg["last_at"]:
+                agg["last_at"] = last_at or ""
+    for owner, n in (pending or {}).items():
+        agg = merged.setdefault(
+            owner,
+            {"author": owner, "worked": 0, "closed": 0, "pending": 0,
+             "last_at": ""},
+        )
+        agg["pending"] = int(n)
+    out = list(merged.values())
+    out.sort(key=lambda a: (-a["worked"], a["author"]))
+    return out
+
+
+def _render_author_tally_panel(
+    tallies: List[Dict[str, Any]], *, now: datetime
+) -> str:
+    """wl-93: per-author scoreboard rows — worked · closed · pending · last."""
+    if not tallies:
+        return "<div class='pulse-empty'>No signed comments yet.</div>"
+    rows = (
+        "<div class='pulse-authors-hd'>"
+        "<span></span><span>worked</span><span>closed</span>"
+        "<span>pending</span><span>last</span>"
+        "</div>"
+    )
+    # Top 10 by worked, but never drop an author who owns pending work.
+    shown = tallies[:10] + [a for a in tallies[10:] if a.get("pending")]
+    for a in shown:
+        age = _pulse_relative_time(a["last_at"], now=now)
+        n_pending = int(a.get("pending") or 0)
+        pending_cell = (
+            f"<span class='pulse-author-n pulse-author-n--pending'>{n_pending}</span>"
+            if n_pending else
+            "<span class='pulse-author-n pulse-author-n--zero'>0</span>"
+        )
+        rows += (
+            "<div class='pulse-author-row'>"
+            f"<span class='pulse-author-name'>{_esc(a['author'])}</span>"
+            f"<span class='pulse-author-n'>{a['worked']}</span>"
+            f"<span class='pulse-author-n pulse-author-n--closed'>{a['closed']}</span>"
+            f"{pending_cell}"
+            f"<span class='pulse-author-age'>{age}</span>"
+            "</div>"
+        )
+    return f"<div class='pulse-side-rows'>{rows}</div>"
+
+
+# wl-86: PROTOCOL.md §4 — in-flight tickets with no update in over 90 minutes
+# count as stalled; the Attention panel surfaces them alongside blocked and
+# aging backlog work.
+_STALE_INFLIGHT = timedelta(minutes=90)
+_AGING_BACKLOG = timedelta(days=7)
+
+
+def _fmt_minutes(mins: int) -> str:
+    """Compact duration like '45m', '3h20m', '2d4h'."""
+    if mins < 60:
+        return f"{mins}m"
+    hrs, m = divmod(mins, 60)
+    if hrs < 24:
+        return f"{hrs}h{m}m" if m else f"{hrs}h"
+    days, h = divmod(hrs, 24)
+    return f"{days}d{h}h" if h else f"{days}d"
+
+
+def _render_next_up_panel(
+    ready_tasks: List[Task], *, now: datetime, dot_vars: Dict[str, str]
+) -> str:
+    """wl-86: what an agent would pick next — the merged ready queue across
+    the in-scope stores, priority order. Same eligibility as wl_ready
+    (blockers done, not gated)."""
+    if not ready_tasks:
+        return "<div class='pulse-empty'>Queue clear — nothing ready.</div>"
+    rows = ""
+    for t in ready_tasks[:6]:
+        prod_slug, _ = split_task_id(t.id)
+        dot_var = dot_vars.get(prod_slug, "--dim")
+        pri_color = _pulse_priority_color(t.priority)
+        title = _esc(t.title)[:70] + ("…" if len(t.title) > 70 else "")
+        age = _pulse_relative_time(t.created_at, now=now)
+        rows += (
+            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-side-row'>"
+            f"<span class='pulse-side-pri' style='color:{pri_color};'>P{int(t.priority or 3)}</span>"
+            f"<span class='pulse-side-id'><span class='pulse-ticker-dot' "
+            f"style='background:var({dot_var});'></span>#{_esc(t.id)}</span>"
+            f"<span class='pulse-side-title'>{title}</span>"
+            f"<span class='pulse-side-age'>{age}</span>"
+            f"</a>"
+        )
+    return f"<div class='pulse-side-rows'>{rows}</div>"
+
+
+def _render_attention_panel(
+    inflight_tasks: List[Task],
+    blocked_entries: List[Any],
+    backlog: List[Task],
+    *,
+    now: datetime,
+    parse_ts,
+) -> Tuple[str, int]:
+    """wl-86: everything that needs a human — stalled in-flight (§4), blocked
+    backlog with unresolved deps, and P1/P2 backlog going stale. Returns
+    (html, item count) so the panel head can show the total."""
+    items: List[Tuple[str, str, Task, str]] = []  # (tag, color, task, note)
+    seen: set = set()
+    for t in inflight_tasks:
+        ts = parse_ts(t.updated_at)
+        if ts is not None and (now - ts) >= _STALE_INFLIGHT:
+            items.append((
+                "stale", "#f59e0b", t,
+                f"no update {_pulse_relative_time(t.updated_at, now=now)}",
+            ))
+            seen.add(t.id)
+    for bt in blocked_entries:
+        ids = ", ".join(f"#{b.ticket_id}" for b in bt.blockers[:2])
+        if len(bt.blockers) > 2:
+            ids += f" +{len(bt.blockers) - 2}"
+        items.append(("blocked", "#ef4444", bt.task, f"waiting on {ids}"))
+        seen.add(bt.task.id)
+    for t in backlog:
+        if t.id in seen or int(t.priority or 3) > 2:
+            continue
+        ts = parse_ts(t.updated_at) or parse_ts(t.created_at)
+        if ts is not None and (now - ts) >= _AGING_BACKLOG:
+            items.append((
+                "aging", "#38bdf8", t,
+                f"idle {_pulse_relative_time(t.updated_at or t.created_at, now=now)}",
+            ))
+    if not items:
+        return "<div class='pulse-empty'>✓ Nothing needs attention.</div>", 0
+    rows = ""
+    for tag, color, t, note in items[:8]:
+        title = _esc(t.title)[:60] + ("…" if len(t.title) > 60 else "")
+        rows += (
+            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-side-row'>"
+            f"<span class='pulse-attn-tag' style='color:{color};border-color:{color};'>{tag}</span>"
+            f"<span class='pulse-side-id'>#{_esc(t.id)}</span>"
+            f"<span class='pulse-side-title'>{title}</span>"
+            f"<span class='pulse-side-note'>{_esc(note)}</span>"
+            f"</a>"
+        )
+    return f"<div class='pulse-side-rows'>{rows}</div>", len(items)
+
+
+def _render_flow_panel(
+    all_tasks: List[Task],
+    *,
+    now: datetime,
+    today_start: datetime,
+    parse_ts,
+    done_today: int,
+) -> str:
+    """wl-86: intake vs burn — is the backlog growing or shrinking today —
+    plus median created→done cycle time over the last 7 days."""
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    created_today = len([
+        t for t in all_tasks if (parse_ts(t.created_at) or floor) >= today_start
+    ])
+    net = created_today - done_today
+    week_ago = now - timedelta(days=7)
+    done_week = 0
+    cycle_mins: List[int] = []
+    for t in all_tasks:
+        if t.status != TaskStatus.DONE:
+            continue
+        closed = parse_ts(t.updated_at)
+        if closed is None or closed < week_ago:
+            continue
+        done_week += 1
+        created = parse_ts(t.created_at)
+        if created is not None and closed >= created:
+            cycle_mins.append(int((closed - created).total_seconds() // 60))
+    if cycle_mins:
+        cycle_mins.sort()
+        mid = len(cycle_mins) // 2
+        med = (cycle_mins[mid] if len(cycle_mins) % 2
+               else (cycle_mins[mid - 1] + cycle_mins[mid]) // 2)
+        cycle_str = _fmt_minutes(med)
+    else:
+        cycle_str = "—"
+    net_color = "#4caf7d" if net <= 0 else "#f59e0b"
+    net_str = f"{net:+d}" if net else "±0"
+    return (
+        "<div class='pulse-flow'>"
+        f"<div class='pulse-flow-stat'><b>{created_today}</b><i>filed today</i></div>"
+        f"<div class='pulse-flow-stat'><b>{done_today}</b><i>done today</i></div>"
+        f"<div class='pulse-flow-stat'><b style='color:{net_color};'>{net_str}</b><i>net intake</i></div>"
+        "</div>"
+        "<div class='pulse-flow-rows'>"
+        f"<div class='pulse-flow-row'><span>Median cycle · 7d</span><b>{cycle_str}</b></div>"
+        f"<div class='pulse-flow-row'><span>Closed · 7d</span><b>{done_week}</b></div>"
+        "</div>"
+    )
 
 
 def _render_pulse_page(scope: str = "") -> str:
@@ -2246,11 +2445,44 @@ def _render_pulse_page(scope: str = "") -> str:
         return {1: "P1", 2: "P2", 3: "P3", 4: "P4"}.get(int(p or 3), "P3")
 
     dot_vars = _fleet_dot_vars_by_slug()
-    fleet_html = _render_fleet_section(
-        all_tasks, now=now, today_start=today_start, day_ago=day_ago,
-        parse_ts=_parse_ts, dot_vars=dot_vars,
+    inflight_previews = _load_preview_comments_multi(
+        product_trackers(), inflight_tasks
     )
-    agents_html = _render_active_agents_panel(inflight_tasks, now=now)
+    agents_html = _render_active_agents_panel(
+        inflight_tasks, now=now, previews=inflight_previews
+    )
+
+    # wl-86: ready + blocked across the in-scope stores (one WorkQueue per
+    # store — dependency checks only resolve within a store).
+    ready_tasks: List[Task] = []
+    blocked_entries: List[Any] = []
+    for _spec, tracker in _scoped_product_trackers(scope):
+        try:
+            q = WorkQueue(tracker)
+            ready_tasks.extend(q.ready())
+            blocked_entries.extend(q.blocked())
+        except Exception:
+            continue
+    ready_tasks.sort(key=lambda t: (int(t.priority or 3), t.created_at or ""))
+
+    next_up_html = _render_next_up_panel(ready_tasks, now=now, dot_vars=dot_vars)
+    attention_html, attention_count = _render_attention_panel(
+        inflight_tasks, blocked_entries, backlog, now=now, parse_ts=_parse_ts,
+    )
+    # wl-89: former cockpit analytics, re-homed as themed panels.
+    breakdown_html, breakdown_meta, activity14_html = _render_breakdown_panels(
+        scope, all_tasks,
+    )
+    health_html = _render_service_health_body(scope)
+    # wl-93: per-author scoreboard from signed comments.
+    # wl-95: pending = in-flight tickets whose latest Owner: marker is theirs.
+    pending_by_owner: Dict[str, int] = {}
+    for t in inflight_tasks:
+        owner = (inflight_previews.get(t.id) or {}).get("owner") or ""
+        if owner:
+            pending_by_owner[owner] = pending_by_owner.get(owner, 0) + 1
+    author_tallies = _author_tally(scope, pending=pending_by_owner)
+    authors_html = _render_author_tally_panel(author_tallies, now=now)
 
     # Metrics strip
     avg_inflight_age = ""
@@ -2277,11 +2509,18 @@ def _render_pulse_page(scope: str = "") -> str:
         f"<div class='pulse-metric-lbl'>Done today</div></div>"
         f"<div class='pulse-metric'><div class='pulse-metric-val'>{thr_24h}</div>"
         f"<div class='pulse-metric-lbl'>Done · 24h</div></div>"
+        f"<div class='pulse-metric'><div class='pulse-metric-val' style='color:#38bdf8;'>{len(ready_tasks)}</div>"
+        f"<div class='pulse-metric-lbl'>Ready</div></div>"
         f"<div class='pulse-metric'><div class='pulse-metric-val'>{len(backlog)}</div>"
         f"<div class='pulse-metric-lbl'>Backlog</div></div>"
         f"<div class='pulse-metric'><div class='pulse-metric-val'>{avg_inflight_age or '—'}</div>"
         f"<div class='pulse-metric-lbl'>Avg in-flight age</div></div>"
         "</div>"
+    )
+
+    flow_html = _render_flow_panel(
+        all_tasks, now=now, today_start=today_start,
+        parse_ts=_parse_ts, done_today=len(done_today),
     )
 
     # In-flight cards
@@ -2308,7 +2547,7 @@ def _render_pulse_page(scope: str = "") -> str:
                 f"</a>"
             )
     else:
-        cards_html = "<div class='pulse-empty'>⚙ No tickets in flight. Pool is idle.</div>"
+        cards_html = "<div class='pulse-empty'>⚙ No tickets in flight. Queue is idle.</div>"
 
     # Activity ticker
     ticker_items = ""
@@ -2345,7 +2584,7 @@ def _render_pulse_page(scope: str = "") -> str:
       <div class='pulse-header'>
         <div class='pulse-title'>
           <span class='pulse-dot pulse-dot--live pulse-dot--lg'></span>
-          <span class='pulse-title-main'>PULSE</span>
+          <span class='pulse-title-main'>OVERVIEW</span>
           <span class='pulse-title-sub'>· live operator view</span>
         </div>
         <div class='pulse-stamp'>
@@ -2358,41 +2597,90 @@ def _render_pulse_page(scope: str = "") -> str:
       {metrics_html}
 
       <div class='pulse-grid'>
-        <div class='pulse-panel pulse-panel--wide'>
-          <div class='pulse-panel-head'>
-            <span class='pulse-panel-title'>In flight</span>
-            <span class='pulse-panel-meta'>{len(in_progress)} active · {len(in_review)} reserved</span>
+        <div class='pulse-col pulse-col--main'>
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>In flight</span>
+              <span class='pulse-panel-meta'>{len(in_progress)} active · {len(in_review)} reserved</span>
+            </div>
+            <div class='pulse-cards'>{cards_html}</div>
           </div>
-          <div class='pulse-cards'>{cards_html}</div>
+
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Activity · last 20 updates</span>
+            </div>
+            <div class='pulse-ticker'>{ticker_items}</div>
+          </div>
+
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Breakdown</span>
+              <span class='pulse-panel-meta'>{breakdown_meta}</span>
+            </div>
+            {breakdown_html}
+          </div>
+
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Recent activity · 14 days</span>
+            </div>
+            {activity14_html}
+          </div>
         </div>
 
-        <div class='pulse-panel'>
-          <div class='pulse-panel-head'>
-            <span class='pulse-panel-title'>Throughput</span>
+        <div class='pulse-col pulse-col--side'>
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Throughput</span>
+            </div>
+            {spark_html}
           </div>
-          {spark_html}
-        </div>
 
-        <div class='pulse-panel pulse-panel--wide'>
-          <div class='pulse-panel-head'>
-            <span class='pulse-panel-title'>Fleet</span>
-            <span class='pulse-panel-meta'>{len(discover_products())} project stores</span>
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Next up</span>
+              <span class='pulse-panel-meta'>{len(ready_tasks)} ready</span>
+            </div>
+            {next_up_html}
           </div>
-          {fleet_html}
-        </div>
 
-        <div class='pulse-panel'>
-          <div class='pulse-panel-head'>
-            <span class='pulse-panel-title'>Active agents</span>
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Attention</span>
+              <span class='pulse-panel-meta'>{attention_count or 'clear'}</span>
+            </div>
+            {attention_html}
           </div>
-          {agents_html}
-        </div>
 
-        <div class='pulse-panel pulse-panel--wide'>
-          <div class='pulse-panel-head'>
-            <span class='pulse-panel-title'>Activity · last 20 updates</span>
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Flow · 7 days</span>
+            </div>
+            {flow_html}
           </div>
-          <div class='pulse-ticker'>{ticker_items}</div>
+
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Active agents</span>
+            </div>
+            {agents_html}
+          </div>
+
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Authors · tickets worked</span>
+              <span class='pulse-panel-meta'>{len(author_tallies)} signed</span>
+            </div>
+            {authors_html}
+          </div>
+
+          <div class='pulse-panel'>
+            <div class='pulse-panel-head'>
+              <span class='pulse-panel-title'>Service health</span>
+            </div>
+            {health_html}
+          </div>
         </div>
       </div>
     </div>
@@ -2419,11 +2707,14 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-metric-val {{ font-size:24px; font-weight:700; line-height:1; display:flex; align-items:center; gap:6px; }}
       .pulse-metric-lbl {{ font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--dim); margin-top:6px; }}
 
-      .pulse-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; }}
+      /* wl-86: explicit main + side columns — every cell filled, no half-empty
+         auto-fit rows. Collapses to one column on narrow viewports. */
+      .pulse-grid {{ display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr);
+        gap:12px; align-items:start; }}
+      .pulse-col {{ display:flex; flex-direction:column; gap:12px; min-width:0; }}
+      @media (max-width: 960px) {{ .pulse-grid {{ grid-template-columns:1fr; }} }}
       .pulse-panel {{ background:var(--bg2, #211d16); border:1px solid var(--border); border-radius:6px;
-        padding:12px 14px; min-height:120px; }}
-      .pulse-panel--wide {{ grid-column:span 2; }}
-      @media (max-width: 960px) {{ .pulse-panel--wide {{ grid-column:span 1; }} }}
+        padding:12px 14px; }}
       .pulse-panel-head {{ display:flex; justify-content:space-between; align-items:baseline;
         padding-bottom:8px; margin-bottom:10px; border-bottom:1px dashed var(--border); }}
       .pulse-panel-title {{ font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--dim); font-weight:600; }}
@@ -2454,21 +2745,6 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-ticker-pri {{ font-weight:700; font-size:10px; }}
       .pulse-ticker-title {{ color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
 
-      /* wl-29: fleet section — one row per product store */
-      .fleet-rows {{ display:flex; flex-direction:column; gap:4px; }}
-      .fleet-row {{ display:grid; grid-template-columns:12px 120px repeat(3, 90px) 1fr; gap:10px;
-        align-items:center; padding:6px 8px; border-radius:4px; text-decoration:none;
-        color:var(--fg); font-size:11px; border:1px solid transparent; }}
-      .fleet-row:hover {{ background:rgba(232,98,44,0.06); border-color:var(--border); }}
-      .fleet-dot {{ width:8px; height:8px; border-radius:50%; }}
-      .fleet-name {{ font-weight:700; letter-spacing:0.02em; }}
-      .fleet-stat {{ color:var(--fg); font-variant-numeric:tabular-nums; }}
-      .fleet-stat i {{ font-style:normal; color:var(--dim); margin-left:4px; text-transform:uppercase;
-        font-size:9px; letter-spacing:0.05em; }}
-      .fleet-spark-bars {{ display:flex; align-items:flex-end; gap:1px; height:18px; }}
-      .fleet-spark-bar {{ flex:1; max-width:4px; background:var(--neon,#e8622c); opacity:0.6;
-        border-radius:1px 1px 0 0; min-height:2px; }}
-
       /* wl-29: active agents — worker -> ticket -> age, from latest comment */
       .agent-rows {{ display:flex; flex-direction:column; gap:5px; max-height:260px; overflow-y:auto; }}
       .agent-row {{ display:flex; align-items:baseline; gap:6px; padding:3px 4px; font-size:11px;
@@ -2490,6 +2766,54 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-spark-axis {{ display:flex; justify-content:space-between; font-size:9px; color:var(--dim);
         text-transform:uppercase; letter-spacing:0.08em; }}
 
+      /* wl-86: side-column rows (Next up, Attention) */
+      .pulse-side-rows {{ display:flex; flex-direction:column; gap:3px; }}
+      .pulse-side-row {{ display:grid; grid-template-columns:auto auto minmax(0, 1fr) auto; gap:8px;
+        padding:4px 6px; font-size:11px; text-decoration:none; color:var(--fg); align-items:baseline;
+        border-left:2px solid transparent; }}
+      .pulse-side-row:hover {{ background:rgba(232,98,44,0.06); border-left-color:var(--neon); }}
+      .pulse-side-pri {{ font-weight:700; font-size:10px; letter-spacing:0.05em; }}
+      .pulse-side-id {{ color:var(--dim); font-weight:600; display:flex; align-items:center; gap:5px;
+        white-space:nowrap; }}
+      .pulse-side-title {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+      .pulse-side-age, .pulse-side-note {{ color:var(--dim); font-variant-numeric:tabular-nums;
+        white-space:nowrap; text-align:right; }}
+      .pulse-attn-tag {{ font-size:9px; font-weight:700; text-transform:uppercase;
+        letter-spacing:0.08em; border:1px solid; border-radius:3px; padding:1px 4px; line-height:1.2; }}
+
+      /* wl-86: flow panel — intake vs burn + cycle time */
+      .pulse-flow {{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:10px; }}
+      .pulse-flow-stat b {{ display:block; font-size:20px; font-weight:700; line-height:1; }}
+      .pulse-flow-stat i {{ font-style:normal; font-size:9px; text-transform:uppercase;
+        letter-spacing:0.08em; color:var(--dim); display:block; margin-top:4px; }}
+      .pulse-flow-rows {{ display:flex; flex-direction:column; gap:4px;
+        border-top:1px dashed var(--border); padding-top:8px; }}
+      .pulse-flow-row {{ display:flex; justify-content:space-between; font-size:11px; }}
+      .pulse-flow-row span {{ color:var(--dim); }}
+
+      /* wl-93: author scoreboard — worked · closed · pending (wl-95) · last */
+      .pulse-authors-hd, .pulse-author-row {{ display:grid;
+        grid-template-columns:minmax(0, 1fr) 52px 52px 52px 44px; gap:8px;
+        align-items:baseline; padding:3px 6px; font-size:11px; }}
+      .pulse-authors-hd {{ font-size:9px; text-transform:uppercase; letter-spacing:0.08em;
+        color:var(--dim); padding-bottom:5px; border-bottom:1px dashed var(--border); }}
+      .pulse-authors-hd span, .pulse-author-n, .pulse-author-age {{ text-align:right; }}
+      .pulse-authors-hd span:first-child {{ text-align:left; }}
+      .pulse-author-name {{ font-weight:600; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }}
+      .pulse-author-n {{ font-variant-numeric:tabular-nums; font-weight:700; }}
+      .pulse-author-n--closed {{ color:#4caf7d; }}
+      .pulse-author-n--pending {{ color:#f97316; }}
+      .pulse-author-n--zero {{ color:var(--dim); font-weight:400; }}
+      .pulse-author-age {{ color:var(--dim); font-variant-numeric:tabular-nums; }}
+
+      /* wl-89: breakdown panel — status + priority bars side by side */
+      .pulse-breakdown {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
+      @media (max-width: 720px) {{ .pulse-breakdown {{ grid-template-columns:1fr; }} }}
+      .pulse-breakdown-title {{ font-size:10px; text-transform:uppercase; letter-spacing:0.1em;
+        color:var(--dim); font-weight:600; margin-bottom:8px; }}
+      .pulse-panel-meta a {{ color:var(--dim); }}
+
       .pulse-empty {{ color:var(--dim); padding:20px; text-align:center; font-size:12px;
         letter-spacing:0.05em; }}
     </style>
@@ -2504,7 +2828,9 @@ def _render_pulse_page(scope: str = "") -> str:
       }})();
     </script>
     """
-    return body
+    # wl-89: 4s live refresh for the breakdown bars + activity chart
+    # (data-cockpit-* hooks) rides along with the page.
+    return body + _cockpit_live_js()
 
 
 # ── Rendering helpers with standalone URLs ──────────────────────────────
@@ -2543,7 +2869,7 @@ def _wq_poll_script(
 
 def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
     if not tasks:
-        return "<p class='dim'>No tasks match the current filters.</p>"
+        return "<p class='dim'>No tickets match the current filters.</p>"
     rows = "".join(_render_task_row(t, scope_product) for t in tasks)
     return (
         "<div class='ts-timetable'><table class='ts-timetable-table'>"
@@ -2607,21 +2933,17 @@ def index():
 def ops_overview(scope: str = "all") -> Any:
     """WorkLane landing — the store visually interpreted (wl-85):
     live metrics on top, breakdown charts below, everything filtered to the
-    chosen scope (All or one project store, same tabs as the Pool).
+    chosen scope (All or one project store, same tabs as Board/Table).
     """
     scope = (scope or "all").strip().lower()
     if scope != "all" and get_product(scope) is None:
         raise HTTPException(status_code=404, detail="Unknown overview scope")
     prod = "" if scope == "all" else scope
-    body = (
-        _render_pulse_page(prod)
-        + "<div class='ts-ops-page'>"
-        + _render_ops_cockpit(prod)
-        + "</div>"
-        + _task_server_extra_css()
-    )
+    # wl-89: one themed surface — the analytics cards live inside the Pulse
+    # grid now; no separate cockpit section below.
+    body = _render_pulse_page(prod) + _task_server_extra_css()
     return _task_page(
-        "Ticketing", body, nav_active="overview", page_scope=prod
+        "Overview", body, nav_active="overview", page_scope=prod
     )
 
 
@@ -2954,11 +3276,12 @@ def products_more_redirect() -> RedirectResponse:
 
 
 def _tickets_page_title(view_norm: str, list_path: str) -> str:
+    # wl-90: the view is the page — "Board · All", "Table · tradeOS".
     vn = {"board": "Board", "table": "Table"}.get(view_norm, view_norm)
     sk = product_scope_from_list_path(list_path)
     if sk == "tradeos":
-        return f"Pool · tradeOS · {vn}"
-    return f"Pool · All · {vn}"
+        return f"{vn} · tradeOS"
+    return f"{vn} · {sk}" if sk else f"{vn} · All"
 
 
 @router.get("/admin/tasks")
@@ -3094,14 +3417,8 @@ def _tickets_app_html(
         priority=prio_int,
         product=prod,
         merged_scope_tasks=merged_scope,
-        view_toggle_html=_render_view_toggle(
-            view_norm,
-            status,
-            label,
-            prio_int,
-            list_path=list_path,
-            product=prod,
-        ),
+        # wl-90: Board/Table live in the primary header nav — no in-page toggle.
+        view_toggle_html="",
     )
     extra_js = _task_server_extra_js()
     extra_css = _task_server_extra_css()
@@ -3214,14 +3531,14 @@ def task_detail(task_id: str) -> str:
     if task is None:
         body = (
             _render_tickets_context_strip()
-            + "<p>No task with id <code>"
+            + "<p>No ticket with id <code>"
             f"{_esc(task_id)}</code>. "
             f"<a href='{TICKETS_APP_ALL}'>Back to list</a></p>"
             + _client_js()
             + _task_server_extra_js()
         )
         return _task_page(
-            "Task not found",
+            "Ticket not found",
             body,
             nav_active="work_queue",
             shell="tickets",
@@ -3293,7 +3610,7 @@ def task_detail(task_id: str) -> str:
     body = (
         _render_tickets_context_strip()
         + f"<p class='dim' style='margin-bottom:8px;'>"
-        f"<a href='{TICKETS_APP_ALL}'>&larr; All tasks</a></p>"
+        f"<a href='{TICKETS_APP_ALL}'>&larr; All tickets</a></p>"
         + archive_banner
         + f"<h1 style='margin:0 0 4px 0;'>{_esc(task.title)}</h1>"
         f"{ext_html}"
@@ -4453,13 +4770,13 @@ def _dev_task_row(t: Task, *, stack_cells: bool = False) -> str:
 
 def _dev_status_card(title: str, tasks: List[Task]) -> str:
     if not tasks:
-        body = "<p class='dim'>No tasks.</p>"
+        body = "<p class='dim'>No tickets.</p>"
     else:
         rows = "".join(_dev_task_row(t) for t in tasks)
         body = (
             "<table class='tos-table'>"
             "<thead><tr>"
-            "<th>Task</th><th>Priority</th><th>Labels</th><th>Updated</th>"
+            "<th>Ticket</th><th>Priority</th><th>Labels</th><th>Updated</th>"
             "</tr></thead>"
             f"<tbody>{rows}</tbody>"
             "</table>"
@@ -4542,7 +4859,7 @@ def _dev_ready_queue(queue: WorkQueue) -> str:
             "</header>"
             f"{files_html}"
             "<table class='tos-table'>"
-            "<thead><tr><th>Task</th><th>Priority</th><th>Labels</th><th>Updated</th></tr></thead>"
+            "<thead><tr><th>Ticket</th><th>Priority</th><th>Labels</th><th>Updated</th></tr></thead>"
             f"<tbody>{rows}</tbody>"
             "</table>"
             "<div class='devq-batch-actions'>"
@@ -4935,7 +5252,7 @@ def _task_server_extra_js() -> str:
     filters, elapsed time, context-strip smart feed, quick-add panel,
     badge summaries, last-updated indicator, and card transition animations.
 
-    Loaded on Cockpit, Work Queue, and Dev Queue — not on Products shell
+    Loaded on Overview, Board/Table, and Dev Queue — not on Products shell
     (see :func:`_products_page_response`).
     """
     return r"""
@@ -5045,7 +5362,7 @@ def _task_server_extra_js() -> str:
 
   /* ── Header pills: ready / in flight / stalled (wl-28) ─────────────
      wl-85: pills honor the page's declared scope (body[data-ops-scope])
-     and their click-throughs land on the same scope's Pool. */
+     and their click-throughs land on the same scope's Board. */
   async function tsFetchBoardSummary() {
     try {
       var scope = document.body.getAttribute('data-ops-scope') || '';
@@ -5537,7 +5854,7 @@ def create_app():
     from fastapi.staticfiles import StaticFiles
 
     app = FastAPI(
-        title="Ticketing",
+        title="WorkLane",
         description="WorkLane — standalone local-first ticketing service.",
         docs_url="/api/docs",
         redoc_url=None,

@@ -86,7 +86,7 @@ either of these happens:
 - you drop a `<your-slug>.db` SQLite file directly into
   `worklane/local/data/`.
 
-Once the store exists, it gets its own Pool tab at
+Once the store exists, it gets its own scope tab (Board/Table views) at
 `/admin/tickets/<your-slug>` automatically — no code changes. File your
 first ticket to bootstrap it:
 

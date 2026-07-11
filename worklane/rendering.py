@@ -477,7 +477,9 @@ def _css() -> str:
     tr:hover { background: var(--hover-tint); }
 
     /* ── Docs surface (wl-27) ── */
-    .ts-doc-body { max-width: 860px; }
+    /* wl-87: prose measure stays for line length, centered so the
+       full-bleed shell doesn't leave it hugging the left edge. */
+    .ts-doc-body { max-width: 860px; margin: 0 auto; }
     .ts-doc-body p { margin: 8px 0; }
     .ts-doc-body code {
       font-family: var(--font-mono); font-size: 0.92em;

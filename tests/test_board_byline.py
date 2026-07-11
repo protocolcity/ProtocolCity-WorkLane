@@ -55,11 +55,15 @@ class DetectWorkerTest(unittest.TestCase):
         got = _detect_worker({"owner": "", "author": "agent-b", "body": ""})
         self.assertEqual(got, ("·", "agent-b"))
 
-    def test_unsigned_owner_line_fallback(self) -> None:
+    def test_body_text_alone_is_not_detected(self) -> None:
+        # wl-3: owner/author are the only signal; _extract_owner already
+        # scans every comment's full body for an Owner: line upstream of
+        # this, so a bare Owner: line in `body` with no owner/author
+        # resolved from that scan does not get re-parsed here.
         got = _detect_worker(
             {"owner": "", "author": "", "body": "Owner: agent-c (model-x)\nPlan:"}
         )
-        self.assertEqual(got, ("·", "agent-c"))
+        self.assertIsNone(got)
 
     def test_nothing_detected(self) -> None:
         self.assertIsNone(_detect_worker({"owner": "", "author": "", "body": "hi"}))

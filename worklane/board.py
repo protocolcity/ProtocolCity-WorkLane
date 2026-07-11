@@ -690,16 +690,14 @@ def _render_work_queue_filters(
 def _detect_worker(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
     # Newest Owner: marker wins, then the signed latest-comment author
     # (PROTOCOL.md §3.8: any stable signed id is an identity) — rendered
-    # verbatim, no roster (wl-84).
+    # verbatim, no roster (wl-84). `owner` already comes from _extract_owner,
+    # which scans every comment's full body for an Owner: line regardless of
+    # signing status, so a second body-regex pass here would never find
+    # anything that didn't already win above (wl-3).
     for candidate in (preview.get("owner") or "", preview.get("author") or ""):
         candidate = candidate.strip()
         if candidate:
             return (WORKER_BYLINE_ICON, candidate)
-    # Fallback for unsigned history: parse an Owner: line out of the
-    # coordination text itself.
-    m = _OWNER_LINE_RE.search(preview.get("body") or "")
-    if m and m.group(1).strip():
-        return (WORKER_BYLINE_ICON, m.group(1).strip())
     return None
 
 
@@ -833,7 +831,7 @@ def _render_column_body(
     scope_product: str = "",
 ) -> str:
     if not col_tasks:
-        return "<div class='tb-col-empty dim'>No tasks in this column.</div>"
+        return "<div class='tb-col-empty dim'>No tickets in this column.</div>"
     visible = col_tasks[:_BOARD_COLUMN_CAP]
     hidden = col_tasks[_BOARD_COLUMN_CAP:]
     cards_visible = "".join(
@@ -1113,7 +1111,7 @@ def _board_styles() -> str:
   scrollbar-width:none;
 }
 #admin-activity-strip:empty::before {
-  content: 'No tasks in progress';
+  content: 'No tickets in progress';
   font-size:var(--fs-xs);
   color:var(--dim);
 }
@@ -1385,7 +1383,7 @@ def _client_js() -> str:
       col.classList.toggle('tb-col--rail', !list.length);
       if (!body) return;
       if (!list.length) {
-        body.innerHTML = "<div class='tb-col-empty dim'>No tasks in this column.</div>";
+        body.innerHTML = "<div class='tb-col-empty dim'>No tickets in this column.</div>";
         return;
       }
       var visible = list.slice(0, __ADMIN_BOARD_COLUMN_CAP);
