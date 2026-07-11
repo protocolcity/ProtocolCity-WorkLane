@@ -74,7 +74,7 @@ Auto-transitions (lifecycle guard):
 
 **Intake** — concise imperative title, clear problem, expected outcome (with the kind of link expected at close), `area:*` / `sys:*` labels, priority (`1` urgent → `4` low). If follow-up work surfaces mid-ticket, file a child immediately and link it in a comment on the parent.
 
-Enforced at the API since 2026-07-10 (wl-26): creation requires a signed
+Enforced at the API: creation requires a signed
 `author` (§3.8 applies to every write, not just comments) and a non-empty
 `description`. The server records the filer as a signed `Intake: filed by
 <agent-id>` comment — tickets have no creator column; the comment trail is
@@ -159,8 +159,7 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
    rescues only its own `Owner:` markers.
 5. **Docs drift (added 2026-07-10).** If the change altered structural truth —
    entrypoints, HTTP surface, runtime layout, product/store model, process
-   rules — the same close-out updates the truth docs (`TRUTH.md`,
-   `PROTOCOL.md`, `README.md` as applicable) in the same commit, and the
+   rules — the same close-out updates the truth docs (`PROTOCOL.md`, `README.md` as applicable) in the same commit, and the
    `Completed:` section names the doc updates (or states "docs: no drift").
    Stale truth files are orphan work with better manners; don't leave them.
 

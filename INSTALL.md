@@ -111,9 +111,7 @@ Three ways to read/write tickets, in order of preference:
    This CLI only speaks HTTP (`urllib`, stdlib-only) — no
    `worklane` import required on the calling side, so it is safe
    to vendor into a host repo that doesn't want a Python dependency on WL.
-3. **Direct HTTP** (for non-Python hosts, or a custom passthrough): see
-   [worklane/TRUTH.md](worklane/TRUTH.md#http-surface)
-   for the full route list. Every write requires a signed `author` field
+3. **Direct HTTP** (for non-Python hosts, or a custom passthrough): the full route list lives in `worklane/task_server.py`. Every write requires a signed `author` field
    (PROTOCOL.md §3.8) — unsigned writes are rejected with a 400.
 
 ## 6. Write your host's agent docs

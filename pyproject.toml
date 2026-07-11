@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "worklane"
 version = "0.1.0"
-description = "Local-first ticketing backend — standalone FastAPI service with SQLite storage"
+description = "Local-first work queue for multi-agent teams — claims, lanes, and verified closeouts over SQLite"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.95",
