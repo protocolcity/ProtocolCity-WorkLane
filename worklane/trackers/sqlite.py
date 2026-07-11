@@ -191,6 +191,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         labels = list(json.loads(labels_raw))
     except Exception:
         labels = []
+    row_keys = row.keys()
     return Task(
         id=str(row["id"]),
         ext_id=row["ext_id"] or None,
@@ -201,6 +202,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         labels=labels,
         created_at=row["created_at"] or "",
         updated_at=row["updated_at"] or "",
+        gate_type=(row["gate_type"] or None) if "gate_type" in row_keys else None,
+        gate_until=(row["gate_until"] or None) if "gate_until" in row_keys else None,
+        gate_note=(row["gate_note"] or None) if "gate_note" in row_keys else None,
     )
 
 
@@ -298,7 +302,10 @@ class SQLiteTracker(ProjectTracker):
                         priority     INTEGER NOT NULL DEFAULT 3,
                         labels       TEXT NOT NULL DEFAULT '[]',
                         created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-                        updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                        updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                        gate_type    TEXT,
+                        gate_until   TEXT,
+                        gate_note    TEXT
                     );
                     CREATE INDEX IF NOT EXISTS ix_tasks_status   ON tasks(status);
                     CREATE INDEX IF NOT EXISTS ix_tasks_ext_id   ON tasks(ext_id);
@@ -330,6 +337,16 @@ class SQLiteTracker(ProjectTracker):
                         ON task_relations(relation_type);
                     """
                 )
+                # wl-21: gate_* columns didn't exist before this ticket, so
+                # CREATE TABLE IF NOT EXISTS above is a no-op against a DB
+                # created pre-wl-21 — retrofit via ALTER TABLE (no ADD
+                # COLUMN precedent existed in this file until now).
+                existing_cols = {
+                    r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()
+                }
+                for col in ("gate_type", "gate_until", "gate_note"):
+                    if col not in existing_cols:
+                        conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
                 _initialized_dbs.add(key)
             yield conn
         finally:
@@ -729,13 +746,28 @@ class SQLiteTracker(ProjectTracker):
         title: Optional[str] = None,
         description: Optional[str] = None,
         priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
+        gate_until: Optional[str] = None,
+        gate_note: Optional[str] = None,
         actor: str = "",
     ) -> Optional[Task]:
-        """Edit title, description, and/or priority; append an audit comment.
+        """Edit title, description, priority, and/or gate; append an audit comment.
 
-        Only fields explicitly supplied (non-None) are changed. Returns the
-        updated Task, or None if ``task_id`` does not exist.
+        Only fields explicitly supplied (non-None) are changed. ``gate_type``
+        is the gate control: ``None`` leaves the gate untouched, ``""``
+        clears it (gate_until/gate_note are cleared too), ``"human"``/
+        ``"timer"`` sets it (wl-21). A timer gate requires ``gate_until``.
+        Returns the updated Task, or None if ``task_id`` does not exist.
         """
+        if gate_type is not None and gate_type not in ("", "human", "timer"):
+            raise ValueError(
+                f"gate_type must be '' (clear), 'human', or 'timer', got {gate_type!r}"
+            )
+        if gate_type == "timer" and not gate_until:
+            raise ValueError("gate_until is required when gate_type is 'timer'")
+        if gate_type is None and (gate_until is not None or gate_note is not None):
+            raise ValueError("gate_type is required when setting gate_until or gate_note")
+
         now = _now_iso()
         with self._connect() as conn:
             row = conn.execute(
@@ -755,6 +787,14 @@ class SQLiteTracker(ProjectTracker):
                 changes.append(f"  description: {old_snip!r} → {new_snip!r}")
             if priority is not None and int(priority) != int(row["priority"] or 3):
                 changes.append(f"  priority: {row['priority']} → {priority}")
+            if gate_type is not None:
+                if gate_type == "":
+                    changes.append(f"  gate: {row['gate_type']!r} → cleared")
+                else:
+                    changes.append(
+                        f"  gate: {row['gate_type']!r} → {gate_type!r} "
+                        f"until {gate_until!r} ({(gate_note or '')!r})"
+                    )
 
             if not changes:
                 return _row_to_task(row)
@@ -770,6 +810,13 @@ class SQLiteTracker(ProjectTracker):
             if priority is not None:
                 sets.append("priority = ?")
                 params.append(int(priority))
+            if gate_type is not None:
+                sets.append("gate_type = ?")
+                params.append(gate_type or None)
+                sets.append("gate_until = ?")
+                params.append(gate_until if gate_type else None)
+                sets.append("gate_note = ?")
+                params.append(gate_note if gate_type else None)
             sets.append("updated_at = ?")
             params.append(now)
             params.append(task_pk)

@@ -245,6 +245,22 @@ class HandlersTest(unittest.TestCase):
         self.assertNotIn(blocked["task"]["id"], ready_ids)
         self.assertIn(anchor["task"]["id"], ready_ids)
 
+    def test_ready_excludes_gated(self) -> None:
+        gated = self.h.wl_create(
+            title="Gated ticket",
+            description="Problem: needs founder sign-off. Expected: hidden from ready.",
+        )
+        free = self.h.wl_create(
+            title="Free work",
+            description="Problem: free. Expected: shows in ready.",
+        )
+        self.h.wl_update(gated["task"]["id"], gate_type="human", gate_note="ask founder")
+
+        ready = self.h.wl_ready(product="tradeos")
+        ready_ids = {t["id"] for t in ready["tasks"]}
+        self.assertIn(free["task"]["id"], ready_ids)
+        self.assertNotIn(gated["task"]["id"], ready_ids)
+
     def test_dispatch_unknown_tool(self) -> None:
         with self.assertRaises(ToolError):
             dispatch_tool(self.h, "wl_nope", {})
@@ -338,6 +354,36 @@ class HandlersTest(unittest.TestCase):
         )
         with self.assertRaises(ToolError):
             self.h.wl_update(created["task"]["id"], priority=9)
+
+    def test_update_sets_and_clears_gate(self) -> None:
+        created = self.h.wl_create(
+            title="Gate via MCP",
+            description="Problem: needs a gate. Expected: wl_update sets it.",
+        )
+        tid = created["task"]["id"]
+
+        gated = self.h.wl_update(tid, gate_type="human", gate_note="waiting on X")
+        self.assertEqual(gated["task"]["gate_type"], "human")
+        self.assertEqual(gated["task"]["gate_note"], "waiting on X")
+
+        cleared = self.h.wl_update(tid, gate_type="")
+        self.assertNotIn("gate_type", cleared["task"])
+
+    def test_update_timer_gate_requires_gate_until(self) -> None:
+        created = self.h.wl_create(
+            title="Timer gate guard",
+            description="Problem: missing gate_until. Expected: ToolError.",
+        )
+        with self.assertRaises(ToolError):
+            self.h.wl_update(created["task"]["id"], gate_type="timer")
+
+    def test_update_rejects_bad_gate_type(self) -> None:
+        created = self.h.wl_create(
+            title="Bad gate type guard",
+            description="Problem: bogus gate_type. Expected: ToolError.",
+        )
+        with self.assertRaises(ToolError):
+            self.h.wl_update(created["task"]["id"], gate_type="bogus")
 
     def test_update_product_resolution(self) -> None:
         created = self.h.wl_create(

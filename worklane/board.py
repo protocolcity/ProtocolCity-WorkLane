@@ -28,7 +28,13 @@ from worklane.products import (
     split_task_id,
 )
 from worklane.rendering import _badge, _esc, _label_chip
-from worklane.trackers import Task, TaskComment, TaskStatus, get_default_tracker
+from worklane.trackers import (
+    Task,
+    TaskComment,
+    TaskStatus,
+    get_default_tracker,
+    task_is_gated,
+)
 
 
 # ── Canonical Tickets app paths ───────────────────────────────────────────
@@ -774,6 +780,13 @@ def _render_task_card(
     decision_html = ""
     if "needs:decision" in (t.labels or []) or "needs:founder-decision" in (t.labels or []):
         decision_html = "<div class='tb-card-decision'>Needs input</div>"
+    gate_html = ""
+    if task_is_gated(t):
+        if t.gate_type == "timer" and t.gate_until:
+            gate_label = f"Gated until {t.gate_until[:10]}"
+        else:
+            gate_label = "Gated"
+        gate_html = f"<div class='tb-card-gate'>{_badge(gate_label, 'warning')}</div>"
     # 3-row anatomy (wl-36): [id · priority] / [title, 2-line clamp] /
     # [labels · age]. The whole card toggles the detail; links/controls opt out.
     expand_attr = (
@@ -801,6 +814,7 @@ def _render_task_card(
         f"<a class='tb-card-title' href='/admin/tasks/{_esc(t.id)}'>"
         f"{_esc(t.title)}</a>"
         + decision_html
+        + gate_html
         + worker_html
         + meta_row
         + detail_html
@@ -1045,6 +1059,8 @@ def _board_styles() -> str:
 .tb-card-worker { display:flex; align-items:center; gap:4px; margin-top:4px;
                   font-family:var(--font-mono); font-size:10px;
                   color:var(--muted); letter-spacing:.03em; }
+/* Gate chip (wl-21): shown while gate_type withholds the ticket from ready. */
+.tb-card-gate { margin-top:4px; }
 /* Meta row (wl-36): labels + age share one line; age right-aligned. */
 .tb-card-meta { margin-top:5px; display:flex; flex-wrap:wrap; gap:3px;
                 align-items:center; }
@@ -1237,136 +1253,8 @@ def _client_js() -> str:
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function adminBoardLabelTier(label) {
-    // Mirror of Python _label_tier — keep the two in sync (wl-8).
-    var s = (label || '').toLowerCase();
-    if (s.indexOf('product:') === 0) return 'positive';
-    if (s.indexOf('area:') === 0) return 'info';
-    if (s.indexOf('sys:') === 0)  return 'warning';
-    if (s === 'bug')              return 'critical';
-    if (s === 'feature')          return 'positive';
-    return 'neutral';
-  }
-
-  function adminBoardBadge(label, tier) {
-    // Same markup as Python _badge: class='badge tier-<tier>'.
-    return "<span class='badge tier-" + adminBoardEscape(tier || 'neutral') + "'>"
-         + adminBoardEscape(label) + "</span>";
-  }
-
-  function adminBoardLabelChip(label, tier) {
-    // Same markup as Python _label_chip (wl-37): quiet underdot text, no box.
-    return "<span class='label-chip tier-" + adminBoardEscape(tier || 'neutral') + "'>"
-         + adminBoardEscape(label) + "</span>";
-  }
-
-  function adminBoardPriorityBadge(p) {
-    var labels = {1:'Urgent', 2:'High', 3:'Normal', 4:'Low', 0:'—'};
-    var tiers  = {1:'critical', 2:'warning', 3:'neutral', 4:'neutral', 0:'neutral'};
-    var lv = labels[p] != null ? labels[p] : '—';
-    var tv = tiers[p]  != null ? tiers[p]  : 'neutral';
-    return adminBoardBadge(lv, tv);
-  }
-
-  function adminBoardKnownWorker(text, icons) {
-    var c = (text || '').trim().toLowerCase();
-    if (!c) return null;
-    if (icons[c]) return icons[c];
-    if (c.indexOf('grok') >= 0) return icons['grok'];
-    if (c.indexOf('cursor') >= 0) return icons['cursor'];
-    if (c.indexOf('cowork') >= 0) return icons['cowork'];
-    if (c.indexOf('terminal') >= 0) return icons['terminal'];
-    if (c.indexOf('work-pool') >= 0 || c.indexOf('work pool') >= 0 || c.indexOf('workpool') >= 0) return icons['work-pool'];
-    return null;
-  }
-
-  function adminBoardDetectWorker(task) {
-    var icons = {
-      'terminal': ['⚡', 'Terminal'], 'founder-terminal': ['⚡', 'Terminal'],
-      'work-pool': ['⚒', 'Work-pool'], 'cowork': ['🔄', 'Cowork'],
-      'grok': ['🛰', 'Grok'], 'cursor': ['✦', 'Cursor']
-    };
-    // Mirror Python _detect_worker: Owner: marker first, then signed author;
-    // an unrecognized signed id renders verbatim.
-    var candidates = [task.owner || '', task.last_comment_author || ''];
-    for (var i = 0; i < candidates.length; i++) {
-      var candidate = candidates[i].trim();
-      if (!candidate) continue;
-      var known = adminBoardKnownWorker(candidate, icons);
-      return known || ['·', candidate];
-    }
-    return adminBoardKnownWorker(task.last_comment_preview || '', icons);
-  }
-
-  function adminBoardRenderCard(task) {
-    var idLabel = '#' + adminBoardEscape(task.id);
-    if (task.ext_id) idLabel += ' · ' + adminBoardEscape(task.ext_id);
-    var extHtml = "<span class='tb-card-id'>" + idLabel + "</span>";
-    // Mirror _scoped_labels (wl-55): the scoped view already states the
-    // product, so its own product:<scope> chip is dropped from cards.
-    var scope = (window.__WQ_POLL_PARAMS && window.__WQ_POLL_PARAMS.product) || '';
-    var chipLabels = (task.labels || []).filter(function(l) {
-      return !scope || l !== 'product:' + scope;
-    });
-    var labels = chipLabels.slice(0, 4)
-      .map(function(l) { return adminBoardLabelChip(l, adminBoardLabelTier(l)); })
-      .join(' ');
-    var extraLabels = chipLabels.length > 4
-      ? "<span class='dim tb-card-more'>+" + (chipLabels.length - 4) + "</span>"
-      : '';
-    var preview = '';
-    if (task.last_comment_preview) {
-      var authorChip = task.last_comment_author
-        ? "<span class='tb-card-preview-author'>" + adminBoardEscape(task.last_comment_author) + "</span>"
-        : '';
-      preview = "<div class='tb-card-preview'>" + authorChip
-              + "<span>" + adminBoardEscape(task.last_comment_preview) + "</span></div>";
-    }
-    var ago = adminBoardFmtAgo(task.updated_at || '');
-    var agoHtml = task.updated_at
-      ? "<span class='tb-card-meta-ago'>"
-      + "<span class='tb-card-ago' data-iso='" + adminBoardEscape(task.updated_at) + "'>" + adminBoardEscape(ago) + "</span>"
-      + "</span>"
-      : '';
-    var workerHtml = '';
-    var w = adminBoardDetectWorker(task);
-    if (w) workerHtml = "<div class='tb-card-worker'><span>" + w[0] + "</span> <span>" + adminBoardEscape(w[1]) + "</span></div>";
-    var decisionHtml = '';
-    if ((task.labels || []).indexOf('needs:decision') >= 0
-        || (task.labels || []).indexOf('needs:founder-decision') >= 0) {
-      decisionHtml = "<div class='tb-card-decision'>Needs input</div>";
-    }
-    // Mirror the SSR card exactly (_render_task_card): 3-row anatomy (wl-36),
-    // whole card toggles the detail, so a poll repaint is invisible (wl-8).
-    var detailHtml = preview
-      ? "<div class='tb-card-detail'>" + preview + "</div>"
-      : '';
-    var expandAttr = preview
-      ? " onclick=\"if(event.target.closest('a,button,select,input'))return;this.classList.toggle('expanded');\""
-      : '';
-    var metaRow = (labels || agoHtml)
-      ? "<div class='tb-card-meta'>" + labels + extraLabels + agoHtml + "</div>"
-      : '';
-    var prioClass = 'tb-prio-' + (parseInt(task.priority, 10) || 3);
-    return "<article class='tb-card " + prioClass + (preview ? " tb-card--has-detail" : "") + "' draggable='true'"
-         + " data-task-id='" + adminBoardEscape(task.id) + "'"
-         + " data-status='"  + adminBoardEscape(task.status) + "'"
-         + " ondragstart='adminBoardDragStart(event)'"
-         + " ondragend='adminBoardDragEnd(event)'"
-         + expandAttr + ">"
-         +   "<header class='tb-card-head'>"
-         +     extHtml
-         +     "<span class='tb-card-priority'>" + adminBoardPriorityBadge(task.priority) + "</span>"
-         +   "</header>"
-         +   "<a class='tb-card-title' href='/admin/tasks/" + adminBoardEscape(task.id) + "'>"
-         +     adminBoardEscape(task.title)
-         +   "</a>"
-         +   decisionHtml
-         +   workerHtml
-         +   metaRow
-         +   detailHtml
-         + "</article>";
-  }
+  // wl-9: card markup is server-rendered only (_render_task_card). The poll
+  // returns task.card_html; JS never reimplements badge/chip/worker anatomy.
 
   function adminActivityStripRebuild(tasks) {
     var strip = document.getElementById('admin-activity-strip');
@@ -1463,13 +1351,16 @@ def _client_js() -> str:
       }
       var visible = list.slice(0, __ADMIN_BOARD_COLUMN_CAP);
       var hidden = list.slice(__ADMIN_BOARD_COLUMN_CAP);
-      var html = visible.map(adminBoardRenderCard).join('');
+      // wl-9: swap pre-rendered card HTML (same bytes as SSR) by task id.
+      var html = visible.map(function(t) { return t.card_html || ''; }).join('');
       if (hidden.length) {
         var moreId = 'tb-col-more-' + status;
         var hiddenId = 'tb-col-hidden-' + status;
         html += "<div class='tb-col-more' id='" + moreId + "'>"
               + "<button class='btn' onclick='document.getElementById(\"" + hiddenId + "\").hidden=false;this.parentElement.hidden=true;'>Show all " + list.length + "</button></div>"
-              + "<div id='" + hiddenId + "' hidden>" + hidden.map(adminBoardRenderCard).join('') + "</div>";
+              + "<div id='" + hiddenId + "' hidden>"
+              + hidden.map(function(t) { return t.card_html || ''; }).join('')
+              + "</div>";
       }
       body.innerHTML = html;
     });

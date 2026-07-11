@@ -23,6 +23,7 @@ from worklane.trackers.protocol import (
     Task,
     TaskComment,
     TaskStatus,
+    task_is_gated,
 )
 from worklane.trackers.registry import (
     get_default_tracker,
@@ -40,4 +41,5 @@ __all__ = [
     "get_tracker",
     "list_trackers",
     "register_tracker",
+    "task_is_gated",
 ]

@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set
 
-from worklane.trackers.protocol import ProjectTracker, Task, TaskStatus
+from worklane.trackers.protocol import ProjectTracker, Task, TaskStatus, task_is_gated
 
 
 # ── parsing helpers ──────────────────────────────────────────────────────
@@ -239,6 +239,7 @@ class WorkQueue:
                 t for t in candidates if wanted_labels.intersection(t.labels)
             ]
         candidates = [t for t in candidates if self.is_ready(t)]
+        candidates = [t for t in candidates if not task_is_gated(t)]
         candidates.sort(key=_priority_key)
         return candidates
 

@@ -54,7 +54,13 @@ from worklane.devqueue import (
     group_by_file_conflict,
     run_shutdown,
 )
-from worklane.trackers import Task, TaskComment, TaskStatus, get_default_tracker
+from worklane.trackers import (
+    Task,
+    TaskComment,
+    TaskStatus,
+    get_default_tracker,
+    task_is_gated,
+)
 from worklane.products import (
     ProductSpec,
     default_product_slug,
@@ -3453,6 +3459,7 @@ def api_tasks_ready(
         )
 
     tasks = tracker.list_tasks(status=TaskStatus.BACKLOG, limit=None)
+    tasks = [t for t in tasks if not task_is_gated(t)]
     if label:
         lab = label.strip()
         tasks = [t for t in tasks if lab in (t.labels or [])]
@@ -3725,11 +3732,29 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
         out["id"] = task_id
         return JSONResponse({"ok": True, "task": out})
 
-    # Field updates: title, description, priority
+    # Field updates: title, description, priority, gate (wl-21)
     title = payload.get("title")
     description = payload.get("description")
     priority_raw = payload.get("priority")
-    if title is not None or description is not None or priority_raw is not None:
+    gate_type = payload.get("gate_type")
+    gate_until = payload.get("gate_until")
+    gate_note = payload.get("gate_note")
+    if gate_type is None and (gate_until is not None or gate_note is not None):
+        return JSONResponse(
+            {"ok": False, "error": "gate_type is required when setting gate_until or gate_note"},
+            status_code=400,
+        )
+    if gate_type is not None and gate_type not in ("", "human", "timer"):
+        return JSONResponse(
+            {"ok": False, "error": "gate_type must be '' (clear), 'human', or 'timer'"},
+            status_code=400,
+        )
+    if gate_type == "timer" and not gate_until:
+        return JSONResponse(
+            {"ok": False, "error": "gate_until is required when gate_type is 'timer'"},
+            status_code=400,
+        )
+    if title is not None or description is not None or priority_raw is not None or gate_type is not None:
         priority: Optional[int] = None
         if priority_raw is not None:
             try:
@@ -3744,6 +3769,9 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             title=str(title) if title is not None else None,
             description=str(description) if description is not None else None,
             priority=priority,
+            gate_type=gate_type,
+            gate_until=str(gate_until) if gate_until is not None else None,
+            gate_note=str(gate_note) if gate_note is not None else None,
         )
         if updated is None:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
@@ -3752,7 +3780,11 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
         return JSONResponse({"ok": True, "task": out})
 
     return JSONResponse(
-        {"ok": False, "error": "no supported fields in payload (status, title, description, priority)"},
+        {
+            "ok": False,
+            "error": "no supported fields in payload (status, title, description, "
+                     "priority, gate_type, gate_until, gate_note)",
+        },
         status_code=400,
     )
 
@@ -3937,6 +3969,7 @@ def api_list_tasks(
 
     task_dicts = [t.to_dict() for t in tasks]
 
+    previews: Dict[str, Dict[str, str]] = {}
     if with_preview:
         previews = _load_preview_comments_multi(
             products,
@@ -3955,6 +3988,14 @@ def api_list_tasks(
                 td["last_comment_author"] = ""
                 td["last_comment_at"] = ""
                 td["owner"] = ""
+
+    # wl-9: single card renderer — poll ships the same HTML the SSR board
+    # embeds via _render_task_card, so JS never re-implements card markup.
+    scope_product = prod or ""
+    for t, td in zip(tasks, task_dicts):
+        td["card_html"] = _render_task_card(
+            t, previews.get(str(t.id), {}), scope_product
+        )
 
     scope_tasks = list_tasks_for_scope_multi(products, prod, limit=None)
     scope_counts = _wq_status_counts(scope_tasks)
@@ -4561,50 +4602,9 @@ def _task_server_extra_js() -> str:
     """
     return r"""
 <script>
-  /* ── Clickable label filters ─────────────────────────────────────── */
-  /* Filter links stay on the current Pool page (product scope, status
-     bucket) and swap only the label/priority narrowing — jumping to
-     /admin/tickets/all dumped users into the all-products label wall. */
-  function tsBoardFilterHref(params) {
-    var path = window.location.pathname;
-    if (path.indexOf('/admin/tickets/') !== 0) path = '/admin/tickets/all';
-    var q = new URLSearchParams(window.location.search);
-    q.set('view', 'board');
-    q.delete('label');
-    q.delete('priority');
-    Object.keys(params).forEach(function(k) { q.set(k, params[k]); });
-    return path + '?' + q.toString();
-  }
-  var _origAdminBoardBadge = (typeof adminBoardBadge === 'function') ? adminBoardBadge : null;
-  var _origAdminBoardLabelChip = (typeof adminBoardLabelChip === 'function') ? adminBoardLabelChip : null;
-  function adminBoardLabelChipClickable(label, tier) {
-    var escaped = adminBoardEscape(label);
-    var chip = _origAdminBoardLabelChip ? _origAdminBoardLabelChip(label, tier) : (
-      "<span class='label-chip tier-" + adminBoardEscape(tier || 'neutral') + "'>"
-      + escaped + "</span>"
-    );
-    return "<a href='" + adminBoardEscape(tsBoardFilterHref({label: label})) + "'"
-         + " class='af-label-link' onclick='event.stopPropagation();'"
-         + " title='Filter by " + escaped + "'>" + chip + "</a>";
-  }
-  adminBoardLabelChip = adminBoardLabelChipClickable;
-
-  /* Priority pills filter by priority — not by a label literally named
-     "Urgent", which matches nothing and lands on an empty board. */
-  adminBoardPriorityBadge = function(p) {
-    var labels = {1:'Urgent', 2:'High', 3:'Normal', 4:'Low'};
-    var tiers  = {1:'critical', 2:'warning', 3:'neutral', 4:'neutral'};
-    var pv = parseInt(p, 10) || 0;
-    var mkBadge = _origAdminBoardBadge || function(l, t) {
-      return "<span class='badge " + adminBoardEscape(t || 'neutral') + "'>"
-           + adminBoardEscape(l) + "</span>";
-    };
-    if (!labels[pv]) return mkBadge('—', 'neutral');
-    return "<a href='" + adminBoardEscape(tsBoardFilterHref({priority: String(pv)})) + "'"
-         + " class='af-label-link' onclick='event.stopPropagation();'"
-         + " title='Filter by priority: " + labels[pv] + "'>"
-         + mkBadge(labels[pv], tiers[pv]) + "</a>";
-  };
+  /* wl-9: clickable on-card label/priority filters lived only on the JS
+     card renderer (poll path). Cards are server-rendered now; filter via
+     the command-bar chips instead. */
 
   /* ── Elapsed time helper ─────────────────────────────────────────── */
   function afFormatElapsed(isoStr) {

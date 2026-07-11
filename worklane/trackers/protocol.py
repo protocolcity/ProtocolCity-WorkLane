@@ -9,6 +9,7 @@ adapters live alongside: :mod:`worklane.trackers.sqlite` (default) and
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 
@@ -55,6 +56,12 @@ class Task:
     ext_id: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
+    # wl-21: gates as data. gate_type is None (no gate), "human" (blocks
+    # the ready queue until manually cleared), or "timer" (blocks until
+    # gate_until, then auto-thaws — see task_is_gated()).
+    gate_type: Optional[str] = None
+    gate_until: Optional[str] = None
+    gate_note: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -67,7 +74,37 @@ class Task:
             "labels": list(self.labels),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "gate_type": self.gate_type,
+            "gate_until": self.gate_until,
+            "gate_note": self.gate_note,
         }
+
+
+def task_is_gated(task: "Task") -> bool:
+    """True if ``task`` should be withheld from the ready queue right now.
+
+    Human gates withhold until someone clears them (gate_type="").  Timer
+    gates withhold until ``gate_until`` passes, then auto-thaw — computed
+    here at read time rather than by mutating the row, so there's no
+    trigger event to miss (unlike the dependency-freeze label, which is
+    flipped by a write path).  A timer gate with an unparseable or missing
+    ``gate_until`` fails safe (stays gated).
+    """
+    if not task.gate_type:
+        return False
+    if task.gate_type == "human":
+        return True
+    if task.gate_type == "timer":
+        if not task.gate_until:
+            return True
+        try:
+            until = datetime.fromisoformat(task.gate_until.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) < until
+    return False
 
 
 @runtime_checkable

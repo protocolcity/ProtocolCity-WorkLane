@@ -143,6 +143,10 @@ class TPHandlers:
         }
         if task.ext_id:
             d["ext_id"] = task.ext_id
+        if task.gate_type:
+            d["gate_type"] = task.gate_type
+            d["gate_until"] = task.gate_until
+            d["gate_note"] = task.gate_note
         if include_description:
             d["description"] = task.description or ""
         return d
@@ -509,11 +513,19 @@ class TPHandlers:
         title: Optional[str] = None,
         description: Optional[str] = None,
         priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
+        gate_until: Optional[str] = None,
+        gate_note: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Edit title, description, and/or priority (triage re-scoping)."""
-        if title is None and description is None and priority is None:
+        """Edit title, description, priority, and/or gate (wl-21) on a ticket."""
+        if (
+            title is None
+            and description is None
+            and priority is None
+            and gate_type is None
+        ):
             raise ToolError(
-                "at least one of title, description, or priority is required"
+                "at least one of title, description, priority, or gate_type is required"
             )
         title_s: Optional[str] = None
         if title is not None:
@@ -530,6 +542,10 @@ class TPHandlers:
             prio = int(priority)
             if prio not in (1, 2, 3, 4):
                 raise ToolError("priority must be 1 (urgent) … 4 (low)")
+        if gate_type is not None and gate_type not in ("", "human", "timer"):
+            raise ToolError("gate_type must be '' (clear), 'human', or 'timer'")
+        if gate_type == "timer" and not gate_until:
+            raise ToolError("gate_until is required when gate_type is 'timer'")
 
         slug, raw_id, tr, _task = self._resolve_task(task_id, product)
         updated = tr.update_task(
@@ -537,6 +553,9 @@ class TPHandlers:
             title=title_s,
             description=desc_s,
             priority=prio,
+            gate_type=gate_type,
+            gate_until=gate_until,
+            gate_note=gate_note,
             actor=self.author,
         )
         if updated is None:
@@ -1054,8 +1073,11 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
         {
             "name": "wl_update",
             "description": (
-                "Edit title, description, and/or priority on an existing ticket "
-                "(triage re-scoping). At least one field required."
+                "Edit title, description, priority, and/or gate on an existing "
+                "ticket (triage re-scoping). At least one field required. "
+                "gate_type sets a gate that withholds the ticket from the ready "
+                "queue: '' clears it, 'human' withholds until manually cleared, "
+                "'timer' withholds until gate_until then auto-thaws (wl-21)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1069,6 +1091,19 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                         "minimum": 1,
                         "maximum": 4,
                         "description": "1=urgent … 4=low",
+                    },
+                    "gate_type": {
+                        "type": "string",
+                        "enum": ["", "human", "timer"],
+                        "description": "'' clears the gate; 'human' or 'timer' sets it",
+                    },
+                    "gate_until": {
+                        "type": "string",
+                        "description": "ISO timestamp; required when gate_type is 'timer'",
+                    },
+                    "gate_note": {
+                        "type": "string",
+                        "description": "Optional free-text reason for the gate",
                     },
                 },
                 "required": ["task_id"],
