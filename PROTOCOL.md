@@ -271,6 +271,14 @@ rules as any other project. (`product` remains a silent back-compat alias on
 API/MCP/CLI param names — e.g. `?product=` query params not yet migrated to
 `?project=` — see wl-64/wl-46.)
 
+**`local/data/` holds live stores only**: sqlite backups and dry-run
+scratch files belong outside the discovery dir (`~/Developer/wl-backups/` or
+similar — the scheduled `com.worklane.backup` job already writes
+there). A stray backup left in `local/data/` used to surface as a phantom
+project tab; discovery now skips `<slug>.db` stems matching a backup/scratch
+glob (`*.pre-*`, `*.backup*`, `*bak*`, `zzz*`) unless the slug is explicitly
+registered in `local/config/products.json`.
+
 
 ## 6) Host Profiles
 

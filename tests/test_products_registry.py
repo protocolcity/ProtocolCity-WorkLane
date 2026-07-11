@@ -93,6 +93,26 @@ class ProductRegistryTest(unittest.TestCase):
         self._seed("ops_tickets", "legacy")
         self.assertIsNone(products.get_product("ops_tickets"))
 
+    def test_scratch_backup_db_is_ignored(self) -> None:
+        """wl-78: a pre-write sqlite backup or dry-run decoy left in the
+        data dir must not become a phantom product."""
+        self._seed("tradeos.pre-tp7-backfill.1720000000", "backup")
+        self._seed("zzzdryrun", "decoy")
+        self._seed("worklane", "real product")
+        slugs = [s.slug for s in products.discover_products()]
+        self.assertEqual(slugs, ["tradeos", "worklane"])
+        self.assertIsNone(products.get_product("tradeos.pre-tp7-backfill.1720000000"))
+        self.assertIsNone(products.get_product("zzzdryrun"))
+
+    def test_scratch_db_still_discovered_if_explicitly_registered(self) -> None:
+        self._seed("zzzreal", "explicitly registered scratch-looking slug")
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"zzzreal": {"display": "ZZZ Real"}}')
+        spec = products.get_product("zzzreal")
+        assert spec is not None
+        self.assertEqual(spec.display, "ZZZ Real")
+
     # ── composite ids ────────────────────────────────────────────────
 
     # ── config overlay ───────────────────────────────────────────────

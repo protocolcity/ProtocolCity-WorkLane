@@ -15,6 +15,7 @@ product (see :func:`default_product_slug`) for backward compatibility.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 from dataclasses import dataclass
@@ -36,6 +37,19 @@ _KNOWN_PRODUCT_META: Dict[str, Tuple[str, str]] = {
 # never product surfaces themselves.
 _IGNORED_DB_STEMS = {"ops_tickets"}
 
+# Backup/scratch artifacts that land in the data dir (a pre-write sqlite
+# backup, a dry-run decoy) are not product surfaces (wl-78 incident:
+# tradeos.pre-tp7-backfill.<ts>.db was discovered as a phantom product).
+# A slug matching one of these globs is still discovered if an operator
+# has explicitly registered it in the products.json config overlay.
+_SCRATCH_DB_GLOBS = ("*.pre-*", "*.backup*", "*bak*", "zzz*")
+
+
+def _is_scratch_db_stem(stem: str) -> bool:
+    """True when ``stem`` looks like a backup/scratch artifact, not a
+    live product store."""
+    return any(fnmatch.fnmatch(stem, pat) for pat in _SCRATCH_DB_GLOBS)
+
 
 def _is_product_db_stem(stem: str) -> bool:
     """True when ``stem`` is eligible as a product store name."""
@@ -43,6 +57,8 @@ def _is_product_db_stem(stem: str) -> bool:
     if not s or s in _IGNORED_DB_STEMS:
         return False
     if s.endswith("_archive"):
+        return False
+    if _is_scratch_db_stem(s) and s not in _config_overrides():
         return False
     return True
 
