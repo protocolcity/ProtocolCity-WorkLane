@@ -23,6 +23,7 @@ consistency.
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 # :mod:`worklane.trackers.sqlite` mirrors to Ops Cockpit HTTP; when this
@@ -74,6 +75,7 @@ from worklane.board import (
     _client_js,
     _detect_worker,
     _label_tier,
+    _OWNER_LINE_RE,
     get_ops_ticket_tracker,
     _load_preview_comments,
     _load_preview_comments_multi,
@@ -2450,7 +2452,15 @@ def _render_task_row(t: Task, scope_product: str = "") -> str:
 
 # ── Routes ──────────────────────────────────────────────────────────────
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Canonical default agent identity (.mcp.json WL_AGENT_ID fallback). A write
+# signed with this identity that also claims ownership of a *different*
+# agent (an Owner: marker in the comment body) means the caller's launcher
+# never exported WL_AGENT_ID (wl-39) and is silently mis-signing writes.
+DEFAULT_AGENT_ID = "founder-terminal"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -3670,6 +3680,27 @@ def _comment_process_violation(body: str, author: str) -> Optional[str]:
     return None
 
 
+def _misattributed_owner(author: str, body: str) -> Optional[str]:
+    """wl-50 guard: default-identity write claiming a different Owner:.
+
+    Returns the mismatched agent id when a comment signed with the default
+    identity (``founder-terminal``) carries an ``Owner: <agent>`` marker for
+    a *different* agent — the signature the wl-39 misconfiguration produces
+    (launcher never exported ``WL_AGENT_ID``, so an autonomous agent's
+    writes fall back to the default and silently mis-sign). Returns None for
+    normal interactive founder-terminal use.
+    """
+    if author != DEFAULT_AGENT_ID:
+        return None
+    m = _OWNER_LINE_RE.search(body)
+    if not m:
+        return None
+    marked = m.group(1).strip()
+    if marked and marked != DEFAULT_AGENT_ID:
+        return marked
+    return None
+
+
 @router.post("/api/admin/tasks/{task_id}/comments")
 async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
     try:
@@ -3685,6 +3716,15 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
     violation = _comment_process_violation(body, author)
     if violation:
         return JSONResponse({"ok": False, "error": violation}, status_code=400)
+
+    marked = _misattributed_owner(author, body)
+    if marked:
+        logger.warning(
+            "default-identity write looks autonomous: author=%r task=%s "
+            "claims Owner: %r — launcher likely never exported WL_AGENT_ID "
+            "(wl-39/wl-50)",
+            author, task_id, marked,
+        )
 
     surf, raw_id, tracker = _resolve_product_tracker(task_id)
     if surf == live_feed_product_slug() and _tradeos_tickets_use_http_feed():

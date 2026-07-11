@@ -435,6 +435,46 @@ class SurfaceRoutingTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200)
 
+    # ── wl-50: default-identity autonomous-write guard ───────────────
+
+    def test_default_identity_owner_mismatch_logs_warning(self) -> None:
+        tid = self._mk_task()
+        with self.assertLogs("worklane.task_server", level="WARNING") as cm:
+            r = self.client.post(
+                f"/api/admin/tasks/{tid}/comments",
+                json={
+                    "body": "Owner: wl-pool (claude-sonnet-5)\nStart: now",
+                    "author": "founder-terminal",
+                },
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(
+            any("wl-pool" in msg and "founder-terminal" in msg for msg in cm.output)
+        )
+
+    def test_default_identity_normal_use_stays_silent(self) -> None:
+        tid = self._mk_task()
+        with self.assertRaises(AssertionError):
+            with self.assertLogs("worklane.task_server", level="WARNING"):
+                r = self.client.post(
+                    f"/api/admin/tasks/{tid}/comments",
+                    json={"body": "just a note", "author": "founder-terminal"},
+                )
+                self.assertEqual(r.status_code, 200)
+
+    def test_non_default_identity_owner_marker_stays_silent(self) -> None:
+        tid = self._mk_task()
+        with self.assertRaises(AssertionError):
+            with self.assertLogs("worklane.task_server", level="WARNING"):
+                r = self.client.post(
+                    f"/api/admin/tasks/{tid}/comments",
+                    json={
+                        "body": "Owner: wl-pool (claude-sonnet-5)\nStart: now",
+                        "author": "work-pool",
+                    },
+                )
+                self.assertEqual(r.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()
