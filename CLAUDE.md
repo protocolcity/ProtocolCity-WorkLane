@@ -14,7 +14,6 @@ Read this file when:
 1. **[PROCESS.md](PROCESS.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket work.**
 2. **[TRUTH.md](worklane/TRUTH.md)** — what WL currently *is*: canonical entrypoints, runtime paths, HTTP surface, the boundary with host products.
 3. **[README.md](README.md)** — product overview, install, launch, host-integration examples.
-4. **[workqueue-coordination-system-design.md](worklane/workqueue-coordination-system-design.md)** — design background, non-normative. Read only if you need the *why* behind a decision.
 
 ## Boundary rules
 
@@ -23,7 +22,7 @@ Read this file when:
 - **WL is not a SaaS dependency.** Everything is file-backed SQLite on the local machine.
 - **Host products consume WL as a client** — via the CLI, the HTTP API, or an in-tree tracker adapter when the host ships one. WL itself never reaches back into the host.
 
-If a change would cross any of these lines, it needs either an ADR in the host repo's `docs/decisions/` (explaining the coupling) or a design change in `workqueue-coordination-system-design.md`. Don't silently couple.
+If a change would cross any of these lines, it needs either an ADR in the host repo's `docs/decisions/` (explaining the coupling). Don't silently couple.
 
 ## Code conventions
 

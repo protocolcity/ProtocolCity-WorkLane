@@ -1,142 +1,74 @@
-## WorkLane
+# WorkLane
 
-WorkLane (WL) is a **local-first ticketing product**. It ships as a standalone service with:
+**A local-first work queue for multi-agent teams — the coordination layer that
+keeps your AI agents from stepping on each other.**
 
-- SQLite-backed ticket storage
-- a built-in board/table UI
-- JSON APIs for other cockpit surfaces
+You have Claude Code working your backlog. Then you add Cursor. Then a
+scheduled agent that runs every hour. Suddenly two agents are editing the same
+file, a third closes a ticket nobody verified, and you can't reconstruct who
+did what. WorkLane is the fix: a shared ticket queue with a **claim protocol**
+(reserve before you touch anything), **lanes** (route work by agent
+capability), and a **closeout contract** (no "done" without stating what
+shipped and how it was verified) — all on your machine, in SQLite, with no
+cloud dependency.
 
-WL is independent. Host products (like tradeOS) consume WL as clients — they link to WL; they do not render WL's board internally.
+WorkLane is a **protocol plus a reference implementation**. The protocol
+([PROCESS.md](PROCESS.md)) defines the lifecycle, ownership markers, and
+closeout format any compliant agent follows. The implementation ships
+everything you need to run it: a FastAPI server with a live board UI, an MCP
+server so agents get native tools, a stdlib-only CLI, and per-product SQLite
+stores.
 
-## Agent / operator entry points
+It isn't a demo. It was extracted from a working system where a scheduled
+Claude Code pool, founder-driven terminals, Cursor, and Grok have worked a
+shared backlog daily for months.
 
-- **New host adopting WL:** read [INSTALL.md](INSTALL.md) — clone → install → start → bootstrap a product → pick an agent interface, then [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md) to write your own PROCESS.md §6-style profile.
-- **Agents working tickets:** read [PROCESS.md](PROCESS.md) — normative rulebook.
-- **Agents changing WL code:** read [CLAUDE.md](CLAUDE.md) — boundary rules + code conventions.
-- **Understanding what WL *is* right now:** read [TRUTH.md](TRUTH.md).
-- **Design rationale:** read [workqueue-coordination-system-design.md](workqueue-coordination-system-design.md) (non-normative).
-
-## Native startup
-
-The canonical way to run WL, with no host repo involvement:
-
-```bash
-# Default port 8799 on 127.0.0.1
-python -m worklane.server
-
-# Override host/port
-TASK_HOST=0.0.0.0 TASK_PORT=8799 python -m worklane.server
-```
-
-The service exposes the UI and API described under [HTTP surface](#http-surface) below.
-
-### Auto-start at login (macOS, host-neutral)
-
-No host repo required — WL can start itself on every login and restart if it crashes:
+## Quickstart
 
 ```bash
-scripts/install-macos-service.sh install                 # installs com.worklane.server
-scripts/install-macos-service.sh install --python /path/to/python --port 8799
-scripts/install-macos-service.sh uninstall
+git clone https://github.com/protocolcity/worklane && cd worklane
+pip install -e .
+
+worklane                     # server + board UI on http://127.0.0.1:8799
 ```
 
-This writes `~/Library/LaunchAgents/com.worklane.server.plist` running
-`python -m worklane.server`, with logs at
-`worklane/local/logs/server.{log,err.log}`. Pass `--python` when the
-interpreter with `worklane` installed isn't `python3` on launchd's
-minimal `PATH` (e.g. a host venv). `--dry-run` prints the plist without
-writing or loading anything.
+Open http://localhost:8799/admin/cockpit — the cockpit shows live pulse,
+in-flight work, and throughput across every product store.
 
-## Runtime Layout (Hidden by Default)
-
-WL runtime state is hidden and untracked by default under:
-
-- `worklane/local/data/`
-  - **One SQLite store per product: `<slug>.db`.** WL discovers every
-    `*.db` file here at request time and exposes each as its own Pool
-    surface tab (`/admin/tickets/<slug>`), plus a merged read-only "All"
-    view. Products stay independent by construction — separate files,
-    separate ticket id spaces (composite ids `t-…`, `wl-…`, …).
-  - `tradeos.db` — tradeOS product store (always registered)
-  - `worklane.db` — WL's own tickets (WL tracks itself)
-  - `ops_tickets.db` — legacy retired store, ignored by discovery
-  - Display names / short id prefixes for known slugs live in
-    `worklane/products.py` (`_KNOWN_PRODUCT_META`); unknown slugs
-    get sensible defaults, so a new product needs zero code
-- `worklane/local/config/ticketing.env` — local install/runtime flags (for example `TRADEOS_TICKETS_BOARD`)
-- `worklane/local/run/` — PID/state files
-- `worklane/local/logs/` — WL server log output
-
-Legacy fallback paths are still read for compatibility:
-
-- `worklane/.local/...` (pre-rename hidden layout)
-- `local/data/tradeos.db` (pre-cord-cut tradeOS-root layout)
-
-## HTTP Surface
-
-- **UI:**
-  - `GET /` — redirects to the Cockpit
-  - `GET /admin/cockpit` — landing page: live pulse (metrics strip, in-flight, throughput, activity ticker) + status/priority charts, across all product stores ("Ticketing" brand link in the header)
-  - `GET /admin/pulse` — redirects to the Cockpit (Pulse merged into the landing page 2026-07-10: live metrics strip + in-flight cards + throughput on top, breakdown charts below)
-  - `GET /admin/tickets/{surface}?view=board|table` — the Pool. `surface` is a first-class path segment: `all` (merged view across every product store) or any discovered product slug (`tradeos`, `worklane`, …). `ops` redirects to `all` (surface retired from the UI)
-  - `GET /admin/tasks/{task_id}` — ticket detail: description, labels, comment trail, comment form
-  - `GET /dev/dashboard` — dispatch/queue dev dashboard (ready queue, orphans, shutdown)
-- **API (admin):**
-  - `GET /api/admin/tasks` · `POST /api/admin/tasks`
-  - `GET /api/admin/tasks/{task_id}` · `PATCH /api/admin/tasks/{task_id}`
-  - `PATCH /api/admin/tasks/{task_id}/labels`
-  - `POST /api/admin/tasks/{task_id}/comments` — include `author` (see PROCESS.md §3.8/§5.2)
-  - `GET /api/admin/cockpit/summary`
-- **API (dev/ops):**
-  - `GET /api/dev/tasks` · `GET /api/dev/activity` · `GET /api/dev/board-summary`
-  - `GET /api/dev/queue/ready` · `POST /api/dev/queue/dispatch` · `GET /api/dev/queue/orphans` · `POST /api/dev/queue/shutdown`
-  - `GET /api/ops/tickets-health`
-
-Legacy route aliases remain for compatibility:
-
-- `/admin/tasks` redirects to Tickets home
-- `/admin/work-queue` (+ optional `?product=`) redirects to `/admin/tickets/{all|tradeos}`
-- old `/admin/products/*` routes redirect to Tickets home
-- `/admin/tickets/ops` redirects to `/admin/tickets/all`
-
-## `wl` CLI (host-neutral HTTP client)
-
-For hosts that don't want an MCP client or a Python dependency on WL, the
-`wl` console script (installed by `pip install -e .`, wl-13) is a
-stdlib-only HTTP client — no `worklane` import required by the
-caller:
+File your first ticket:
 
 ```bash
-export WL_BASE_URL=http://localhost:8799   # default if unset
-export WL_AGENT_ID=<your-agent-id>         # signs comments, PROCESS.md §3.8
-
-wl list --product <slug> --status backlog
-wl show <task-id>
-wl comment <task-id> "..." --author <your-agent-id>
-wl status <task-id> in_progress
-wl label <task-id> --add area:backend --remove area:frontend
+curl -X POST localhost:8799/api/admin/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"surface": "worklane", "author": "founder",
+       "title": "Try WorkLane",
+       "description": "Problem: my agents collide. Outcome: they stop."}'
 ```
 
-See [INSTALL.md](INSTALL.md) for the full onboarding walkthrough. This is
-distinct from `worklane/cli/task.py` (`python -m
-worklane.cli.task`), which is the original tradeOS-era CLI that
-imports the tracker and reads/writes SQLite directly — it requires the
-`worklane` package on the caller's side and is kept only for
-backward compatibility.
+Every write is signed (`author` is required — the protocol has no anonymous
+actions), and every ticket needs a real problem statement by construction.
 
-## MCP server (agent-native access)
+## Give your agents tools (MCP)
 
-Agents can coordinate through WL without CLI wrappers via the stdio MCP server
-(`worklane.mcp`, shipped with wl-19):
+Agents coordinate through the stdio MCP server — 16 tools, no extra
+dependencies:
 
 ```bash
-# Author identity is required at connect time (PROCESS.md §3.8)
-python -m worklane.mcp --author grok
-# or: WL_AGENT_ID=grok python -m worklane.mcp
-# console script: worklane-mcp --author cursor
+claude mcp add worklane -- python -m worklane.mcp --author claude
 ```
 
-**Tools (16):**
+or in any MCP host config (Claude Code / Claude Desktop / Cursor / …):
+
+```json
+{
+  "mcpServers": {
+    "worklane": {
+      "command": "python",
+      "args": ["-m", "worklane.mcp", "--author", "cursor"]
+    }
+  }
+}
+```
 
 | Group | Tools |
 | --- | --- |
@@ -144,103 +76,71 @@ python -m worklane.mcp --author grok
 | Triage | `wl_label` · `wl_update` · `wl_cancel` · `wl_reopen` |
 | Soft-lock / pulse | `wl_reserve` · `wl_park` · `wl_mine` · `wl_counts` |
 
-Each accepts a `product` param (`tradeos`, `worklane`, or `all` for
-list/ready/mine/counts). Composite ids (`t-…`, `wl-…`) work everywhere.
+`wl_close` takes structured closeout sections (`completed`, `verification`,
+`links`, `follow_ups`) — a malformed closeout is impossible by construction.
 
-`wl_close` takes structured §5 sections (`completed`, `verification`, `links`,
-`follow_ups`) so malformed close-outs are impossible by construction.
-`wl_reserve` / `wl_park` cover PROCESS §2 soft-lock without a host CLI.
-
-Example client config (Claude Desktop / Cursor / any MCP host):
-
-```json
-{
-  "mcpServers": {
-    "worklane": {
-      "command": "python",
-      "args": ["-m", "worklane.mcp", "--author", "cursor"],
-      "env": {
-        "WL_PRODUCT": "tradeos",
-        "WORKLANE_RUNTIME_DIR": "/absolute/path/to/worklane/local"
-      }
-    }
-  }
-}
-```
-
-No extra Python dependencies — the server speaks JSON-RPC 2.0 over stdio
-directly against the product trackers (lifecycle auto-transitions included).
-
-## Environment Overrides
-
-- `WORKLANE_DB` (preferred): override product ticket DB path
-- `TRADEOS_TRACKER_DB` (legacy): backward-compatible product DB override
-- `OPS_TICKETS_DB`: override ops ticket DB path
-- `TASK_HOST` / `TASK_PORT`: WL host/port for UI/API service
-- `WORKLANE_RUNTIME_DIR`: override runtime root (default `worklane/local`)
-- `WORKLANE_START_CMD`: optional external command used by a host launcher to start WL
-- `WL_AGENT_ID`: default author for MCP/CLI signed writes
-- `WL_PRODUCT`: default product store for MCP tools when `product` is omitted
-
----
-
-## Host integration — tradeOS profile
-
-tradeOS is currently the primary host. The following conveniences live in the tradeOS repo; they are **not** part of WL itself:
-
-### First-time install (tradeOS)
-
-From the tradeOS repo root:
+There's also `wl`, a stdlib-only CLI for agents and scripts that shouldn't
+import anything:
 
 ```bash
-./tradeos tickets-install
+export WL_AGENT_ID=my-agent
+wl list --product worklane --status backlog
+wl show wl-1
+wl status wl-1 in_progress
+wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
 ```
 
-This command:
+## The protocol in 60 seconds
 
-1. creates WL runtime folders under `worklane/local/`
-2. initializes DB files
-3. migrates/copies legacy DB content when needed
-4. writes `ticketing.env`
+1. **Everything is a ticket** in a per-product SQLite store. Products are just
+   `<slug>.db` files — drop in a new one and it gets its own board tab, its
+   own ticket id space (`wl-12`, `myapp-3`), zero code.
+2. **Claim before work.** An agent moves a ticket to `in_review` and posts an
+   `Owner:` comment before touching a file. Two agents can never silently work
+   the same ticket.
+3. **Lanes route by capability.** Label tickets `lane:<agent>` and each agent
+   scans only its lane — small mechanical fixes to a lightweight agent,
+   architectural work to a stronger one, judgment calls to a human.
+4. **Closeouts are contracts.** Done requires `Completed:` + `Verification:`
+   (with evidence), or the auto-transition guards bounce it back.
+5. **Every action is signed.** Comments and writes carry an agent identity;
+   the trail is the audit log.
 
-### Host launchers (tradeOS wrappers)
+The full normative rulebook is [PROCESS.md](PROCESS.md). To onboard your own
+project and write per-agent profiles, start at [INSTALL.md](INSTALL.md) and
+[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md).
 
-```bash
-./ticketing start          # background start
-./ticketing status
-./ticketing restart
-./ticketing stop
+## What it is / what it isn't
 
-# alias
-./tickets status
+- **Local-first, file-backed.** One machine, SQLite, no accounts, no cloud.
+  Backup = copy the `.db` files.
+- **Host-neutral.** Your product consumes WorkLane over HTTP, MCP, or the CLI.
+  WorkLane never reaches into your codebase.
+- **Not a SaaS, not a Jira replacement for humans.** It's the coordination
+  substrate for the agents doing your work — the humans get the board UI and
+  the final say.
 
-# foreground (single-process / direct logs)
-./ticketing serve
-```
+## Layout & configuration
 
-### tradeOS integration controls
+Runtime state lives under `worklane/local/` (created on first run):
+`data/<slug>.db` per product, `logs/`, `run/`. Useful knobs:
 
-The supported trading app (`./tradeos` / `./tradeos founder`) does **not** enable WL in the shell. When WL is installed, `./tradeos dev` (maintainer path) opens WL board links and can optionally start WL.
+- `TASK_HOST` / `TASK_PORT` — bind address for the server (default
+  `127.0.0.1:8799`)
+- `WL_AGENT_ID` — default author identity for CLI/MCP writes
+- `WL_PRODUCT` — default product store when a tool call omits `product`
+- `WORKLANE_RUNTIME_DIR` — relocate the runtime root
 
-To force tradeOS to use an external WL command:
+macOS users can install a login service (auto-start + crash restart):
+`scripts/install-macos-service.sh install`.
 
-```bash
-export WORKLANE_START_CMD="<your ticketing protocol start command>"
-```
+## Status
 
-tradeOS also exposes WL passthrough controls:
+Early public release, extracted from production use. Near-term roadmap:
+remove the remaining internal-host defaults, PyPI package (`pip install
+worklane`), a seeded demo mode, and a Claude Code plugin bundling the MCP
+server + protocol skill.
 
-```bash
-./tradeos wl-status
-./tradeos wl-start
-./tradeos wl-stop
-./tradeos wl-restart
-```
+## License
 
-### tradeOS integration contract
-
-- tradeOS's `worklane.trackers.*` adapters read/write WL SQLite stores directly (short-term; see ADR-023 for the move to HTTP-only consumption).
-- tradeOS Dev menu links to WL UI via `TRADEOS_TP_UI_BASE` (defaults to `http://localhost:${TASK_PORT}`).
-- WL can serve board/table even while tradeOS restarts.
-
-Other future hosts adopt WL by defining their own profile — see PROCESS.md §6 (host profiles) for the pattern. On the storage side, adoption is just a new `<slug>.db` in the data dir: WL discovers it and gives the product its own Pool tab automatically.
+Apache-2.0 — see [LICENSE](LICENSE). © 2026 ProtocolCity.
