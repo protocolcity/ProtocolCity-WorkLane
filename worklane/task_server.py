@@ -2181,154 +2181,6 @@ def _render_active_agents_panel(
     return f"<div class='agent-rows'>{rows}</div>"
 
 
-# wl-86: PROTOCOL.md §4 — in-flight tickets with no update in over 90 minutes
-# count as stalled; the Attention panel surfaces them alongside blocked and
-# aging backlog work.
-_STALE_INFLIGHT = timedelta(minutes=90)
-_AGING_BACKLOG = timedelta(days=7)
-
-
-def _fmt_minutes(mins: int) -> str:
-    """Compact duration like '45m', '3h20m', '2d4h'."""
-    if mins < 60:
-        return f"{mins}m"
-    hrs, m = divmod(mins, 60)
-    if hrs < 24:
-        return f"{hrs}h{m}m" if m else f"{hrs}h"
-    days, h = divmod(hrs, 24)
-    return f"{days}d{h}h" if h else f"{days}d"
-
-
-def _render_next_up_panel(
-    ready_tasks: List[Task], *, now: datetime, dot_vars: Dict[str, str]
-) -> str:
-    """wl-86: what an agent would pick next — the merged ready queue across
-    the in-scope stores, priority order. Same eligibility as wl_ready
-    (blockers done, not gated)."""
-    if not ready_tasks:
-        return "<div class='pulse-empty'>Queue clear — nothing ready.</div>"
-    rows = ""
-    for t in ready_tasks[:6]:
-        prod_slug, _ = split_task_id(t.id)
-        dot_var = dot_vars.get(prod_slug, "--dim")
-        pri_color = _pulse_priority_color(t.priority)
-        title = _esc(t.title)[:70] + ("…" if len(t.title) > 70 else "")
-        age = _pulse_relative_time(t.created_at, now=now)
-        rows += (
-            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-side-row'>"
-            f"<span class='pulse-side-pri' style='color:{pri_color};'>P{int(t.priority or 3)}</span>"
-            f"<span class='pulse-side-id'><span class='pulse-ticker-dot' "
-            f"style='background:var({dot_var});'></span>#{_esc(t.id)}</span>"
-            f"<span class='pulse-side-title'>{title}</span>"
-            f"<span class='pulse-side-age'>{age}</span>"
-            f"</a>"
-        )
-    return f"<div class='pulse-side-rows'>{rows}</div>"
-
-
-def _render_attention_panel(
-    inflight_tasks: List[Task],
-    blocked_entries: List[Any],
-    backlog: List[Task],
-    *,
-    now: datetime,
-    parse_ts,
-) -> Tuple[str, int]:
-    """wl-86: everything that needs a human — stalled in-flight (§4), blocked
-    backlog with unresolved deps, and P1/P2 backlog going stale. Returns
-    (html, item count) so the panel head can show the total."""
-    items: List[Tuple[str, str, Task, str]] = []  # (tag, color, task, note)
-    seen: set = set()
-    for t in inflight_tasks:
-        ts = parse_ts(t.updated_at)
-        if ts is not None and (now - ts) >= _STALE_INFLIGHT:
-            items.append((
-                "stale", "#f59e0b", t,
-                f"no update {_pulse_relative_time(t.updated_at, now=now)}",
-            ))
-            seen.add(t.id)
-    for bt in blocked_entries:
-        ids = ", ".join(f"#{b.ticket_id}" for b in bt.blockers[:2])
-        if len(bt.blockers) > 2:
-            ids += f" +{len(bt.blockers) - 2}"
-        items.append(("blocked", "#ef4444", bt.task, f"waiting on {ids}"))
-        seen.add(bt.task.id)
-    for t in backlog:
-        if t.id in seen or int(t.priority or 3) > 2:
-            continue
-        ts = parse_ts(t.updated_at) or parse_ts(t.created_at)
-        if ts is not None and (now - ts) >= _AGING_BACKLOG:
-            items.append((
-                "aging", "#38bdf8", t,
-                f"idle {_pulse_relative_time(t.updated_at or t.created_at, now=now)}",
-            ))
-    if not items:
-        return "<div class='pulse-empty'>✓ Nothing needs attention.</div>", 0
-    rows = ""
-    for tag, color, t, note in items[:8]:
-        title = _esc(t.title)[:60] + ("…" if len(t.title) > 60 else "")
-        rows += (
-            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-side-row'>"
-            f"<span class='pulse-attn-tag' style='color:{color};border-color:{color};'>{tag}</span>"
-            f"<span class='pulse-side-id'>#{_esc(t.id)}</span>"
-            f"<span class='pulse-side-title'>{title}</span>"
-            f"<span class='pulse-side-note'>{_esc(note)}</span>"
-            f"</a>"
-        )
-    return f"<div class='pulse-side-rows'>{rows}</div>", len(items)
-
-
-def _render_flow_panel(
-    all_tasks: List[Task],
-    *,
-    now: datetime,
-    today_start: datetime,
-    parse_ts,
-    done_today: int,
-) -> str:
-    """wl-86: intake vs burn — is the backlog growing or shrinking today —
-    plus median created→done cycle time over the last 7 days."""
-    floor = datetime.min.replace(tzinfo=timezone.utc)
-    created_today = len([
-        t for t in all_tasks if (parse_ts(t.created_at) or floor) >= today_start
-    ])
-    net = created_today - done_today
-    week_ago = now - timedelta(days=7)
-    done_week = 0
-    cycle_mins: List[int] = []
-    for t in all_tasks:
-        if t.status != TaskStatus.DONE:
-            continue
-        closed = parse_ts(t.updated_at)
-        if closed is None or closed < week_ago:
-            continue
-        done_week += 1
-        created = parse_ts(t.created_at)
-        if created is not None and closed >= created:
-            cycle_mins.append(int((closed - created).total_seconds() // 60))
-    if cycle_mins:
-        cycle_mins.sort()
-        mid = len(cycle_mins) // 2
-        med = (cycle_mins[mid] if len(cycle_mins) % 2
-               else (cycle_mins[mid - 1] + cycle_mins[mid]) // 2)
-        cycle_str = _fmt_minutes(med)
-    else:
-        cycle_str = "—"
-    net_color = "#4caf7d" if net <= 0 else "#f59e0b"
-    net_str = f"{net:+d}" if net else "±0"
-    return (
-        "<div class='pulse-flow'>"
-        f"<div class='pulse-flow-stat'><b>{created_today}</b><i>filed today</i></div>"
-        f"<div class='pulse-flow-stat'><b>{done_today}</b><i>done today</i></div>"
-        f"<div class='pulse-flow-stat'><b style='color:{net_color};'>{net_str}</b><i>net intake</i></div>"
-        "</div>"
-        "<div class='pulse-flow-rows'>"
-        f"<div class='pulse-flow-row'><span>Median cycle · 7d</span><b>{cycle_str}</b></div>"
-        f"<div class='pulse-flow-row'><span>Closed · 7d</span><b>{done_week}</b></div>"
-        "</div>"
-    )
-
-
 def _render_pulse_page(scope: str = "") -> str:
     """Live metrics strip — 'what's happening in the in-scope stores right now'.
 
@@ -2400,24 +2252,6 @@ def _render_pulse_page(scope: str = "") -> str:
     )
     agents_html = _render_active_agents_panel(inflight_tasks, now=now)
 
-    # wl-86: ready + blocked across the in-scope stores (one WorkQueue per
-    # store — dependency checks only resolve within a store).
-    ready_tasks: List[Task] = []
-    blocked_entries: List[Any] = []
-    for _spec, tracker in _scoped_product_trackers(scope):
-        try:
-            q = WorkQueue(tracker)
-            ready_tasks.extend(q.ready())
-            blocked_entries.extend(q.blocked())
-        except Exception:
-            continue
-    ready_tasks.sort(key=lambda t: (int(t.priority or 3), t.created_at or ""))
-
-    next_up_html = _render_next_up_panel(ready_tasks, now=now, dot_vars=dot_vars)
-    attention_html, attention_count = _render_attention_panel(
-        inflight_tasks, blocked_entries, backlog, now=now, parse_ts=_parse_ts,
-    )
-
     # Metrics strip
     avg_inflight_age = ""
     if inflight_tasks:
@@ -2443,18 +2277,11 @@ def _render_pulse_page(scope: str = "") -> str:
         f"<div class='pulse-metric-lbl'>Done today</div></div>"
         f"<div class='pulse-metric'><div class='pulse-metric-val'>{thr_24h}</div>"
         f"<div class='pulse-metric-lbl'>Done · 24h</div></div>"
-        f"<div class='pulse-metric'><div class='pulse-metric-val' style='color:#38bdf8;'>{len(ready_tasks)}</div>"
-        f"<div class='pulse-metric-lbl'>Ready</div></div>"
         f"<div class='pulse-metric'><div class='pulse-metric-val'>{len(backlog)}</div>"
         f"<div class='pulse-metric-lbl'>Backlog</div></div>"
         f"<div class='pulse-metric'><div class='pulse-metric-val'>{avg_inflight_age or '—'}</div>"
         f"<div class='pulse-metric-lbl'>Avg in-flight age</div></div>"
         "</div>"
-    )
-
-    flow_html = _render_flow_panel(
-        all_tasks, now=now, today_start=today_start,
-        parse_ts=_parse_ts, done_today=len(done_today),
     )
 
     # In-flight cards
@@ -2531,68 +2358,41 @@ def _render_pulse_page(scope: str = "") -> str:
       {metrics_html}
 
       <div class='pulse-grid'>
-        <div class='pulse-col pulse-col--main'>
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>In flight</span>
-              <span class='pulse-panel-meta'>{len(in_progress)} active · {len(in_review)} reserved</span>
-            </div>
-            <div class='pulse-cards'>{cards_html}</div>
+        <div class='pulse-panel pulse-panel--wide'>
+          <div class='pulse-panel-head'>
+            <span class='pulse-panel-title'>In flight</span>
+            <span class='pulse-panel-meta'>{len(in_progress)} active · {len(in_review)} reserved</span>
           </div>
-
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Fleet</span>
-              <span class='pulse-panel-meta'>{len(discover_products())} project stores</span>
-            </div>
-            {fleet_html}
-          </div>
-
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Activity · last 20 updates</span>
-            </div>
-            <div class='pulse-ticker'>{ticker_items}</div>
-          </div>
+          <div class='pulse-cards'>{cards_html}</div>
         </div>
 
-        <div class='pulse-col pulse-col--side'>
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Throughput</span>
-            </div>
-            {spark_html}
+        <div class='pulse-panel'>
+          <div class='pulse-panel-head'>
+            <span class='pulse-panel-title'>Throughput</span>
           </div>
+          {spark_html}
+        </div>
 
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Next up</span>
-              <span class='pulse-panel-meta'>{len(ready_tasks)} ready</span>
-            </div>
-            {next_up_html}
+        <div class='pulse-panel pulse-panel--wide'>
+          <div class='pulse-panel-head'>
+            <span class='pulse-panel-title'>Fleet</span>
+            <span class='pulse-panel-meta'>{len(discover_products())} project stores</span>
           </div>
+          {fleet_html}
+        </div>
 
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Attention</span>
-              <span class='pulse-panel-meta'>{attention_count or 'clear'}</span>
-            </div>
-            {attention_html}
+        <div class='pulse-panel'>
+          <div class='pulse-panel-head'>
+            <span class='pulse-panel-title'>Active agents</span>
           </div>
+          {agents_html}
+        </div>
 
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Flow · 7 days</span>
-            </div>
-            {flow_html}
+        <div class='pulse-panel pulse-panel--wide'>
+          <div class='pulse-panel-head'>
+            <span class='pulse-panel-title'>Activity · last 20 updates</span>
           </div>
-
-          <div class='pulse-panel'>
-            <div class='pulse-panel-head'>
-              <span class='pulse-panel-title'>Active agents</span>
-            </div>
-            {agents_html}
-          </div>
+          <div class='pulse-ticker'>{ticker_items}</div>
         </div>
       </div>
     </div>
@@ -2619,14 +2419,11 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-metric-val {{ font-size:24px; font-weight:700; line-height:1; display:flex; align-items:center; gap:6px; }}
       .pulse-metric-lbl {{ font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--dim); margin-top:6px; }}
 
-      /* wl-86: explicit main + side columns — every cell filled, no half-empty
-         auto-fit rows. Collapses to one column on narrow viewports. */
-      .pulse-grid {{ display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr);
-        gap:12px; align-items:start; }}
-      .pulse-col {{ display:flex; flex-direction:column; gap:12px; min-width:0; }}
-      @media (max-width: 960px) {{ .pulse-grid {{ grid-template-columns:1fr; }} }}
+      .pulse-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; }}
       .pulse-panel {{ background:var(--bg2, #211d16); border:1px solid var(--border); border-radius:6px;
-        padding:12px 14px; }}
+        padding:12px 14px; min-height:120px; }}
+      .pulse-panel--wide {{ grid-column:span 2; }}
+      @media (max-width: 960px) {{ .pulse-panel--wide {{ grid-column:span 1; }} }}
       .pulse-panel-head {{ display:flex; justify-content:space-between; align-items:baseline;
         padding-bottom:8px; margin-bottom:10px; border-bottom:1px dashed var(--border); }}
       .pulse-panel-title {{ font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--dim); font-weight:600; }}
@@ -2692,31 +2489,6 @@ def _render_pulse_page(scope: str = "") -> str:
         border-radius:1px 1px 0 0; min-height:2px; transition:height .3s; }}
       .pulse-spark-axis {{ display:flex; justify-content:space-between; font-size:9px; color:var(--dim);
         text-transform:uppercase; letter-spacing:0.08em; }}
-
-      /* wl-86: side-column rows (Next up, Attention) */
-      .pulse-side-rows {{ display:flex; flex-direction:column; gap:3px; }}
-      .pulse-side-row {{ display:grid; grid-template-columns:auto auto minmax(0, 1fr) auto; gap:8px;
-        padding:4px 6px; font-size:11px; text-decoration:none; color:var(--fg); align-items:baseline;
-        border-left:2px solid transparent; }}
-      .pulse-side-row:hover {{ background:rgba(232,98,44,0.06); border-left-color:var(--neon); }}
-      .pulse-side-pri {{ font-weight:700; font-size:10px; letter-spacing:0.05em; }}
-      .pulse-side-id {{ color:var(--dim); font-weight:600; display:flex; align-items:center; gap:5px;
-        white-space:nowrap; }}
-      .pulse-side-title {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-      .pulse-side-age, .pulse-side-note {{ color:var(--dim); font-variant-numeric:tabular-nums;
-        white-space:nowrap; text-align:right; }}
-      .pulse-attn-tag {{ font-size:9px; font-weight:700; text-transform:uppercase;
-        letter-spacing:0.08em; border:1px solid; border-radius:3px; padding:1px 4px; line-height:1.2; }}
-
-      /* wl-86: flow panel — intake vs burn + cycle time */
-      .pulse-flow {{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:10px; }}
-      .pulse-flow-stat b {{ display:block; font-size:20px; font-weight:700; line-height:1; }}
-      .pulse-flow-stat i {{ font-style:normal; font-size:9px; text-transform:uppercase;
-        letter-spacing:0.08em; color:var(--dim); display:block; margin-top:4px; }}
-      .pulse-flow-rows {{ display:flex; flex-direction:column; gap:4px;
-        border-top:1px dashed var(--border); padding-top:8px; }}
-      .pulse-flow-row {{ display:flex; justify-content:space-between; font-size:11px; }}
-      .pulse-flow-row span {{ color:var(--dim); }}
 
       .pulse-empty {{ color:var(--dim); padding:20px; text-align:center; font-size:12px;
         letter-spacing:0.05em; }}
