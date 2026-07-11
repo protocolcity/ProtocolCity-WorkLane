@@ -6448,3 +6448,504 @@ INFO:     127.0.0.1:54682 - "GET /api/admin/tasks/900 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:54685 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
 INFO:     127.0.0.1:54685 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
 INFO:     127.0.0.1:54690 - "GET /api/admin/tasks/985 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54693 - "GET /api/admin/tasks/1091 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54699 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54699 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54718 - "POST /api/admin/tasks/tp-37/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54721 - "POST /api/admin/tasks/tp-43/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54723 - "GET /api/admin/tasks/1034 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54725 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54725 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54727 - "GET /api/admin/tasks/972 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54730 - "GET /api/admin/tasks/978 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54732 - "GET /api/admin/tasks/1103 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54734 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54734 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54736 - "GET /api/admin/tasks/946 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54738 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54738 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54740 - "GET /api/admin/tasks/948 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54743 - "GET /api/admin/tasks/793 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54745 - "GET /api/admin/tasks/805 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54747 - "GET /api/admin/tasks/809 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54749 - "GET /api/admin/tasks/900 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54751 - "GET /api/admin/tasks/958 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54753 - "GET /api/admin/tasks/992 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54755 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54755 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54762 - "GET /api/admin/tasks/958 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54768 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54768 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54787 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54787 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54800 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54800 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54809 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54809 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54811 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54811 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54814 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54814 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54816 - "GET /api/admin/tasks/1117 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54818 - "GET /api/admin/tasks/1121 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54820 - "GET /api/admin/tasks/998 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54822 - "GET /api/admin/tasks/997 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54824 - "GET /api/admin/tasks/998 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54826 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54826 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54828 - "GET /api/admin/tasks/853 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54830 - "GET /api/admin/tasks/1028 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54832 - "GET /api/admin/tasks/1029 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54834 - "GET /api/admin/tasks/980 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54836 - "GET /api/admin/tasks/922 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54839 - "GET /api/admin/tasks/1028 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54841 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54841 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54843 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54843 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54845 - "GET /api/admin/tasks?status=backlog HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54847 - "GET /api/admin/tasks?label=lane:cursor HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54849 - "GET /api/admin/tasks?label=lane:grok HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54856 - "GET /api/admin/tasks/1122 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54859 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54859 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54872 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54872 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54875 - "GET /api/admin/tasks/1110 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54877 - "GET /api/admin/tasks/1120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54879 - "GET /api/admin/tasks/740 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54887 - "GET /api/admin/tasks/1120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54889 - "GET /api/admin/tasks/740 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54895 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54895 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54903 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54903 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54906 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54906 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54908 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54908 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54911 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54911 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54913 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54913 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54917 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54917 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54920 - "PATCH /api/admin/tasks/1120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54922 - "PATCH /api/admin/tasks/1120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54928 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54928 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54937 - "POST /api/admin/tasks/1120/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54943 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54943 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54955 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54955 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54966 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54966 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54968 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54968 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54973 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54973 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54975 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54975 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54979 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54979 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54982 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54982 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54987 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54987 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [34502]
+INFO:     Started server process [40263]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8799 (Press CTRL+C to quit)
+Starting Ticketing Protocol board on http://127.0.0.1:8799 ...
+INFO:     127.0.0.1:54998 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54998 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55002 - "GET /admin/tickets/ticketingprotocol?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55004 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55002 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55002 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55004 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55005 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55004 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55005 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55002 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55006 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55006 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55018 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55018 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55028 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55028 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55032 - "GET /admin/tickets/ticketingprotocol?view=board&priority=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55033 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55034 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55035 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55036 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55036 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55035 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55034 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55032 - "GET /api/admin/tasks?with_preview=1&limit=500&priority=1&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55032 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55032 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55041 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55041 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55045 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55045 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55047 - "POST /api/admin/tasks/1120/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55058 - "GET /admin/tickets/ticketingprotocol?view=board&status=backlog HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55060 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55061 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55062 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55062 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55061 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55062 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55059 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55059 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55058 - "GET /api/admin/tasks?with_preview=1&limit=500&status=backlog&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55058 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55064 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55064 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55064 - "GET /admin/tickets/all?view=board&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55066 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55065 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55066 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55065 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55067 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55068 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55069 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55064 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55066 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55071 - "GET /admin/tickets/all?view=board&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55073 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55072 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55073 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55072 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55074 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55075 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55076 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55071 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55073 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/admin/tasks/tp-42 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55081 - "GET /api/admin/tasks/1120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55085 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55085 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55087 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55087 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55114 - "POST /api/admin/tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55117 - "GET /api/admin/tasks?with_preview=1&limit=500&label=Urgent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55117 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55126 - "POST /api/admin/tasks/1120/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55132 - "POST /api/admin/tasks/tp-42/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55134 - "POST /api/admin/tasks/tp-42/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55136 - "GET /admin/tickets/all?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55140 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55141 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55139 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55140 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55141 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55139 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55142 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55136 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55140 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55139 - "GET /admin/tickets/all?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55136 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55140 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55141 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55139 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55136 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55140 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55141 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55142 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55139 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55157 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55157 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55165 - "GET /api/admin/tasks/1029 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55170 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55170 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55174 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55174 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55178 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55178 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55182 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55182 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55184 - "POST /api/admin/tasks/tp-42/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55186 - "POST /api/admin/tasks/tp-42/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55188 - "POST /api/admin/tasks/tp-42/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55190 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55190 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55192 - "PATCH /api/admin/tasks/tp-42 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55195 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55195 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40263]
+INFO:     Started server process [40731]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8799 (Press CTRL+C to quit)
+Starting Ticketing Protocol board on http://127.0.0.1:8799 ...
+INFO:     127.0.0.1:55202 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55202 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40731]
+INFO:     Started server process [40775]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8799 (Press CTRL+C to quit)
+Starting Ticketing Protocol board on http://127.0.0.1:8799 ...
+INFO:     127.0.0.1:55207 - "GET /admin/tickets/all?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55209 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55211 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55210 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55208 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55211 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55210 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55209 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55209 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55207 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55207 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55215 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55217 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55220 - "HEAD /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55226 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55226 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55230 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55236 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55237 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55234 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55234 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55230 - "GET /api/admin/cockpit/summary?_=1783734730527 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55230 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55249 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55249 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55258 - "GET /admin/tickets/ticketingprotocol?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55265 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55264 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55261 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55261 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55258 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55258 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55270 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55270 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55279 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55279 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55282 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55282 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55284 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55284 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55286 - "GET /admin/tasks/tp-37 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55286 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55286 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55290 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55289 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55289 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55289 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55293 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55293 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [40775]
+INFO:     Started server process [40846]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8799 (Press CTRL+C to quit)
+Starting Ticketing Protocol board on http://127.0.0.1:8799 ...
+INFO:     127.0.0.1:55295 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55295 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55296 - "GET /admin/tickets/all?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55299 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55298 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55300 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55297 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55297 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55300 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55298 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55298 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55296 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55296 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55304 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55304 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55317 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55317 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55332 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55332 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55338 - "POST /api/admin/tasks/tp-37/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55343 - "PATCH /api/admin/tasks/tp-37 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55346 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55346 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55351 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55351 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55354 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55354 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55357 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55357 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55359 - "GET /admin/cockpit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55361 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55361 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55364 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55364 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55366 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55366 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55378 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55378 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55393 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55393 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55402 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55402 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55410 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55410 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55413 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55413 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55423 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55423 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55426 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55426 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55428 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55428 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55433 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55433 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55453 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55453 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55469 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55469 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55479 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55479 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55490 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55490 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55492 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55492 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55496 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55496 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55505 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55505 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55508 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55508 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55580 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55579 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55580 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55579 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /admin/tickets/tradeos?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55599 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55600 - "GET /static/fonts/ibm-plex-sans-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55602 - "GET /static/fonts/ibm-plex-sans-500.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55601 - "GET /static/fonts/ibm-plex-mono-600.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55603 - "GET /static/fonts/ibm-plex-mono-400.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55599 - "GET /static/fonts/ibm-plex-sans-700.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55601 - "GET /static/fonts/ibm-plex-sans-600.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55602 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55603 - "GET /admin/tickets/all?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55601 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55599 - "GET /api/admin/tasks?with_preview=1&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55601 - "GET /admin/tickets/tradeos?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55599 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55603 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55594 - "GET /admin/tickets/ticketingprotocol?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55603 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55599 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55601 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55614 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55614 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55618 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55618 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55620 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55623 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55623 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55636 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55636 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55639 - "GET /admin/tickets/tradeos?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55640 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55639 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55640 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55640 - "GET /admin/tickets/ticketingprotocol?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55640 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55639 - "GET /api/admin/tasks?with_preview=1&limit=500&product=ticketingprotocol HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55640 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55643 - "GET /api/admin/tasks?status=in_progress HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55645 - "GET /api/admin/tasks?status=in_review HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55652 - "GET /api/admin/tasks?status=backlog HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55659 - "GET /admin/tickets/tradeos?view=board HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55659 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55658 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55659 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55663 - "POST /api/admin/tasks/tp-42/comments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55672 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55672 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55691 - "GET /api/admin/tasks/882 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55693 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55693 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55697 - "GET /api/admin/tasks/882 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55706 - "GET /api/admin/tasks/1090 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55708 - "GET /api/admin/tasks/1019 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "GET /api/admin/tasks/1040 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55712 - "GET /api/admin/tasks/972 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55714 - "GET /api/admin/tasks/978 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55716 - "GET /api/admin/tasks/996 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55718 - "GET /api/admin/tasks/1034 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55720 - "GET /api/admin/tasks/1037 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55722 - "GET /api/admin/tasks/985 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55724 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55724 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55727 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55727 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55729 - "GET /api/admin/tasks/1034 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55731 - "GET /api/admin/tasks/996 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55734 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55734 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55736 - "GET /api/admin/tasks/971 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55738 - "GET /api/admin/tasks?status=backlog&limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55740 - "GET /api/admin/tasks/972 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55742 - "GET /api/admin/tasks/978 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55744 - "GET /api/admin/tasks/985 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55746 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55746 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55748 - "GET /api/admin/tasks/1091 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55750 - "GET /api/admin/tasks/1103 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55752 - "GET /api/admin/tasks?status=backlog&limit=300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55755 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55755 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55757 - "GET /api/admin/tasks/1040 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55759 - "GET /api/admin/tasks/1071 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55761 - "GET /api/admin/tasks/1072 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55763 - "GET /api/admin/tasks/1073 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55765 - "GET /api/admin/tasks/1074 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55767 - "GET /api/admin/tasks/1075 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55769 - "GET /api/admin/tasks/1079 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55771 - "GET /api/admin/tasks/1119 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55773 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55773 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55775 - "GET /api/admin/tasks/1075 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55780 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55780 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55784 - "GET /api/admin/tasks/793 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55786 - "GET /api/admin/tasks/805 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55788 - "GET /api/admin/tasks/809 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55790 - "GET /api/admin/tasks/900 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55792 - "GET /api/admin/tasks/946 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55794 - "GET /api/admin/tasks/948 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55796 - "GET /api/admin/tasks/958 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55798 - "GET /api/admin/tasks/992 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55804 - "GET /api/admin/tasks/900 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55808 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55808 - "GET /api/dev/board-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55814 - "GET /api/admin/tasks/946 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55816 - "GET /api/admin/tasks/948 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55818 - "GET /api/admin/tasks/958 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55820 - "GET /api/admin/tasks/992 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55822 - "GET /api/admin/tasks/793 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55824 - "GET /api/admin/tasks/805 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55827 - "GET /api/admin/tasks/809 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55846 - "GET /api/admin/tasks?with_preview=1&limit=500&product=tradeos HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55846 - "GET /api/dev/board-summary HTTP/1.1" 200 OK

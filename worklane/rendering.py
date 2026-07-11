@@ -215,6 +215,18 @@ def _badge(text: str, tier: str = "neutral") -> str:
     return f"<span class='badge tier-{t}'>{_esc(str(text))}</span>"
 
 
+def _label_chip(text: str, tier: str = "neutral") -> str:
+    """Render a quiet label chip (mono underdot text, no box) — wl-37.
+
+    Same tier vocabulary as :func:`_badge`, but for non-status labels
+    (``area:*``, ``product:*``, ...) which read quieter than stamps.
+    """
+    t = (tier or "neutral").strip().lower()
+    if t not in _BADGE_TIERS:
+        t = "neutral"
+    return f"<span class='label-chip tier-{t}'>{_esc(str(text))}</span>"
+
+
 # ── Design-system CSS (WL subset) ────────────────────────────────────────────
 
 def _css() -> str:
@@ -226,85 +238,34 @@ def _css() -> str:
     Does NOT include: tradeOS nav, cards, modals, or any tos-* components.
     """
     return """
-    /* ── Dark theme — Dispatch "ink board" (wl-34/wl-35) ── */
-    :root, [data-theme="dark"] {
-      --bg: #17140f;
-      --bg2: #211d16;
-      --bg3: #2b261e;
-      --fg: #f4f2ea;
-      --muted: rgba(244,242,234,.70);
-      --dim: rgba(244,242,234,.42);
-      --neon: #e8622c;
-      --mag: #b58a5a;
-      --green: #4caf7d;
-      --yellow: #d9a441;
-      --red: #e05c3a;
-      --border: rgba(244,242,234,.14);
-      --shadow: rgba(0,0,0,.45);
-      --hover-tint: color-mix(in srgb, var(--neon) 4%, transparent);
-      --code-bg: rgba(244,242,234,.06);
-      --surface: #211d16;
-      --surface-alt: #2b261e;
-      --text: #f4f2ea;
-      --text-bright: #faf8f0;
-      --text-muted: rgba(244,242,234,.70);
-      --bright: #faf8f0;
-      --accent: #e8622c;
-      --blue: #7a8fa3;
-      --purple: #9c8468;
-      --magenta: #b58a5a;
-      --orange: #c98a3d;
-      /* Type */
-      --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-sans: var(--sans);
-      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      --font-mono: var(--mono);
-      /* Type scale */
-      --fs-xs: 10px;
-      --fs-sm: 11px;
-      --fs-base: 13px;
-      --fs-md: 14px;
-      --fs-lg: 16px;
-      --fs-xl: 20px;
-      --fs-2xl: 24px;
-      --text-page-title: 24px;
-      --text-section:    16px;
-      --text-body:       14px;
-      --text-secondary:  12px;
-      --text-badge:      11px;
-      --type-page:    var(--text-page-title);
-      --type-section: var(--text-section);
-      --type-body:    var(--text-body);
-      --type-small:   var(--text-secondary);
-      --type-micro:   var(--text-badge);
-      /* Semantic color tokens */
-      --clr-positive:    #4caf7d;
-      --clr-negative:    #e05c3a;
-      --clr-warning:     #d9a441;
-      --clr-interactive: #e8622c;
-      --clr-neutral:     rgba(244,242,234,.40);
-      --clr-long:        #7a8fa3;
-      --clr-short:       #c98a3d;
-      --clr-positive-bg:    color-mix(in srgb, var(--clr-positive) 12%, transparent);
-      --clr-negative-bg:    color-mix(in srgb, var(--clr-negative) 12%, transparent);
-      --clr-warning-bg:     color-mix(in srgb, var(--clr-warning) 12%, transparent);
-      --clr-interactive-bg: color-mix(in srgb, var(--neon) 8%, transparent);
-      /* Spacing */
-      --sp-xs: 4px;
-      --sp-sm: 8px;
-      --sp-md: 12px;
-      --sp-lg: 16px;
-      --sp-xl: 24px;
-      /* Radius */
-      --r-sm: 4px;
-      --r-md: 6px;
-      --r-lg: 8px;
-      --r-xl: 12px;
-      --r-pill: 999px;
+    /* ── Self-hosted IBM Plex (wl-37) — vendored under /static/fonts/, OFL-licensed ── */
+    @font-face {
+      font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400;
+      font-display: swap; src: url("/static/fonts/ibm-plex-sans-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500;
+      font-display: swap; src: url("/static/fonts/ibm-plex-sans-500.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600;
+      font-display: swap; src: url("/static/fonts/ibm-plex-sans-600.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Sans"; font-style: normal; font-weight: 700;
+      font-display: swap; src: url("/static/fonts/ibm-plex-sans-700.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400;
+      font-display: swap; src: url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600;
+      font-display: swap; src: url("/static/fonts/ibm-plex-mono-600.woff2") format("woff2");
     }
 
-    /* ── Light theme — Dispatch "paper" (wl-34/wl-35) ── */
-    [data-theme="light"] {
+    /* ── Light theme — Dispatch "paper" (wl-34/wl-35) — default (wl-37) ── */
+    :root, [data-theme="light"] {
       --bg: #f1efe8;
       --bg2: #faf9f4;
       --bg3: #e6e3d8;
@@ -345,6 +306,83 @@ def _css() -> str:
       --mode-color: var(--neon);
       --mode-color-dim: color-mix(in srgb, var(--neon) 32%, transparent);
       --mode-color-bg: color-mix(in srgb, var(--neon) 7%, transparent);
+    }
+
+    /* ── Type / spacing / radius — theme-independent ── */
+    :root {
+      --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-sans: var(--sans);
+      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --font-mono: var(--mono);
+      --fs-xs: 10px;
+      --fs-sm: 11px;
+      --fs-base: 13px;
+      --fs-md: 14px;
+      --fs-lg: 16px;
+      --fs-xl: 20px;
+      --fs-2xl: 24px;
+      --text-page-title: 24px;
+      --text-section:    16px;
+      --text-body:       14px;
+      --text-secondary:  12px;
+      --text-badge:      11px;
+      --type-page:    var(--text-page-title);
+      --type-section: var(--text-section);
+      --type-body:    var(--text-body);
+      --type-small:   var(--text-secondary);
+      --type-micro:   var(--text-badge);
+      --sp-xs: 4px;
+      --sp-sm: 8px;
+      --sp-md: 12px;
+      --sp-lg: 16px;
+      --sp-xl: 24px;
+      --r-sm: 4px;
+      --r-md: 6px;
+      --r-lg: 8px;
+      --r-xl: 12px;
+      --r-pill: 999px;
+    }
+
+    /* ── Dark theme — Dispatch "ink board" (wl-34/wl-35) ── */
+    [data-theme="dark"] {
+      --bg: #17140f;
+      --bg2: #211d16;
+      --bg3: #2b261e;
+      --fg: #f4f2ea;
+      --muted: rgba(244,242,234,.70);
+      --dim: rgba(244,242,234,.42);
+      --neon: #e8622c;
+      --mag: #b58a5a;
+      --green: #4caf7d;
+      --yellow: #d9a441;
+      --red: #e05c3a;
+      --border: rgba(244,242,234,.14);
+      --shadow: rgba(0,0,0,.45);
+      --hover-tint: color-mix(in srgb, var(--neon) 4%, transparent);
+      --code-bg: rgba(244,242,234,.06);
+      --surface: #211d16;
+      --surface-alt: #2b261e;
+      --text: #f4f2ea;
+      --text-bright: #faf8f0;
+      --text-muted: rgba(244,242,234,.70);
+      --bright: #faf8f0;
+      --accent: #e8622c;
+      --blue: #7a8fa3;
+      --purple: #9c8468;
+      --magenta: #b58a5a;
+      --orange: #c98a3d;
+      /* Semantic color tokens */
+      --clr-positive:    #4caf7d;
+      --clr-negative:    #e05c3a;
+      --clr-warning:     #d9a441;
+      --clr-interactive: #e8622c;
+      --clr-neutral:     rgba(244,242,234,.40);
+      --clr-long:        #7a8fa3;
+      --clr-short:       #c98a3d;
+      --clr-positive-bg:    color-mix(in srgb, var(--clr-positive) 12%, transparent);
+      --clr-negative-bg:    color-mix(in srgb, var(--clr-negative) 12%, transparent);
+      --clr-warning-bg:     color-mix(in srgb, var(--clr-warning) 12%, transparent);
+      --clr-interactive-bg: color-mix(in srgb, var(--neon) 8%, transparent);
     }
 
     /* ── Mode ambient color ── */
@@ -396,24 +434,40 @@ def _css() -> str:
     .btn-sm { font-size: var(--fs-sm); padding: 4px 12px; }
     .btn-xs { font-size: var(--fs-xs); padding: 2px 10px; }
 
-    /* ── Badges ── */
+    /* ── Badges → status/priority stamps (wl-37) ── */
     .badge {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-radius: var(--r-pill);
-      font-size: var(--text-badge); font-weight: 500;
-      line-height: 1.4; border: 1px solid transparent;
+      display: inline-flex; align-items: center;
+      padding: 1px 7px; border-radius: 2px;
+      font-family: var(--font-mono); font-size: var(--text-badge); font-weight: 600;
+      letter-spacing: .12em; text-transform: uppercase;
+      line-height: 1.6; border: 1.5px solid currentColor;
+      background: transparent;
       white-space: nowrap;
     }
-    .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-    .badge.tier-critical { color: var(--clr-negative); border-color: color-mix(in srgb, var(--clr-negative) 55%, transparent); background: color-mix(in srgb, var(--clr-negative) 10%, transparent); }
-    .badge.tier-warning  { color: var(--clr-warning);  border-color: color-mix(in srgb, var(--clr-warning)  55%, transparent); background: color-mix(in srgb, var(--clr-warning)  10%, transparent); }
-    .badge.tier-info     { color: var(--clr-interactive); border-color: color-mix(in srgb, var(--clr-interactive) 45%, transparent); background: color-mix(in srgb, var(--clr-interactive) 8%, transparent); }
-    .badge.tier-info::before { display: none; }
-    .badge.tier-positive { color: var(--clr-positive); border-color: color-mix(in srgb, var(--clr-positive) 50%, transparent); background: color-mix(in srgb, var(--clr-positive) 10%, transparent); }
-    .badge.tier-neutral  { color: var(--muted); border-color: var(--border); background: var(--code-bg); }
-    .badge.tier-neutral::before { display: none; }
-    .badge.tier-long     { color: var(--clr-long);  border-color: color-mix(in srgb, var(--clr-long)  50%, transparent); background: color-mix(in srgb, var(--clr-long)  10%, transparent); }
-    .badge.tier-short    { color: var(--clr-short); border-color: color-mix(in srgb, var(--clr-short) 55%, transparent); background: color-mix(in srgb, var(--clr-short) 10%, transparent); }
+    .badge.tier-critical { color: var(--clr-negative); }
+    .badge.tier-warning  { color: var(--clr-warning); }
+    .badge.tier-info     { color: var(--clr-interactive); }
+    .badge.tier-positive { color: var(--clr-positive); }
+    .badge.tier-neutral  { color: var(--muted); border-color: var(--border); }
+    .badge.tier-long     { color: var(--clr-long); }
+    .badge.tier-short    { color: var(--clr-short); }
+
+    /* ── Label chips (wl-37) — quieter than stamps: mono underdot text, no box ── */
+    .label-chip {
+      font-family: var(--font-mono); font-size: var(--text-badge);
+      color: var(--dim);
+      text-decoration: underline dotted; text-decoration-color: var(--border);
+      text-underline-offset: 2px;
+      padding: 0 1px;
+      white-space: nowrap;
+    }
+    .label-chip.tier-critical { color: var(--clr-negative); text-decoration-color: color-mix(in srgb, var(--clr-negative) 50%, transparent); }
+    .label-chip.tier-warning  { color: var(--clr-warning);  text-decoration-color: color-mix(in srgb, var(--clr-warning) 50%, transparent); }
+    .label-chip.tier-info     { color: var(--clr-interactive); text-decoration-color: color-mix(in srgb, var(--clr-interactive) 45%, transparent); }
+    .label-chip.tier-positive { color: var(--clr-positive); text-decoration-color: color-mix(in srgb, var(--clr-positive) 45%, transparent); }
+    .label-chip.tier-neutral  { color: var(--dim); text-decoration-color: var(--border); }
+    .label-chip.tier-long     { color: var(--clr-long); text-decoration-color: color-mix(in srgb, var(--clr-long) 45%, transparent); }
+    .label-chip.tier-short    { color: var(--clr-short); text-decoration-color: color-mix(in srgb, var(--clr-short) 45%, transparent); }
 
     /* ── Tables ── */
     table { border-collapse: collapse; width: 100%; }

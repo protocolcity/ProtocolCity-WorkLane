@@ -64,7 +64,7 @@ from worklane.products import (
     split_task_id,
     wl_data_dir,
 )
-from worklane.rendering import _badge, _css, _esc, render_markdown
+from worklane.rendering import _badge, _css, _esc, _label_chip, render_markdown
 
 from worklane.board import (
     _board_styles,
@@ -299,9 +299,10 @@ def _task_page(
   <title>WorkLane — {_esc(title)}</title>
   <style>{_css()}</style>
   <script>
-  /* Theme init (before paint) */
+  /* Theme init (before paint) — Dispatch paper is the default (wl-37); dark
+     and system remain fully supported via the existing toggle/persistence. */
   (function() {{
-    var stored = localStorage.getItem('tradeos-theme') || 'system';
+    var stored = localStorage.getItem('tradeos-theme') || 'light';
     function resolve(p) {{
       if (p === 'system') return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       return p;
@@ -360,7 +361,7 @@ def _task_page(
   var _themeIcons = {{ dark: '\\u263D', light: '\\u2600', system: '\\u25D1' }};
   function cycleTheme() {{
     var order = ['dark', 'light', 'system'];
-    var current = localStorage.getItem('tradeos-theme') || 'system';
+    var current = localStorage.getItem('tradeos-theme') || 'light';
     var next = order[(order.indexOf(current) + 1) % order.length];
     localStorage.setItem('tradeos-theme', next);
     var resolved = (next === 'system')
@@ -371,7 +372,7 @@ def _task_page(
     if (btn) btn.textContent = _themeIcons[next] || '\\u263D';
   }}
   (function() {{
-    var pref = localStorage.getItem('tradeos-theme') || 'system';
+    var pref = localStorage.getItem('tradeos-theme') || 'light';
     var btn = document.getElementById('theme-toggle');
     if (btn) btn.textContent = _themeIcons[pref] || '\\u263D';
   }})();
@@ -618,9 +619,16 @@ def _task_page(
     user-select: none;
   }}
   .task-server-brand {{
+    display: inline-flex; align-items: center;
     font-size: var(--text-section); font-weight: 700;
-    color: var(--neon); text-decoration: none;
-    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--fg); text-decoration: none;
+    letter-spacing: .14em; text-transform: uppercase;
+    border: 1.5px solid var(--fg); border-radius: 2px;
+    padding: 3px 10px;
+  }}
+  .task-server-brand.active {{
+    border-color: var(--neon);
+    color: var(--neon);
   }}
   .task-server-nav {{
     font-size: var(--text-body, 14px);
@@ -696,6 +704,10 @@ def _task_page(
     background: #fff;
     box-shadow: 0 1px 3px rgba(0,0,0,.08);
     color: var(--fg);
+  }}
+  /* Primary Cockpit/Pool nav (wl-37): active item also gets a signal-orange underline. */
+  .ts-primary-shell .ts-seg--on {{
+    border-bottom: 2px solid var(--neon);
   }}
   .ts-primary-shell {{
     margin-left: 4px;
@@ -3812,9 +3824,7 @@ def _dev_card(
 
 
 def _dev_task_row(t: Task, *, stack_cells: bool = False) -> str:
-    labels = " ".join(
-        f"<span class='badge tier-neutral'>{_esc(l)}</span>" for l in t.labels
-    )
+    labels = " ".join(_label_chip(l) for l in t.labels)
     ext = f"<span class='dim'>{_esc(t.ext_id)}</span> " if t.ext_id else ""
     pri = _DEV_PRIORITY_LABELS.get(int(t.priority or 3), "Normal")
     updated = _esc(t.updated_at[:19] if t.updated_at else "")
@@ -4319,18 +4329,49 @@ def _task_server_extra_js() -> str:
     return r"""
 <script>
   /* ── Clickable label filters ─────────────────────────────────────── */
+  /* Filter links stay on the current Pool page (product scope, status
+     bucket) and swap only the label/priority narrowing — jumping to
+     /admin/tickets/all dumped users into the all-products label wall. */
+  function tsBoardFilterHref(params) {
+    var path = window.location.pathname;
+    if (path.indexOf('/admin/tickets/') !== 0) path = '/admin/tickets/all';
+    var q = new URLSearchParams(window.location.search);
+    q.set('view', 'board');
+    q.delete('label');
+    q.delete('priority');
+    Object.keys(params).forEach(function(k) { q.set(k, params[k]); });
+    return path + '?' + q.toString();
+  }
   var _origAdminBoardBadge = (typeof adminBoardBadge === 'function') ? adminBoardBadge : null;
-  function adminBoardBadgeClickable(label, tier) {
+  var _origAdminBoardLabelChip = (typeof adminBoardLabelChip === 'function') ? adminBoardLabelChip : null;
+  function adminBoardLabelChipClickable(label, tier) {
     var escaped = adminBoardEscape(label);
-    var badge = _origAdminBoardBadge ? _origAdminBoardBadge(label, tier) : (
-      "<span class='badge " + adminBoardEscape(tier || 'neutral') + "'>"
+    var chip = _origAdminBoardLabelChip ? _origAdminBoardLabelChip(label, tier) : (
+      "<span class='label-chip tier-" + adminBoardEscape(tier || 'neutral') + "'>"
       + escaped + "</span>"
     );
-    return "<a href='/admin/tickets/all?view=board&label=" + encodeURIComponent(label) + "'"
+    return "<a href='" + adminBoardEscape(tsBoardFilterHref({label: label})) + "'"
          + " class='af-label-link' onclick='event.stopPropagation();'"
-         + " title='Filter by " + escaped + "'>" + badge + "</a>";
+         + " title='Filter by " + escaped + "'>" + chip + "</a>";
   }
-  adminBoardBadge = adminBoardBadgeClickable;
+  adminBoardLabelChip = adminBoardLabelChipClickable;
+
+  /* Priority pills filter by priority — not by a label literally named
+     "Urgent", which matches nothing and lands on an empty board. */
+  adminBoardPriorityBadge = function(p) {
+    var labels = {1:'Urgent', 2:'High', 3:'Normal', 4:'Low'};
+    var tiers  = {1:'critical', 2:'warning', 3:'neutral', 4:'neutral'};
+    var pv = parseInt(p, 10) || 0;
+    var mkBadge = _origAdminBoardBadge || function(l, t) {
+      return "<span class='badge " + adminBoardEscape(t || 'neutral') + "'>"
+           + adminBoardEscape(l) + "</span>";
+    };
+    if (!labels[pv]) return mkBadge('—', 'neutral');
+    return "<a href='" + adminBoardEscape(tsBoardFilterHref({priority: String(pv)})) + "'"
+         + " class='af-label-link' onclick='event.stopPropagation();'"
+         + " title='Filter by priority: " + labels[pv] + "'>"
+         + mkBadge(labels[pv], tiers[pv]) + "</a>";
+  };
 
   /* ── Elapsed time helper ─────────────────────────────────────────── */
   function afFormatElapsed(isoStr) {
@@ -4501,6 +4542,7 @@ def _task_server_extra_css() -> str:
   /* ── Clickable label links ───────────────────────────────────────── */
   .af-label-link { text-decoration:none; cursor:pointer; }
   .af-label-link:hover .badge { filter:brightness(1.3); }
+  .af-label-link:hover .label-chip { color: var(--accent); text-decoration-color: var(--accent); }
 
   /* ── Elapsed timer badge ─────────────────────────────────────────── */
   .tb-elapsed {
@@ -4826,6 +4868,7 @@ def _task_server_extra_css() -> str:
 def create_app():
     """Build the standalone task-board FastAPI app."""
     from fastapi import FastAPI
+    from fastapi.staticfiles import StaticFiles
 
     app = FastAPI(
         title="Ticketing",
@@ -4834,6 +4877,9 @@ def create_app():
         redoc_url=None,
     )
     app.include_router(router)
+    # Self-hosted IBM Plex (wl-37) — no CDN, must render identically offline.
+    static_dir = Path(__file__).resolve().parent / "static"
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     return app
 
 

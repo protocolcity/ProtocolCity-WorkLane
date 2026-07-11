@@ -26,7 +26,7 @@ from worklane.products import (
     product_trackers,
     split_task_id,
 )
-from worklane.rendering import _badge, _esc
+from worklane.rendering import _badge, _esc, _label_chip
 from worklane.trackers import Task, TaskComment, TaskStatus, get_default_tracker
 
 
@@ -109,7 +109,7 @@ def _label_tier(label: str) -> str:
 def _render_labels(labels: List[str]) -> str:
     if not labels:
         return "<span class='dim'>—</span>"
-    return " ".join(_badge(l, _label_tier(l)) for l in labels)
+    return " ".join(_label_chip(l, _label_tier(l)) for l in labels)
 
 
 def _render_status_badge(status: str) -> str:
@@ -755,7 +755,7 @@ def _render_task_card(t: Task, preview: Dict[str, str]) -> str:
     ext_html = f"<span class='tb-card-id'>{_esc(id_label)}</span>"
     priority_badge = _render_priority_badge(int(t.priority or 3))
     labels_html = (
-        " ".join(_badge(l, _label_tier(l)) for l in (t.labels or [])[:4])
+        " ".join(_label_chip(l, _label_tier(l)) for l in (t.labels or [])[:4])
         if t.labels else ""
     )
     extra_labels = (
@@ -841,7 +841,9 @@ def _render_task_card(t: Task, preview: Dict[str, str]) -> str:
 
 # Cards shown per column before the rest collapse behind "Show all N" —
 # same cap on every column so the pagination rhythm doesn't vary by status.
-_BOARD_COLUMN_CAP = 8
+# Columns are fixed-height and scroll, so the cap is a DOM-weight guard, not
+# a viewport fit: 50 cards scroll fine; beyond that the button takes over.
+_BOARD_COLUMN_CAP = 50
 
 
 def _render_column_body(
@@ -881,6 +883,11 @@ def _render_task_board(
     for t in tasks:
         if t.status in grouped:
             grouped[t.status].append(t)
+
+    # Backlog is a triage queue: order by urgency (Urgent → Low), stable so
+    # the tracker's recency order still breaks ties. Other columns stay on
+    # recency — Done/In Progress read as activity feeds, not queues.
+    grouped[TaskStatus.BACKLOG].sort(key=lambda t: int(t.priority or 3))
 
     cols_html_parts: List[str] = []
     for col_status in _BOARD_COLUMNS:
@@ -1062,6 +1069,10 @@ def _board_styles() -> str:
 @media (max-width:1100px) {
   .tb-board { flex-wrap:wrap; }
   .tb-col { flex:1 1 45%; height:auto; }
+  /* Wrapped layout has no fixed column height, so clamp the body instead —
+     with the 50-card cap a full column would otherwise be several
+     thousand px tall. */
+  .tb-col-body { max-height:70vh; }
   .tb-col--rail { flex:1 1 100%; min-height:34px; }
   .tb-col--rail .tb-rail-label { flex-direction:row; padding:0 12px; }
   .tb-col--rail .tb-rail-name { writing-mode:horizontal-tb; }
@@ -1197,7 +1208,7 @@ def _client_js() -> str:
 
   var __ADMIN_BOARD_POLL_MS = 10000;
   var __ADMIN_BOARD_COLUMNS = ['backlog', 'in_review', 'in_progress', 'done'];
-  var __ADMIN_BOARD_COLUMN_CAP = 8; // mirror of Python _BOARD_COLUMN_CAP (wl-11)
+  var __ADMIN_BOARD_COLUMN_CAP = 50; // mirror of Python _BOARD_COLUMN_CAP (wl-11)
   var __ADMIN_BOARD_LABELS = {
     'backlog': 'Backlog',
     'in_progress': 'In Progress',
@@ -1247,6 +1258,12 @@ def _client_js() -> str:
          + adminBoardEscape(label) + "</span>";
   }
 
+  function adminBoardLabelChip(label, tier) {
+    // Same markup as Python _label_chip (wl-37): quiet underdot text, no box.
+    return "<span class='label-chip tier-" + adminBoardEscape(tier || 'neutral') + "'>"
+         + adminBoardEscape(label) + "</span>";
+  }
+
   function adminBoardPriorityBadge(p) {
     var labels = {1:'Urgent', 2:'High', 3:'Normal', 4:'Low', 0:'—'};
     var tiers  = {1:'critical', 2:'warning', 3:'neutral', 4:'neutral', 0:'neutral'};
@@ -1277,7 +1294,7 @@ def _client_js() -> str:
     if (task.ext_id) idLabel += ' · ' + adminBoardEscape(task.ext_id);
     var extHtml = "<span class='tb-card-id'>" + idLabel + "</span>";
     var labels = (task.labels || []).slice(0, 4)
-      .map(function(l) { return adminBoardBadge(l, adminBoardLabelTier(l)); })
+      .map(function(l) { return adminBoardLabelChip(l, adminBoardLabelTier(l)); })
       .join(' ');
     var extraLabels = (task.labels || []).length > 4
       ? "<span class='dim tb-card-more'>+" + ((task.labels || []).length - 4) + "</span>"
@@ -1399,6 +1416,13 @@ def _client_js() -> str:
     cols.forEach(function(col) {
       var status = col.getAttribute('data-status');
       var list = bucket[status] || [];
+      // Mirror of the SSR backlog sort in _render_task_board (wl-8):
+      // urgency first, stable so recency breaks ties.
+      if (status === 'backlog') {
+        list = list.slice().sort(function(a, b) {
+          return (parseInt(a.priority, 10) || 3) - (parseInt(b.priority, 10) || 3);
+        });
+      }
       var body = col.querySelector('.tb-col-body');
       var countEls = col.querySelectorAll('[data-count]');
       countEls.forEach(function(el) { el.textContent = String(list.length); });

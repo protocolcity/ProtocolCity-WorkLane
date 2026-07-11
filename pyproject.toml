@@ -22,4 +22,4 @@ where = ["."]
 include = ["worklane*"]
 
 [tool.setuptools.package-data]
-worklane = ["py.typed"]
+worklane = ["py.typed", "static/fonts/*"]
