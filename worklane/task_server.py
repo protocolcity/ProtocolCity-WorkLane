@@ -59,6 +59,7 @@ from worklane.products import (
     default_product_slug,
     discover_products,
     get_product,
+    live_feed_product_slug,
     product_tracker,
     product_trackers,
     register_product_meta,
@@ -1148,8 +1149,9 @@ def _list_tasks_for_wq_multi_resolved(
     limit: int,
     with_preview: bool,
 ) -> Tuple[List[Task], Dict[str, Dict[str, str]]]:
-    """Merge tasks across all product stores; the tradeOS half may come from
-    the main app HTTP API when ``TRADEOS_TICKETS_SOURCE`` says so."""
+    """Merge tasks across all product stores; the live-feed product's half
+    may come from the main app HTTP API when ``TRADEOS_TICKETS_SOURCE`` says
+    so (see products.live_feed_product_slug)."""
     empty_prev: Dict[str, Dict[str, str]] = {}
     p = (product or "").strip().lower()
     if not _tradeos_tickets_use_http_feed():
@@ -1163,22 +1165,23 @@ def _list_tasks_for_wq_multi_resolved(
         )
         return tasks, empty_prev
 
+    feed_slug = live_feed_product_slug()
     merged: List[Task] = []
     prev: Dict[str, Dict[str, str]] = {}
-    if p in ("", "tradeos"):
+    if p in ("", feed_slug):
         ta, prev = _fetch_tradeos_tasks_via_http(
             status=status,
             label=label,
             priority=priority,
-            limit=limit if p == "tradeos" else 500,
+            limit=limit if p == feed_slug else 500,
             with_preview=with_preview,
         )
         merged.extend(ta)
-    if p != "tradeos":
-        non_tradeos = [(s, t) for s, t in products if s.slug != "tradeos"]
+    if p != feed_slug:
+        non_feed = [(s, t) for s, t in products if s.slug != feed_slug]
         merged.extend(
             list_tasks_for_wq_multi(
-                non_tradeos,
+                non_feed,
                 status=status,
                 label=label,
                 priority=priority,
@@ -1221,13 +1224,14 @@ def _merged_in_flight_tasks() -> List[Task]:
 
 
 def _merged_scope_tasks_for_filters(product: str) -> List[Task]:
-    """All tasks for label chips / buckets (respects HTTP vs local tradeOS source)."""
+    """All tasks for label chips / buckets (respects HTTP vs local live-feed source)."""
     p = parse_wq_product(product)
     products = product_trackers()
     if not _tradeos_tickets_use_http_feed():
         return list_tasks_for_scope_multi(products, p, limit=None)
+    feed_slug = live_feed_product_slug()
     merged: List[Task] = []
-    if p in ("", "tradeos"):
+    if p in ("", feed_slug):
         ta, _ = _fetch_tradeos_tasks_via_http(
             status=None,
             label=None,
@@ -1236,9 +1240,9 @@ def _merged_scope_tasks_for_filters(product: str) -> List[Task]:
             with_preview=False,
         )
         merged.extend(ta)
-    if p != "tradeos":
-        non_tradeos = [(s, t) for s, t in products if s.slug != "tradeos"]
-        merged.extend(list_tasks_for_scope_multi(non_tradeos, p, limit=None))
+    if p != feed_slug:
+        non_feed = [(s, t) for s, t in products if s.slug != feed_slug]
+        merged.extend(list_tasks_for_scope_multi(non_feed, p, limit=None))
     merged.sort(key=lambda x: x.updated_at or "", reverse=True)
     return merged
 
@@ -2733,7 +2737,7 @@ def _tickets_app_html(
 ) -> str:
     products = product_trackers()
     tracker_tradeos = next(
-        (tr for spec, tr in products if spec.slug == "tradeos"),
+        (tr for spec, tr in products if spec.slug == live_feed_product_slug()),
         get_default_tracker(),
     )
     view_norm = (view or "board").strip().lower()
@@ -2872,7 +2876,7 @@ def task_detail(task_id: str) -> str:
     task: Optional[Task] = None
     comments: List[TaskComment] = []
 
-    if surf == "tradeos" and _tradeos_tickets_use_http_feed():
+    if surf == live_feed_product_slug() and _tradeos_tickets_use_http_feed():
         data = _fetch_tradeos_json(
             f"/api/ops/tickets/tradeos/{quote(raw_id, safe='')}?include_comments=1",
             timeout=10.0,
@@ -3044,7 +3048,7 @@ async def api_create_product(request: Request) -> JSONResponse:
         )
 
     existing = get_product(slug)
-    if existing is not None and (existing.db_path.exists() or slug == "tradeos"):
+    if existing is not None and (existing.db_path.exists() or slug == live_feed_product_slug()):
         return JSONResponse(
             {"ok": False, "error": f"product {slug!r} already exists"},
             status_code=409,
@@ -3183,7 +3187,7 @@ async def api_create_task(request: Request) -> JSONResponse:
             status_code=400,
         )
 
-    if spec.slug != "tradeos":
+    if spec.slug != live_feed_product_slug():
         tracker = product_tracker(spec)
         task = tracker.create_task(
             title=title,
@@ -3545,7 +3549,7 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
                 {"ok": False, "error": f"unknown status {new_status!r}"},
                 status_code=400,
             )
-        if surf == "tradeos" and _tradeos_tickets_use_http_feed():
+        if surf == live_feed_product_slug() and _tradeos_tickets_use_http_feed():
             code, data = _request_tradeos_json(
                 "PATCH",
                 f"/api/ops/tickets/tradeos/{quote(raw_id, safe='')}",
@@ -3683,7 +3687,7 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": violation}, status_code=400)
 
     surf, raw_id, tracker = _resolve_product_tracker(task_id)
-    if surf == "tradeos" and _tradeos_tickets_use_http_feed():
+    if surf == live_feed_product_slug() and _tradeos_tickets_use_http_feed():
         code, data = _request_tradeos_json(
             "POST",
             f"/api/ops/tickets/tradeos/{quote(raw_id, safe='')}/comments",

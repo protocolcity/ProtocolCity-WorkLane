@@ -20,6 +20,7 @@ Usage:
     wl comment <ID> "body..." [--author A] [--stdin]
     wl status <ID> <STATUS>
     wl label <ID> [--add L ...] [--remove L ...]
+    wl demo [--force] [--product SLUG]
     wl export --product <slug> [--out FILE]
     wl import <FILE> --product <slug>
 
@@ -231,6 +232,45 @@ def cmd_label(args: argparse.Namespace) -> None:
     print(f"{payload['task']['id']} labels: {_fmt_labels(payload['task'].get('labels', []))}")
 
 
+def cmd_demo(args: argparse.Namespace) -> None:
+    """Bootstrap an isolated demo product store (local SQLite; no HTTP).
+
+    Never touches real product DBs (tradeos / worklane / worklane /
+    ops). Safe for fresh-clone quickstart — board tab appears on next server
+    discover cycle.
+    """
+    from worklane import demo as demo_mod
+
+    product = (args.product or demo_mod.DEFAULT_DEMO_SLUG).strip()
+    try:
+        report = demo_mod.bootstrap_demo(slug=product, force=bool(args.force))
+    except demo_mod.DemoError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return
+
+    print(report["message"])
+    print(f"  product: {report['slug']}")
+    print(f"  db:      {report['db_path']}")
+    print(f"  tasks:   {report['task_count']}")
+    by_status = report.get("by_status") or {}
+    if by_status:
+        parts = [f"{k}={v}" for k, v in sorted(by_status.items())]
+        print(f"  status:  {', '.join(parts)}")
+    if not report.get("skipped"):
+        print(
+            "Open the board: http://127.0.0.1:8799/admin/tickets/"
+            f"{report['slug']}?view=board"
+        )
+        print(
+            "Claim the backlog ticket labeled 'Claim me' via MCP wl_claim "
+            "or `wl status` + Owner comment."
+        )
+
+
 def cmd_export(args: argparse.Namespace) -> None:
     """Local store export (JSONL). Read-only; does not use the HTTP API."""
     from worklane import portability
@@ -329,6 +369,29 @@ def _build_parser() -> argparse.ArgumentParser:
     p_label.add_argument("--add", action="append", metavar="LABEL")
     p_label.add_argument("--remove", action="append", metavar="LABEL")
 
+    p_demo = sub.add_parser(
+        "demo",
+        help=(
+            "Bootstrap an isolated demo product store with seeded tickets "
+            "(local SQLite; never touches real product DBs)"
+        ),
+    )
+    p_demo.add_argument(
+        "--product",
+        default=os.environ.get("WL_DEMO_PRODUCT", "demo"),
+        help="Demo product slug (default: demo; protected real products refused)",
+    )
+    p_demo.add_argument(
+        "--force",
+        action="store_true",
+        help="Wipe and re-seed the demo store only (never other products)",
+    )
+    p_demo.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable report",
+    )
+
     p_export = sub.add_parser(
         "export",
         help="Export a product store to JSONL (local SQLite; read-only)",
@@ -361,6 +424,7 @@ _COMMANDS = {
     "comment": cmd_comment,
     "status": cmd_status,
     "label": cmd_label,
+    "demo": cmd_demo,
     "export": cmd_export,
     "import": cmd_import,
 }

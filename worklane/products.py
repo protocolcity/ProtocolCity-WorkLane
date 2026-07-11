@@ -112,6 +112,28 @@ def default_product_slug() -> str:
     return ""
 
 
+def live_feed_product_slug() -> str:
+    """Slug of the product allowed to serve tickets from a live HTTP feed
+    instead of its local SQLite store (see
+    ``task_server._tradeos_tickets_use_http_feed``).
+
+    This is a documented host-specific integration point (wl-59), not a
+    generic upstream-feed abstraction — generalize only if a second host
+    ever needs an equivalent feed. Configurable via the
+    ``WL_LIVE_FEED_PRODUCT`` env var or the ``live_feed_product`` key in
+    the ``products.json`` config overlay; defaults to ``"tradeos"`` (the
+    only host that has ever used this feature) so an unconfigured install
+    behaves exactly as before.
+    """
+    override = (os.environ.get("WL_LIVE_FEED_PRODUCT") or "").strip().lower()
+    if override:
+        return override
+    configured = _raw_products_config().get("live_feed_product")
+    if isinstance(configured, str) and configured.strip():
+        return configured.strip().lower()
+    return "tradeos"
+
+
 def register_product_meta(
     slug: str, display: Optional[str] = None, prefix: Optional[str] = None
 ) -> None:

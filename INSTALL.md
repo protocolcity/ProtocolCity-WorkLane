@@ -42,6 +42,23 @@ Default bind is `127.0.0.1:8799`. Override with `TASK_HOST` / `TASK_PORT`.
 Runtime state (SQLite stores, logs, pid files) lives under
 `worklane/local/` — hidden, gitignored, created on first run.
 
+### Optional: seed a demo board (wl-45)
+
+For a first-run board that already has tickets across backlog / in_progress /
+in_review / done (so an agent can claim one immediately):
+
+```bash
+wl demo
+# or seed then start in one shot:
+worklane --demo
+```
+
+This writes **only** the isolated `demo` product store
+(`worklane/local/data/demo.db`). It never touches any other product
+store you have configured. Re-run is a no-op unless
+you pass `--force` (demo store only). Open
+http://127.0.0.1:8799/admin/tickets/demo?view=board after the server is up.
+
 To keep it running across reboots on macOS without any host repo:
 
 ```bash
