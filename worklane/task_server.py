@@ -73,7 +73,6 @@ from worklane.board import (
     _client_js,
     _detect_worker,
     _label_tier,
-    list_tasks_for_wq,
     get_ops_ticket_tracker,
     _load_preview_comments,
     _load_preview_comments_multi,
@@ -1192,6 +1191,33 @@ def _list_tasks_for_wq_multi_resolved(
     if not with_preview:
         prev = {}
     return out, prev
+
+
+def _merged_ready_count() -> int:
+    """Ready-to-dispatch count aggregated across every registered product
+    tracker (wl-40) — each product's WorkQueue resolves its own blockers
+    independently (blocker ids don't cross product boundaries), so this
+    sums per-tracker ready() counts rather than building one cross-product
+    queue. Local SQLite trackers only, same as list_tasks_for_scope_multi's
+    non-HTTP-feed branch below — the tradeOS live-HTTP-feed source is
+    wl-48 slice c's separate concern.
+    """
+    return sum(len(WorkQueue(tracker).ready()) for _spec, tracker in product_trackers())
+
+
+def _merged_in_flight_tasks() -> List[Task]:
+    """in_progress + in_review tasks aggregated across every registered
+    product tracker (wl-40), sorted newest-updated first. See
+    _merged_ready_count for the local-SQLite-only scope note.
+    """
+    out: List[Task] = []
+    for _spec, tracker in product_trackers():
+        out.extend(
+            t for t in WorkQueue(tracker).all_tasks
+            if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)
+        )
+    out.sort(key=lambda t: t.updated_at or "", reverse=True)
+    return out
 
 
 def _merged_scope_tasks_for_filters(product: str) -> List[Task]:
@@ -4205,24 +4231,23 @@ def api_dev_activity(limit: int = 30):
 
 @router.get("/api/dev/board-summary")
 def api_dev_board_summary():
-    """Lightweight summary for header pills: ready, in-flight, stalled counts (wl-28)."""
-    tracker = get_default_tracker()
-    queue = WorkQueue(tracker)
-    ready = queue.ready()
+    """Lightweight summary for header pills: ready, in-flight, stalled counts
+    (wl-28), aggregated across every registered product tracker (wl-40) —
+    matches the All board's merged view instead of counting only the
+    default product.
+    """
+    ready_count = _merged_ready_count()
+    in_flight_tasks = _merged_in_flight_tasks()
     now = datetime.now(timezone.utc)
     stale_cutoff = now - timedelta(minutes=90)
-    in_flight_count = 0
     stalled_count = 0
-    for t in queue.all_tasks:
-        if t.status not in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
-            continue
-        in_flight_count += 1
+    for t in in_flight_tasks:
         dt = _parse_task_date_utc(t.updated_at)
         if dt is not None and dt < stale_cutoff:
             stalled_count += 1
     return JSONResponse({
-        "ready_count": len(ready),
-        "in_flight_count": in_flight_count,
+        "ready_count": ready_count,
+        "in_flight_count": len(in_flight_tasks),
         "stalled_count": stalled_count,
         "stale_minutes": 90,
     })
@@ -4320,15 +4345,11 @@ def api_dev_queue_dispatch(task_ids: str = ""):
 def api_dev_queue_in_flight():
     """Tickets actively in flight: in_progress + in_review (wl-28; replaces the
     old /api/dev/queue/orphans, which counted all in_progress tasks as
-    'orphaned' — a pre-pool relic that red-flagged healthy live work)."""
-    tracker = get_default_tracker()
-    queue = WorkQueue(tracker)
-    in_flight = [
-        t for t in queue.all_tasks
-        if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)
-    ]
+    'orphaned' — a pre-pool relic that red-flagged healthy live work).
+    Aggregated across every registered product tracker (wl-40)."""
+    in_flight = _merged_in_flight_tasks()
     return JSONResponse({
-        "tracker": tracker.name,
+        "tracker": "merged",
         "in_flight": [t.to_dict() for t in in_flight],
     })
 

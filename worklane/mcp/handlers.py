@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from worklane.devqueue.queue import WorkQueue
 from worklane.products import (
+    default_product_slug,
     discover_products,
     get_product,
     prefixed_task_id,
@@ -22,7 +23,14 @@ from worklane.products import (
 from worklane.trackers.protocol import Task, TaskStatus
 from worklane.trackers.sqlite import SQLiteTracker
 
-# Default product when a tool omits ``product`` and the task id has no prefix.
+# Terminal safety-net when a tool omits ``product``, no WL_PRODUCT/
+# WL_DEFAULT_PRODUCT env or products.json default is set, and nothing is
+# discovered on disk yet. Deliberately the literal "tradeos", not config-
+# driven: trackers/sqlite.py's legacy SQLiteTracker always resolves *some*
+# tradeos.db store (see its DEFAULT_DB_PATH fallback chain), and
+# products.product_tracker() routes slug == "tradeos" to that guaranteed
+# store for the same reason — see its docstring for why comparing against
+# the *configured* default here instead would risk a silent collision.
 _DEFAULT_PRODUCT = "tradeos"
 
 
@@ -46,7 +54,12 @@ class TPHandlers:
             )
         self.author = author
         self.default_product = (
-            (default_product or os.environ.get("WL_PRODUCT") or _DEFAULT_PRODUCT)
+            (
+                default_product
+                or os.environ.get("WL_PRODUCT")
+                or default_product_slug()
+                or _DEFAULT_PRODUCT
+            )
             .strip()
             .lower()
         )
@@ -54,15 +67,19 @@ class TPHandlers:
     # ── resolution helpers ───────────────────────────────────────────
 
     def _resolve_product(self, product: Optional[str]) -> str:
-        slug = (product or self.default_product or _DEFAULT_PRODUCT).strip().lower()
+        slug = (
+            product or self.default_product or default_product_slug() or _DEFAULT_PRODUCT
+        ).strip().lower()
         if not slug:
-            slug = _DEFAULT_PRODUCT
+            slug = default_product_slug() or _DEFAULT_PRODUCT
         # "all" is list/ready only; other tools need a concrete store.
         if slug == "all":
             return "all"
-        # tradeos is always present (env overrides / lazy create). Other
-        # products must already be discovered on disk — product_tracker()
-        # maps unknown slugs to the tradeos default, which is a footgun.
+        # tradeos is always present (env overrides / lazy create) regardless
+        # of the configured default product — see the _DEFAULT_PRODUCT note
+        # above. Other products must already be discovered on disk —
+        # product_tracker() maps unknown slugs to the tradeos default, which
+        # is a footgun.
         if slug != "tradeos" and get_product(slug) is None:
             known = product_slugs() or ["tradeos"]
             raise ToolError(f"unknown product {slug!r}; known: {known}")

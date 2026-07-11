@@ -38,6 +38,7 @@ from worklane.mcp.handlers import (
     build_tool_definitions,
     dispatch_tool,
 )
+from worklane.products import default_product_slug
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "worklane"
@@ -228,7 +229,7 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--product",
-        default=os.environ.get("WL_PRODUCT", "tradeos"),
+        default=os.environ.get("WL_PRODUCT") or default_product_slug(),
         help="Default product store when tools omit product (or set WL_PRODUCT)",
     )
     return p.parse_args(argv)

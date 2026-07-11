@@ -235,99 +235,6 @@ def list_tasks_for_product_scope(
     return tracker.list_tasks(limit=limit)
 
 
-def list_tasks_for_wq(
-    tracker: Any,
-    *,
-    status: Optional[str],
-    label: Optional[str],
-    priority: Optional[int],
-    product: str,
-    limit: int = 500,
-) -> List[Task]:
-    plab = wq_product_sql_label(product)
-    eff = (label or "").strip() or None
-
-    if plab and eff:
-        if eff == plab:
-            return tracker.list_tasks(
-                status=status, label=plab, priority=priority, limit=limit
-            )
-        tasks = tracker.list_tasks(
-            status=status, label=plab, priority=priority, limit=limit
-        )
-        return [t for t in tasks if eff in (t.labels or [])]
-    if plab:
-        return tracker.list_tasks(
-            status=status, label=plab, priority=priority, limit=limit
-        )
-    return tracker.list_tasks(
-        status=status, label=eff, priority=priority, limit=limit
-    )
-
-
-def list_tasks_for_wq_dual(
-    tracker_tradeos: Any,
-    tracker_ops: Any,
-    *,
-    status: Optional[str],
-    label: Optional[str],
-    priority: Optional[int],
-    product: str,
-    limit: int = 500,
-) -> List[Task]:
-    p = (product or "").strip().lower()
-    if p == "tradeos":
-        tasks = list_tasks_for_wq(
-            tracker_tradeos,
-            status=status, label=label, priority=priority, product="", limit=limit,
-        )
-        return [replace(t, id=f"{TASK_ID_PREFIX_TRADEOS}-{t.id}") for t in tasks]
-    if p == "ops":
-        tasks = list_tasks_for_wq(
-            tracker_ops,
-            status=status, label=label, priority=priority, product="", limit=limit,
-        )
-        return [replace(t, id=f"{TASK_ID_PREFIX_OPS}-{t.id}") for t in tasks]
-    ta = list_tasks_for_wq(
-        tracker_tradeos,
-        status=status, label=label, priority=priority, product="", limit=500,
-    )
-    tb = list_tasks_for_wq(
-        tracker_ops,
-        status=status, label=label, priority=priority, product="", limit=500,
-    )
-    merged: List[Task] = [
-        replace(t, id=f"{TASK_ID_PREFIX_TRADEOS}-{t.id}") for t in ta
-    ] + [replace(t, id=f"{TASK_ID_PREFIX_OPS}-{t.id}") for t in tb]
-    merged.sort(key=lambda x: x.updated_at or "", reverse=True)
-    return merged[:limit]
-
-
-def list_tasks_for_product_scope_dual(
-    tracker_tradeos: Any,
-    tracker_ops: Any,
-    product: str,
-    *,
-    limit: Optional[int] = None,
-) -> List[Task]:
-    p = (product or "").strip().lower()
-    if p == "tradeos":
-        tasks = list_tasks_for_product_scope(tracker_tradeos, "", limit=limit)
-        return [replace(t, id=f"{TASK_ID_PREFIX_TRADEOS}-{t.id}") for t in tasks]
-    if p == "ops":
-        tasks = list_tasks_for_product_scope(tracker_ops, "", limit=limit)
-        return [replace(t, id=f"{TASK_ID_PREFIX_OPS}-{t.id}") for t in tasks]
-    ta = list_tasks_for_product_scope(tracker_tradeos, "", limit=None)
-    tb = list_tasks_for_product_scope(tracker_ops, "", limit=None)
-    merged: List[Task] = [
-        replace(t, id=f"{TASK_ID_PREFIX_TRADEOS}-{t.id}") for t in ta
-    ] + [replace(t, id=f"{TASK_ID_PREFIX_OPS}-{t.id}") for t in tb]
-    merged.sort(key=lambda x: x.updated_at or "", reverse=True)
-    if limit is not None:
-        merged = merged[:limit]
-    return merged
-
-
 # ── Multi-product queries (registry-driven; supersede the dual pair) ──────
 
 def list_tasks_for_wq_multi(
@@ -554,18 +461,12 @@ def _render_work_queue_filters(
     label: str,
     priority: Optional[int],
     product: str = "",
-    tracker_tradeos: Optional[Any] = None,
-    tracker_ops: Optional[Any] = None,
     merged_scope_tasks: Optional[List[Task]] = None,
     view_toggle_html: str = "",
 ) -> str:
     prod = parse_wq_product(product)
     if merged_scope_tasks is not None:
         all_tasks = merged_scope_tasks
-    elif tracker_tradeos is not None and tracker_ops is not None:
-        all_tasks = list_tasks_for_product_scope_dual(
-            tracker_tradeos, tracker_ops, prod, limit=None
-        )
     else:
         tracker = get_default_tracker()
         all_tasks = list_tasks_for_product_scope(tracker, prod, limit=None)
@@ -1774,40 +1675,3 @@ def _load_preview_comments(
     return preview
 
 
-def _load_preview_comments_dual(
-    tracker_tradeos: Any,
-    tracker_ops: Any,
-    tasks: List[Task],
-    *,
-    tradeos_preview: Optional[Dict[str, Dict[str, str]]] = None,
-) -> Dict[str, Dict[str, str]]:
-    preview: Dict[str, Dict[str, str]] = {}
-    for t in tasks:
-        cid = str(t.id)
-        surf, raw = parse_surface_task_id(cid)
-        if surf == "tradeos" and tradeos_preview:
-            entry = tradeos_preview.get(cid)
-            if entry:
-                preview[cid] = entry
-                continue
-        tr = tracker_tradeos if surf == "tradeos" else tracker_ops
-        if not hasattr(tr, "list_comments"):
-            continue
-        try:
-            comments = tr.list_comments(raw)
-        except Exception:
-            continue
-        if not comments:
-            continue
-        latest = max(comments, key=lambda c: c.created_at or "")
-        body = (latest.body or "").strip().replace("\r", "")
-        first_line = next((ln.strip() for ln in body.split("\n") if ln.strip()), "")
-        if len(first_line) > 180:
-            first_line = first_line[:177].rstrip() + "…"
-        preview[cid] = {
-            "body": first_line,
-            "author": latest.author or "",
-            "created_at": latest.created_at or "",
-            "owner": _extract_owner(comments),
-        }
-    return preview
