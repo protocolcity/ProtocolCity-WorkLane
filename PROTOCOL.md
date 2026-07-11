@@ -39,6 +39,17 @@ Abstract commands — **MCP first** (see §6). CLI remains a legacy shell fallba
 | Release / block | `wl_release` | Blocked: + Next step: comment |
 | Session pulse | `wl_mine` · `wl_counts` | list + counts |
 
+### 2.1) Coordination model: lanes
+
+Multi-agent routing on WL is a negative-space default, not an explicit gate. This underpins the "Scan" step above and every per-agent profile in §6 — stated here once instead of left implicit across those profiles.
+
+- **Unlabeled = default lane.** Every ticket belongs to the primary/most-capable agent's pool by default, and that pool scans the *full* backlog — not just labeled tickets. A ticket needs no label to be workable; the absence of a `lane:*` label is itself the routing signal.
+- **`lane:*` labels delegate down, they don't gate.** A `lane:cursor` or `lane:grok` label (§6.1, §6.2) narrows a ticket to a specific narrower-scope agent — it signals who should take it first, not who is *allowed* to see it. The default-lane pool still owns the ticket if the narrower lane doesn't act on it.
+- **>24h no-activity demotion.** A `lane:*` label with no activity for more than 24 hours is treated as stale: the default-lane pool may pick the ticket up as if it were unlabeled. Narrower-lane agents don't need to strip the label themselves — the pool's own scan handles the fallback.
+- **Why labels aren't mandatory.** Requiring a lane label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
+
+This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Cursor's `--label lane:cursor`, Grok's `--label lane:grok`) are narrowings of the default-lane pool's scan, never replacements for it.
+
 ## 3) Rules
 
 1. **No orphan work** — any TODO, gap, fix, or refactor starts with a ticket.
