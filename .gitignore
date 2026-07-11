@@ -4,3 +4,4 @@ __pycache__/
 tasks.db*
 *.egg-info/
 .venv/
+.local/
