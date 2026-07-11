@@ -14,18 +14,19 @@ with no server routes yet, so those two subcommands import
 never call the live HTTP API and import only CREATES rows.
 
 Usage:
-    wl create --title T --description D --product P [--priority N] [--label L ...] [--author A]
-    wl list [--status S] [--label L] [--priority N] [--product P] [--limit N] [--json]
+    wl create --title T --description D --project P [--priority N] [--label L ...] [--author A]
+    wl list [--status S] [--label L] [--priority N] [--project P] [--limit N] [--json]
     wl show <ID> [--json]
     wl comment <ID> "body..." [--author A] [--stdin]
     wl status <ID> <STATUS>
     wl label <ID> [--add L ...] [--remove L ...]
-    wl demo [--force] [--product SLUG]
-    wl export --product <slug> [--out FILE]
-    wl import <FILE> --product <slug>
+    wl demo [--force] [--project SLUG]
+    wl export --project <slug> [--out FILE]
+    wl import <FILE> --project <slug>
 
 Base URL:  WL_BASE_URL env var, default http://127.0.0.1:8799
-Product:   --product flag, default WL_PRODUCT env var, else server default
+Project:   --project flag, default WL_PRODUCT env var, else server default
+           (--product remains a silent back-compat alias for --project, wl-64)
 Signing:   --author flag or WL_AGENT_ID env var (PROTOCOL.md §3.8) — required
            for `comment` (the API rejects unsigned writes with a 400)
 """
@@ -98,6 +99,25 @@ def _resolve_author(cli_value: str) -> str:
     return (cli_value or os.environ.get("WL_AGENT_ID") or "").strip()
 
 
+def _resolve_project_flag(args: argparse.Namespace) -> str:
+    """Resolve --project/--product to a single slug (wl-64).
+
+    --project is canonical; --product is a silent back-compat alias for the
+    same field. Passing both with different non-empty values is rejected
+    rather than silently picking one (PROTOCOL.md §5.2 alias-precedence rule).
+    """
+    project = (getattr(args, "project", None) or "").strip()
+    product = (getattr(args, "product", None) or "").strip()
+    if project and product and project.lower() != product.lower():
+        print(
+            f"Error: conflicting --project {project!r} and --product {product!r} "
+            "— pass only one",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return project or product
+
+
 def cmd_create(args: argparse.Namespace) -> None:
     title = (args.title or "").strip()
     if not title:
@@ -119,9 +139,9 @@ def cmd_create(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-    product = (args.product or "").strip()
+    product = _resolve_project_flag(args)
     if not product:
-        print("Error: --product is required (or set WL_PRODUCT)", file=sys.stderr)
+        print("Error: --project is required (or set WL_PRODUCT)", file=sys.stderr)
         sys.exit(1)
 
     body: Dict[str, Any] = {
@@ -148,7 +168,7 @@ def cmd_list(args: argparse.Namespace) -> None:
             "status": args.status,
             "label": args.label,
             "priority": args.priority,
-            "product": args.product,
+            "product": _resolve_project_flag(args),
             "limit": args.limit,
         },
     )
@@ -241,7 +261,7 @@ def cmd_demo(args: argparse.Namespace) -> None:
     """
     from worklane import demo as demo_mod
 
-    product = (args.product or demo_mod.DEFAULT_DEMO_SLUG).strip()
+    product = (_resolve_project_flag(args) or demo_mod.DEFAULT_DEMO_SLUG).strip()
     try:
         report = demo_mod.bootstrap_demo(slug=product, force=bool(args.force))
     except demo_mod.DemoError as exc:
@@ -275,9 +295,9 @@ def cmd_export(args: argparse.Namespace) -> None:
     """Local store export (JSONL). Read-only; does not use the HTTP API."""
     from worklane import portability
 
-    product = (args.product or "").strip()
+    product = _resolve_project_flag(args)
     if not product:
-        print("Error: --product is required for export", file=sys.stderr)
+        print("Error: --project is required for export", file=sys.stderr)
         sys.exit(1)
     try:
         lines = list(portability.export_product(product))
@@ -300,9 +320,9 @@ def cmd_import(args: argparse.Namespace) -> None:
     """Local store import (JSONL). Creates only; never updates/deletes."""
     from worklane import portability
 
-    product = (args.product or "").strip()
+    product = _resolve_project_flag(args)
     if not product:
-        print("Error: --product is required for import", file=sys.stderr)
+        print("Error: --project is required for import", file=sys.stderr)
         sys.exit(1)
     path = Path(args.file)
     if not path.is_file():
@@ -333,9 +353,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--title")
     p_create.add_argument("--description", default="")
     p_create.add_argument(
+        "--project",
+        default=None,
+        help="Ticket surface/project slug (required; canonical name, wl-64)",
+    )
+    p_create.add_argument(
         "--product",
         default=os.environ.get("WL_PRODUCT", ""),
-        help="Ticket surface/product slug (required; or set WL_PRODUCT)",
+        help="Back-compat alias for --project (or set WL_PRODUCT)",
     )
     p_create.add_argument("--priority", type=int, choices=[1, 2, 3, 4])
     p_create.add_argument("--label", action="append", metavar="LABEL")
@@ -345,6 +370,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--status", choices=_STATUS_CHOICES)
     p_list.add_argument("--label")
     p_list.add_argument("--priority", type=int, choices=[1, 2, 3, 4])
+    p_list.add_argument("--project", default=None, help="Canonical name for --product (wl-64)")
     p_list.add_argument("--product", default=os.environ.get("WL_PRODUCT", ""))
     p_list.add_argument("--limit", type=int)
     p_list.add_argument("--json", action="store_true")
@@ -377,9 +403,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_demo.add_argument(
+        "--project",
+        default=None,
+        help="Demo project slug (canonical name, wl-64; default: demo)",
+    )
+    p_demo.add_argument(
         "--product",
         default=os.environ.get("WL_DEMO_PRODUCT", "demo"),
-        help="Demo product slug (default: demo; protected real products refused)",
+        help="Back-compat alias for --project (default: demo; protected real products refused)",
     )
     p_demo.add_argument(
         "--force",
@@ -397,9 +428,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Export a product store to JSONL (local SQLite; read-only)",
     )
     p_export.add_argument(
+        "--project",
+        default=None,
+        help="Project slug (required; canonical name, wl-64)",
+    )
+    p_export.add_argument(
         "--product",
         default=os.environ.get("WL_PRODUCT", ""),
-        help="Product slug (required; or set WL_PRODUCT)",
+        help="Back-compat alias for --project (or set WL_PRODUCT)",
     )
     p_export.add_argument("--out", metavar="FILE", help="Write JSONL to FILE (default: stdout)")
 
@@ -409,9 +445,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_import.add_argument("file", help="JSONL file to import")
     p_import.add_argument(
+        "--project",
+        default=None,
+        help="Destination project slug (required; canonical name, wl-64)",
+    )
+    p_import.add_argument(
         "--product",
         default=os.environ.get("WL_PRODUCT", ""),
-        help="Destination product slug (required; or set WL_PRODUCT)",
+        help="Back-compat alias for --project (or set WL_PRODUCT)",
     )
 
     return parser

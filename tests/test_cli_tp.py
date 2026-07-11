@@ -171,6 +171,60 @@ class RequestBuildingTest(unittest.TestCase):
         sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
         self.assertEqual(sent_body["surface"], "worklane")
 
+    @mock.patch("urllib.request.urlopen")
+    def test_create_via_project_flag(self, mock_urlopen) -> None:
+        # wl-64: --project is the canonical flag, resolves the same as --product.
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "task": {"id": "wl-99", "title": "t"}}
+        )
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            [
+                "create",
+                "--title", "t",
+                "--description", "d",
+                "--project", "worklane",
+                "--author", "wl-pool",
+            ]
+        )
+        wl_cli.cmd_create(args)
+        sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_body["surface"], "worklane")
+
+    def test_create_project_product_conflict_exits(self) -> None:
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            [
+                "create",
+                "--title", "t",
+                "--description", "d",
+                "--project", "worklane",
+                "--product", "tradeos",
+                "--author", "wl-pool",
+            ]
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            wl_cli.cmd_create(args)
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_create_project_product_agree_is_fine(self) -> None:
+        with mock.patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _ok_response(
+                {"ok": True, "task": {"id": "wl-99", "title": "t"}}
+            )
+            parser = wl_cli._build_parser()
+            args = parser.parse_args(
+                [
+                    "create",
+                    "--title", "t",
+                    "--description", "d",
+                    "--project", "worklane",
+                    "--product", "worklane",
+                    "--author", "wl-pool",
+                ]
+            )
+            wl_cli.cmd_create(args)  # no SystemExit — equal values are not a conflict
+
     def test_comment_requires_signed_author(self) -> None:
         parser = wl_cli._build_parser()
         args = parser.parse_args(["comment", "wl-13", "body text"])

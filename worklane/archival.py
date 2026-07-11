@@ -11,9 +11,8 @@ consistent and a ticket can be moved back with :func:`restore_archived_tickets`.
 The archive DB is a plain WL store — read it with an ordinary
 ``SQLiteTracker(db_path=archive_path)``.
 
-Slice 1 (this module) is the pure engine + counts. Deferred follow-ups: the
-Settings archive-count display + compact action, ticket-detail read-through to
-archived ids, and excluding archived rows from ``scope_counts``.
+Slice 1: pure engine + counts. Slice 2 (task_server): Settings compact action,
+ticket-detail read-through to archived ids, board/scope_counts stay hot-only.
 """
 from __future__ import annotations
 
@@ -21,7 +20,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 from worklane.trackers.sqlite import SQLiteTracker
 from worklane.trackers.protocol import TaskStatus
@@ -221,33 +220,46 @@ def archive_cold_tickets(
 
 def restore_archived_tickets(
     db_path: Path,
-    ext_ids: Sequence[str],
+    task_ids: Sequence[Union[str, int]],
     *,
     archive_path: Optional[Path] = None,
 ) -> ArchiveResult:
-    """Move archived tickets (by display ext_id) back into the hot store.
+    """Move archived tickets (by internal id) back into the hot store.
 
-    Proves the archival is reversible: same copy path, archive -> hot.
+    Keys on the store's internal ``tasks.id`` — not ``ext_id`` — because real
+    tickets can have NULL ``ext_id``. Same copy path as archive, reversed.
     """
     db_path = Path(db_path)
     archive_path = Path(archive_path) if archive_path else archive_db_path_for(db_path)
 
     if not archive_path.exists():
         return ArchiveResult(0, 0, 0, str(archive_path), str(db_path))
+    if not task_ids:
+        return ArchiveResult(0, 0, 0, str(archive_path), str(db_path))
 
     # Hot DB must exist with schema for the restore target.
     with SQLiteTracker(db_path=db_path)._connect():
         pass
+
+    # Normalize to ints; skip unparseable so a bad id never aborts the batch.
+    want: List[int] = []
+    for raw in task_ids:
+        try:
+            want.append(int(str(raw).strip()))
+        except (TypeError, ValueError):
+            continue
+    if not want:
+        return ArchiveResult(0, 0, 0, str(archive_path), str(db_path))
 
     src = sqlite3.connect(str(archive_path), timeout=5.0)
     src.row_factory = sqlite3.Row
     dst = sqlite3.connect(str(db_path), timeout=5.0)
     dst.row_factory = sqlite3.Row
     try:
-        marks = ",".join("?" * len(ext_ids))
+        marks = ",".join("?" * len(want))
         rows = src.execute(
-            f"SELECT id FROM tasks WHERE ext_id IN ({marks})",
-            tuple(str(e) for e in ext_ids),
+            f"SELECT id FROM tasks WHERE id IN ({marks})",
+            tuple(want),
         ).fetchall()
         ids = [int(r["id"]) for r in rows]
         if not ids:

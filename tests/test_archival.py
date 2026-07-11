@@ -133,18 +133,33 @@ class ArchivalTest(unittest.TestCase):
         archival.archive_cold_tickets(self.db, older_than_days=90, now=self.now)
         self.assertEqual(self._hot_ids(), set())
 
-        res = archival.restore_archived_tickets(self.db, ["997"])
+        # Restore keys on internal id (not ext_id) so NULL-ext_id tickets work.
+        res = archival.restore_archived_tickets(self.db, [t.id])
         self.assertEqual(res.tickets, 1)
         self.assertEqual(res.comments, 1)
         # Ticket is back in the hot store with the same internal id + comment;
         # archival did not destroy anything.
-        restored = self.tracker.get_task("997")
+        restored = self.tracker.get_task(t.id)
         self.assertIsNotNone(restored)
         self.assertEqual(restored.id, t.id)
         self.assertEqual(restored.title, "round trip")
         self.assertEqual(
             [c.body for c in self.tracker.list_comments(t.id)], ["note"]
         )
+        self.assertEqual(archival.archive_counts(self.archive), 0)
+
+    def test_restore_by_internal_id_with_null_ext_id(self) -> None:
+        """Real tickets can have NULL ext_id — restore must still find them."""
+        t = self._make(title="null ext", status=TaskStatus.DONE, age_days=200, ext_id=None)
+        archival.archive_cold_tickets(self.db, older_than_days=90, now=self.now)
+        self.assertEqual(self._hot_ids(), set())
+        self.assertEqual(self._archive_ids(), {t.id})
+
+        res = archival.restore_archived_tickets(self.db, [t.id])
+        self.assertEqual(res.tickets, 1)
+        restored = self.tracker.get_task(t.id)
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.title, "null ext")
         self.assertEqual(archival.archive_counts(self.archive), 0)
 
     def test_mixed_timestamp_formats(self) -> None:

@@ -32,7 +32,19 @@ _KNOWN_PRODUCT_META: Dict[str, Tuple[str, str]] = {
 
 # Legacy stores that are not product surfaces. ``ops_tickets`` is the
 # retired Ops Cockpit store (empty; surface removed from the UI).
+# Stems ending in ``_archive`` are cold companion DBs (wl-23 archival) —
+# never product surfaces themselves.
 _IGNORED_DB_STEMS = {"ops_tickets"}
+
+
+def _is_product_db_stem(stem: str) -> bool:
+    """True when ``stem`` is eligible as a product store name."""
+    s = (stem or "").strip().lower()
+    if not s or s in _IGNORED_DB_STEMS:
+        return False
+    if s.endswith("_archive"):
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -105,7 +117,7 @@ def default_product_slug() -> str:
         found = sorted(
             p.stem.strip().lower()
             for p in data.glob("*.db")
-            if p.stem.strip() and p.stem.strip().lower() not in _IGNORED_DB_STEMS
+            if _is_product_db_stem(p.stem)
         )
         if found:
             return found[0]
@@ -185,7 +197,7 @@ def discover_products() -> List[ProductSpec]:
     if data.is_dir():
         for p in sorted(data.glob("*.db")):
             stem = p.stem.strip().lower()
-            if not stem or stem in _IGNORED_DB_STEMS:
+            if not _is_product_db_stem(stem):
                 continue
             slugs.setdefault(stem, p)
     always_present = (default,) if default else ()

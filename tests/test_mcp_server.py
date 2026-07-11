@@ -116,6 +116,60 @@ class HandlersTest(unittest.TestCase):
             {"task_id"},
         )
 
+    def test_tool_catalog_exposes_project_alongside_product(self) -> None:
+        # wl-64: every tool that took 'product' now also declares 'project'
+        # as the canonical name; 'product' stays as a documented alias.
+        by_name = {t["name"]: t for t in build_tool_definitions()}
+        for name, tool in by_name.items():
+            props = tool["inputSchema"]["properties"]
+            if "product" in props:
+                self.assertIn("project", props, name)
+
+    def test_dispatch_project_alias_resolves_like_product(self) -> None:
+        created = dispatch_tool(
+            self.h,
+            "wl_create",
+            {
+                "title": "Alias via project",
+                "description": "Problem: naming. Expected: project== product.",
+                "project": "tradeos",
+            },
+        )
+        self.assertTrue(created["ok"])
+        self.assertEqual(created["task"]["product"], "tradeos")
+
+    def test_dispatch_project_and_product_agree_is_fine(self) -> None:
+        created = dispatch_tool(
+            self.h,
+            "wl_create",
+            {
+                "title": "Alias agree",
+                "description": "Problem: naming. Expected: no conflict when equal.",
+                "project": "tradeos",
+                "product": "tradeos",
+            },
+        )
+        self.assertTrue(created["ok"])
+
+    def test_dispatch_project_product_conflict_rejected(self) -> None:
+        with self.assertRaises(ToolError) as ctx:
+            dispatch_tool(
+                self.h,
+                "wl_create",
+                {
+                    "title": "Alias conflict",
+                    "description": "Problem: naming. Expected: reject, don't guess.",
+                    "project": "tradeos",
+                    "product": "worklane",
+                },
+            )
+        self.assertIn("conflicting", ctx.exception.message.lower())
+
+    def test_dispatch_bare_product_still_works(self) -> None:
+        # Back-compat: existing agent prompts pass 'product' only.
+        listed = dispatch_tool(self.h, "wl_list", {"product": "tradeos", "status": "backlog"})
+        self.assertEqual(listed["product"], "tradeos")
+
     def test_create_list_show(self) -> None:
         created = self.h.wl_create(
             title="Wire MCP",

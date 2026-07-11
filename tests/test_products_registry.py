@@ -269,6 +269,56 @@ class SurfaceRoutingTest(unittest.TestCase):
         self.assertEqual(got.status_code, 200)
         self.assertEqual(got.json()["task"]["title"], "WL self-ticket")
 
+    def test_create_via_project_field(self) -> None:
+        # wl-64: 'project' is the canonical field, resolves the same as 'surface'.
+        SQLiteTracker(
+            db_path=self.root / "data" / "worklane.db"
+        ).create_task(title="seed")
+        r = self.client.post(
+            "/api/admin/tasks",
+            json={
+                "title": "Via project field",
+                "author": "work-pool",
+                "description": "test intake body",
+                "project": "worklane",
+            },
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["task"]["id"].startswith("wl-"))
+
+    def test_create_project_surface_conflict_rejected(self) -> None:
+        SQLiteTracker(
+            db_path=self.root / "data" / "worklane.db"
+        ).create_task(title="seed")
+        r = self.client.post(
+            "/api/admin/tasks",
+            json={
+                "title": "Conflicting fields",
+                "author": "work-pool",
+                "description": "test intake body",
+                "project": "worklane",
+                "surface": "tradeos",
+            },
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("conflicting", r.json()["error"].lower())
+
+    def test_create_project_surface_agree_is_fine(self) -> None:
+        SQLiteTracker(
+            db_path=self.root / "data" / "worklane.db"
+        ).create_task(title="seed")
+        r = self.client.post(
+            "/api/admin/tasks",
+            json={
+                "title": "Agreeing fields",
+                "author": "work-pool",
+                "description": "test intake body",
+                "project": "worklane",
+                "surface": "worklane",
+            },
+        )
+        self.assertEqual(r.status_code, 200)
+
     def test_settings_page_renders(self) -> None:
         r = self.client.get("/admin/settings")
         self.assertEqual(r.status_code, 200)

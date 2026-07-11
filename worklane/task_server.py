@@ -61,6 +61,7 @@ from worklane.trackers import (
     get_default_tracker,
     task_is_gated,
 )
+from worklane import archival
 from worklane.products import (
     ProductSpec,
     default_product_slug,
@@ -1265,6 +1266,58 @@ def _resolve_product_tracker(task_id: str) -> Tuple[str, str, Any]:
     if slug == "ops":
         return slug, raw, get_ops_ticket_tracker()
     return slug, raw, product_tracker(slug)
+
+
+def _tracker_db_path(tracker: Any) -> Optional[Path]:
+    """Hot SQLite path for a product tracker, if it is file-backed."""
+    p = getattr(tracker, "_db_path", None)
+    if p is None:
+        return None
+    return Path(p)
+
+
+def _archive_tracker_for_hot_db(hot_db: Path) -> Optional[Any]:
+    """Open the sibling archive store for ``hot_db`` (None if missing)."""
+    from worklane.trackers.sqlite import SQLiteTracker
+
+    archive_path = archival.archive_db_path_for(hot_db)
+    if not archive_path.exists():
+        return None
+    return SQLiteTracker(db_path=archive_path, product_default="")
+
+
+def _get_task_hot_or_archive(
+    tracker: Any, raw_id: str
+) -> Tuple[Optional[Task], List[TaskComment], bool]:
+    """Hot-store first; fall through to sibling archive DB (read-only).
+
+    Returns ``(task, comments, archived)``. ``archived=True`` means the
+    row lives only in cold storage — mutations must refuse.
+    """
+    task = tracker.get_task(raw_id)
+    if task is not None:
+        comments: List[TaskComment] = (
+            tracker.list_comments(raw_id)
+            if hasattr(tracker, "list_comments")
+            else []
+        )
+        return task, comments, False
+
+    hot = _tracker_db_path(tracker)
+    if hot is None:
+        return None, [], False
+    archive_tr = _archive_tracker_for_hot_db(hot)
+    if archive_tr is None:
+        return None, [], False
+    task = archive_tr.get_task(raw_id)
+    if task is None:
+        return None, [], False
+    comments = (
+        archive_tr.list_comments(raw_id)
+        if hasattr(archive_tr, "list_comments")
+        else []
+    )
+    return task, comments, True
 
 
 def _fetch_tradeos_ops_snapshot() -> Dict[str, Optional[Dict[str, Any]]]:
@@ -2580,9 +2633,40 @@ def admin_settings() -> str:
         f"({'present' if cfg_exists else 'not created yet'}) as "
         f"<code>{overlay_example}</code>. "
         "Prefix changes only affect how ids render — stored rows never rewrite. "
-        "Settings knobs beyond products (board poll interval, done-column cap, "
-        "accent color, stall thresholds, done-ticket archival) are tracked as "
-        "follow-ups, not covered here.</p>"
+        "Other settings knobs (board poll interval, done-column cap, accent color, "
+        "stall thresholds) remain follow-ups.</p>"
+    )
+
+    # wl-23: per-product archive counts + Compact now (move-not-delete).
+    archive_rows = []
+    for spec, tracker in product_trackers():
+        hot = _tracker_db_path(tracker) or Path(spec.db_path)
+        archive_path = archival.archive_db_path_for(hot)
+        arc_n = archival.archive_counts(archive_path)
+        hot_n = len(tracker.list_tasks(limit=None))
+        slug_attr = _esc(spec.slug)
+        archive_rows.append(
+            "<tr>"
+            f"<td><code>{_esc(spec.slug)}</code></td>"
+            f"<td>{hot_n}</td>"
+            f"<td id='ts-archive-count-{slug_attr}'>{arc_n}</td>"
+            f"<td class='dim'><code>{_esc(str(archive_path.name))}</code></td>"
+            f"<td><button class='btn btn-sm' type='button' "
+            f"onclick=\"tsSettingsCompact('{slug_attr}')\">Compact now</button></td>"
+            "</tr>"
+        )
+    archival_html = (
+        "<table class='tos-table'>"
+        "<thead><tr><th>Slug</th><th>Hot tickets</th><th>Archived</th>"
+        "<th>Archive store</th><th></th></tr></thead>"
+        f"<tbody>{''.join(archive_rows) if archive_rows else '<tr><td colspan=5 class=dim>No products</td></tr>'}"
+        "</tbody></table>"
+        "<p class='dim' style='margin-top:8px;'>Compact moves done/canceled tickets "
+        f"untouched for {archival.DEFAULT_ARCHIVE_AGE_DAYS} days into a sibling "
+        "<code>*_archive.db</code> (same schema). Archival is <strong>not</strong> "
+        "deletion — restore by internal id is reversible. Board / "
+        "<code>scope_counts</code> only read the hot store. Do not compact from "
+        "automation against live stores without an operator click.</p>"
     )
 
     identity_html = (
@@ -2658,11 +2742,34 @@ def admin_settings() -> str:
       showToast('Network error', 'error');
     }
   }
+
+  async function tsSettingsCompact(slug) {
+    if (!confirm('Compact cold done/canceled tickets for ' + slug + ' into archive? (reversible)')) {
+      return;
+    }
+    try {
+      var resp = await fetch('/api/admin/products/' + encodeURIComponent(slug) + '/compact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      var j = await resp.json();
+      if (!j.ok) { showToast('Compact failed: ' + (j.error || resp.status), 'error'); return; }
+      showToast(
+        'Compacted ' + (j.tickets || 0) + ' ticket(s) · archive now ' + (j.archive_count || 0),
+        'success'
+      );
+      setTimeout(function() { window.location.reload(); }, 800);
+    } catch (e) {
+      showToast('Network error', 'error');
+    }
+  }
 </script>
 """
     body = (
         "<div class='ts-ops-page'>"
         + _task_card("Products · stores · numbering", products_html)
+        + _task_card("Done-ticket archival", archival_html)
         + _task_card("Identity & enforcement", identity_html)
         + _task_card("Service", service_html)
         + "</div>"
@@ -2961,6 +3068,7 @@ def task_detail(task_id: str) -> str:
     surf, raw_id, tracker = _resolve_product_tracker(task_id)
     task: Optional[Task] = None
     comments: List[TaskComment] = []
+    archived = False
 
     if surf == live_feed_product_slug() and _tradeos_tickets_use_http_feed():
         data = _fetch_tradeos_json(
@@ -2992,13 +3100,11 @@ def task_detail(task_id: str) -> str:
                         created_at=str(c.get("created_at") or ""),
                     )
                 )
+        if task is None:
+            # Live feed miss → local hot store, then archive read-through.
+            task, comments, archived = _get_task_hot_or_archive(tracker, raw_id)
     else:
-        task = tracker.get_task(raw_id)
-        comments = (
-            tracker.list_comments(raw_id)
-            if task is not None and hasattr(tracker, "list_comments")
-            else []
-        )
+        task, comments, archived = _get_task_hot_or_archive(tracker, raw_id)
 
     if task is None:
         body = (
@@ -3028,9 +3134,14 @@ def task_detail(task_id: str) -> str:
         f"<div class='dim' style='font-size:var(--fs-sm);'>{_esc(task.ext_id)}</div>"
         if task.ext_id else ""
     )
+    status_cell = (
+        _render_status_badge(task.status)
+        if archived
+        else _status_select(task_id, task.status)
+    )
     meta = (
         "<table class='tos-table'>"
-        f"<tr><th>Status</th><td>{_status_select(task_id, task.status)}</td></tr>"
+        f"<tr><th>Status</th><td>{status_cell}</td></tr>"
         f"<tr><th>Priority</th><td>{_render_priority_badge(int(task.priority or 3))}</td></tr>"
         f"<tr><th>Labels</th><td>{_render_labels(task.labels)}</td></tr>"
         f"<tr><th>Created</th><td class='dim'>{_esc(task.created_at[:19] if task.created_at else '')}</td></tr>"
@@ -3045,36 +3156,47 @@ def task_detail(task_id: str) -> str:
         if desc else "<p class='dim'>No description.</p>"
     )
 
-    comment_form = (
-        "<div style='display:flex; flex-direction:column; gap:8px;'>"
-        "<input id='admin-task-comment-author' required "
-        "placeholder='Author — canonical agent id (PROTOCOL.md §5.2)' "
-        "style='width:280px;'/>"
-        "<textarea id='admin-task-comment-body' rows='4' "
-        "style='width:100%; font-family:var(--font-mono);' "
-        "placeholder='Add a comment...'></textarea>"
-        "<div><button class='btn go' "
-        f"onclick='adminTaskComment(\"{_esc(task_id)}\")'>Add comment</button></div>"
-        "</div>"
-        # Remember the signer between visits (PROTOCOL.md §3.8).
-        "<script>(function(){try{var v=localStorage.getItem('wl-comment-author');"
-        "var el=document.getElementById('admin-task-comment-author');"
-        "if(v&&el&&!el.value)el.value=v;}catch(e){}})();</script>"
-    )
+    archive_banner = ""
+    if archived:
+        archive_banner = (
+            "<div class='ts-archive-banner' role='status'>"
+            "Archived (cold storage) — read-only. This ticket was compacted out "
+            "of the hot board; restore moves it back via the archival engine."
+            "</div>"
+        )
+
+    comment_form = ""
+    if not archived:
+        comment_form = (
+            "<hr style='margin:12px 0;'/>"
+            "<div style='display:flex; flex-direction:column; gap:8px;'>"
+            "<input id='admin-task-comment-author' required "
+            "placeholder='Author — canonical agent id (PROTOCOL.md §5.2)' "
+            "style='width:280px;'/>"
+            "<textarea id='admin-task-comment-body' rows='4' "
+            "style='width:100%; font-family:var(--font-mono);' "
+            "placeholder='Add a comment...'></textarea>"
+            "<div><button class='btn go' "
+            f"onclick='adminTaskComment(\"{_esc(task_id)}\")'>Add comment</button></div>"
+            "</div>"
+            # Remember the signer between visits (PROTOCOL.md §3.8).
+            "<script>(function(){try{var v=localStorage.getItem('wl-comment-author');"
+            "var el=document.getElementById('admin-task-comment-author');"
+            "if(v&&el&&!el.value)el.value=v;}catch(e){}})();</script>"
+        )
 
     body = (
         _render_tickets_context_strip()
         + f"<p class='dim' style='margin-bottom:8px;'>"
         f"<a href='{TICKETS_APP_ALL}'>&larr; All tasks</a></p>"
-        f"<h1 style='margin:0 0 4px 0;'>{_esc(task.title)}</h1>"
+        + archive_banner
+        + f"<h1 style='margin:0 0 4px 0;'>{_esc(task.title)}</h1>"
         f"{ext_html}"
         + _task_card("Metadata", meta)
         + _task_card("Description", desc_html)
         + _task_card(
             f"Comments · {len(comments)}",
-            _render_comments(comments)
-            + "<hr style='margin:12px 0;'/>"
-            + comment_form,
+            _render_comments(comments) + comment_form,
         )
         + _client_js()
         + _task_server_extra_js()
@@ -3256,6 +3378,56 @@ async def api_update_product(slug: str, request: Request) -> JSONResponse:
     )
 
 
+@router.post("/api/admin/products/{slug}/compact")
+async def api_compact_product(slug: str, request: Request) -> JSONResponse:
+    """Move cold done/canceled tickets into the sibling archive DB (wl-23).
+
+    Archival is move-not-delete and reversible. Default age is 90 days.
+    Body (optional JSON): ``{"older_than_days": 90}``.
+    """
+    s = (slug or "").strip().lower()
+    spec = get_product(s)
+    if spec is None:
+        return JSONResponse({"ok": False, "error": f"unknown product {s!r}"}, status_code=404)
+
+    older_than_days = archival.DEFAULT_ARCHIVE_AGE_DAYS
+    try:
+        payload: Dict[str, Any] = await request.json()
+    except Exception:
+        payload = {}
+    if isinstance(payload, dict) and "older_than_days" in payload:
+        try:
+            older_than_days = int(payload["older_than_days"])
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"ok": False, "error": "older_than_days must be an integer"},
+                status_code=400,
+            )
+        if older_than_days < 1:
+            return JSONResponse(
+                {"ok": False, "error": "older_than_days must be >= 1"},
+                status_code=400,
+            )
+
+    tracker = product_tracker(spec)
+    hot = _tracker_db_path(tracker) or Path(spec.db_path)
+    result = archival.archive_cold_tickets(hot, older_than_days=older_than_days)
+    archive_path = archival.archive_db_path_for(hot)
+    return JSONResponse(
+        {
+            "ok": True,
+            "product": s,
+            "tickets": result.tickets,
+            "comments": result.comments,
+            "relations": result.relations,
+            "older_than_days": older_than_days,
+            "source_path": result.source_path,
+            "archive_path": result.archive_path,
+            "archive_count": archival.archive_counts(archive_path),
+        }
+    )
+
+
 @router.post("/api/admin/tasks")
 async def api_create_task(request: Request) -> JSONResponse:
     try:
@@ -3317,7 +3489,25 @@ async def api_create_task(request: Request) -> JSONResponse:
         except Exception:
             pass
 
-    surface = (payload.get("ticket_surface") or payload.get("surface") or default_product_slug())
+    # project (wl-64) is the canonical field name; ticket_surface/surface
+    # remain silent back-compat aliases. Reject rather than silently pick
+    # when both are given with different values (PROTOCOL.md §5.2 rule).
+    project_val = payload.get("project")
+    legacy_surface_val = payload.get("ticket_surface") or payload.get("surface")
+    if (
+        project_val not in (None, "")
+        and legacy_surface_val not in (None, "")
+        and str(project_val).strip().lower() != str(legacy_surface_val).strip().lower()
+    ):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"conflicting project/surface values: project={project_val!r} "
+                         f"surface={legacy_surface_val!r} — pass only one",
+            },
+            status_code=400,
+        )
+    surface = project_val or legacy_surface_val or default_product_slug()
     surface = str(surface).strip().lower()
     if surface in ("ops", "op"):
         tracker = get_ops_ticket_tracker()
@@ -3672,13 +3862,13 @@ def api_delete_task_relation(task_id: str, relation_id: str) -> JSONResponse:
 
 @router.get("/api/admin/tasks/{task_id}")
 def api_get_task(task_id: str) -> JSONResponse:
-    surf, raw_id, tracker = _resolve_product_tracker(task_id)
-    task = tracker.get_task(raw_id)
+    _surf, raw_id, tracker = _resolve_product_tracker(task_id)
+    task, comments, archived = _get_task_hot_or_archive(tracker, raw_id)
     if task is None:
         return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
     out = task.to_dict()
     out["id"] = task_id
-    comments = tracker.list_comments(raw_id)
+    out["archived"] = archived
     out["comments"] = [
         {
             "id": c.id,
@@ -3689,7 +3879,7 @@ def api_get_task(task_id: str) -> JSONResponse:
         }
         for c in comments
     ]
-    return JSONResponse({"ok": True, "task": out})
+    return JSONResponse({"ok": True, "task": out, "archived": archived})
 
 
 @router.patch("/api/admin/tasks/{task_id}")
@@ -5108,6 +5298,14 @@ def _task_server_extra_css() -> str:
     flex-wrap: wrap;
   }
   .ts-settings-add-row .ts-settings-input { width: auto; flex: 1 1 160px; }
+
+  /* wl-23: archived ticket detail is read-only */
+  .ts-archive-banner {
+    margin: 0 0 12px 0; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--r-md, 4px);
+    background: rgba(255, 193, 7, 0.08); color: var(--fg);
+    font-size: var(--fs-sm);
+  }
 </style>
 """
 

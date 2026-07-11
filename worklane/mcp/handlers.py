@@ -841,12 +841,21 @@ class TPHandlers:
 
 def build_tool_definitions() -> List[Dict[str, Any]]:
     """MCP tools/list payload — schemas for work + triage tools."""
+    project_prop = {
+        "type": "string",
+        "description": (
+            "Project store slug (e.g. tradeos, worklane) — canonical "
+            "name (wl-64). 'product' is a silent back-compat alias for this "
+            "same field; passing both with different values is an error. "
+            "Omit to use connect-time default (WL_PRODUCT or tradeos). "
+            "wl_list/wl_ready/wl_mine/wl_counts also accept 'all'."
+        ),
+    }
     product_prop = {
         "type": "string",
         "description": (
-            "Product store slug (e.g. tradeos, worklane). "
-            "Omit to use connect-time default (WL_PRODUCT or tradeos). "
-            "wl_list/wl_ready/wl_mine/wl_counts also accept 'all'."
+            "Back-compat alias for 'project' (PROTOCOL.md §5.2 — same field, "
+            "same meaning). Prefer 'project' in new integrations."
         ),
     }
     task_id_prop = {
@@ -867,6 +876,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "project": project_prop,
                     "product": product_prop,
                     "status": {
                         "type": "string",
@@ -898,6 +908,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "project": project_prop,
                     "product": product_prop,
                     "label": {"type": "string"},
                     "limit": {
@@ -916,6 +927,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "comments_limit": {
                         "type": "integer",
@@ -938,6 +950,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "properties": {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
+                    "project": project_prop,
                     "product": product_prop,
                     "priority": {
                         "type": "integer",
@@ -963,6 +976,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "plan": {
                         "type": "string",
@@ -991,6 +1005,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "properties": {
                     "task_id": task_id_prop,
                     "body": {"type": "string"},
+                    "project": project_prop,
                     "product": product_prop,
                 },
                 "required": ["task_id", "body"],
@@ -1023,6 +1038,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                         "description": "Ticket refs or 'none'",
                         "default": "none",
                     },
+                    "project": project_prop,
                     "product": product_prop,
                 },
                 "required": ["task_id", "completed", "verification", "links"],
@@ -1038,6 +1054,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "reason": {"type": "string"},
                     "next_step": {"type": "string"},
@@ -1055,6 +1072,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "add": {
                         "type": "array",
@@ -1083,6 +1101,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "title": {"type": "string"},
                     "description": {"type": "string"},
@@ -1119,6 +1138,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "reason": {
                         "type": "string",
@@ -1138,6 +1158,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "reason": {
                         "type": "string",
@@ -1157,6 +1178,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "note": {
                         "type": "string",
@@ -1176,6 +1198,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "task_id": task_id_prop,
+                    "project": project_prop,
                     "product": product_prop,
                     "reason": {
                         "type": "string",
@@ -1194,6 +1217,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "project": project_prop,
                     "product": product_prop,
                     "limit": {
                         "type": "integer",
@@ -1213,6 +1237,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "project": project_prop,
                     "product": product_prop,
                 },
             },
@@ -1221,10 +1246,32 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
 
 
 def dispatch_tool(handlers: TPHandlers, name: str, arguments: Dict[str, Any]) -> Any:
-    """Route a tools/call to the matching handler method."""
+    """Route a tools/call to the matching handler method.
+
+    ``project`` (wl-64) is the canonical name for what every handler still
+    takes as ``product`` internally; ``product`` remains a silent back-compat
+    alias. Resolved here, once, rather than renaming the parameter on all 16
+    handler methods — same field, same store lookup, lower surface area.
+    Passing both with different values is rejected rather than silently
+    picking one (PROTOCOL.md §5.2 alias-precedence rule, wl-64).
+    """
     import inspect
 
     args = dict(arguments or {})
+    if "project" in args:
+        project_val = args.pop("project")
+        product_val = args.get("product")
+        if (
+            project_val not in (None, "")
+            and product_val not in (None, "")
+            and str(project_val).strip().lower() != str(product_val).strip().lower()
+        ):
+            raise ToolError(
+                f"conflicting project/product values: project={project_val!r} "
+                f"product={product_val!r} — pass only one"
+            )
+        if project_val not in (None, ""):
+            args["product"] = project_val
     table = {
         "wl_list": handlers.wl_list,
         "wl_ready": handlers.wl_ready,

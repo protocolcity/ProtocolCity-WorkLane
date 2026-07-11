@@ -111,7 +111,7 @@ Marker rules (settled 2026-07-10; before this date the field drifted per agent �
   worktree, its absolute path goes in `Workdir:` and its branch in `Branch:` —
   there is no separate `Worktree:` field.
 - The `(<model>)` parenthetical is optional but encouraged for agents that can
-  run on different models (e.g. `Owner: work-pool (claude-fable-5)`). The model
+  run on different models (e.g. `Owner: claude-worklane (claude-fable-5)`). The model
   goes **only** here — never in the comment author field.
 
 **Completion comment:**
@@ -199,12 +199,11 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 
 | Agent id | Who |
 | --- | --- |
-| `work-pool` | Claude Code hourly work-pool dispatch |
 | `founder-terminal` | Founder-driven Claude terminal sessions |
 | `cursor` | Cursor editor lane (§6.1) |
 | `grok` | Grok CLI lane (§6.2) |
 | `cowork` | Claude cowork sessions |
-| `wl-pool` | Claude Code hourly lane working WL's own tickets (§8) |
+| `claude-worklane` | Claude CLI dispatch, WL's own tickets (§8; launchd :15; fka `wl-pool`, renamed 2026-07-11) |
 
 Reserved system authors — written by automation only, never by an agent:
 `cli-label`, `cli-update`, `dependency-guard` (WL internals), and
@@ -212,7 +211,8 @@ Reserved system authors — written by automation only, never by an agent:
 
 Rules:
 
-- **One id per lane, forever.** Historical variants (renamed profiles, bare human names, anything with trailing whitespace) are deprecated — do not write them; they exist only in
+- **One id per lane, forever.** Historical variants (renamed profiles, bare human names, anything with trailing whitespace), bare human names, anything with
+  trailing whitespace) are deprecated — do not write them; they exist only in
   pre-2026-07-10 history.
 - **New lane, new row.** A new agent lane registers its id in this table (same
   commit that adds its §6 profile) before posting its first comment.
