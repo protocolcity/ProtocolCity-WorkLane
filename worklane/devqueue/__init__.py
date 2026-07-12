@@ -21,8 +21,8 @@ Public surface:
   shutdown button on the dashboard.
 
 Nothing in this module hits Linear directly — the ProjectTracker
-abstraction owns persistence. Linear sync still happens via the MCP
-flow described in :doc:`CLAUDE.md`.
+abstraction owns persistence. Linear is retired; legacy SEO-XXX ext_ids
+are preserved for historical reference only (see this package's TRUTH.md).
 """
 
 from __future__ import annotations

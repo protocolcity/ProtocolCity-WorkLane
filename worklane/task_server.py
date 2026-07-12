@@ -3053,15 +3053,16 @@ def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
     return (
         "<div class='ts-timetable'><table class='ts-timetable-table'>"
         "<thead><tr>"
-        "<th class='tt-c-age'>Age</th>"
-        "<th class='tt-c-no'>No.</th>"
-        "<th class='tt-c-ticket'>Ticket</th>"
-        "<th class='tt-c-labels'>Labels</th>"
-        "<th class='tt-c-status'>Status</th>"
-        "<th class='tt-c-pri'>Pri.</th>"
+        "<th class='tt-c-age' data-tt-key='age'>Age</th>"
+        "<th class='tt-c-no' data-tt-key='no'>No.</th>"
+        "<th class='tt-c-ticket' data-tt-key='ticket'>Ticket</th>"
+        "<th class='tt-c-labels' data-tt-key='labels'>Labels</th>"
+        "<th class='tt-c-status' data-tt-key='status'>Status</th>"
+        "<th class='tt-c-pri' data-tt-key='pri'>Pri.</th>"
         "</tr></thead>"
         f"<tbody>{rows}</tbody>"
         "</table></div>"
+        + _TIMETABLE_SORT_JS
     )
 
 
@@ -3076,16 +3077,122 @@ def _render_task_row(t: Task, scope_product: str = "") -> str:
         f"{_esc((t.updated_at or '')[:10])}</span>"
         if t.updated_at else "<span class='dim'>—</span>"
     )
+    labels = _scoped_labels(t.labels, scope_product)
+    # Sort keys as row data attributes so header sorting never has to parse
+    # rendered cell markup (badges, relative-time spans, label chips).
+    sort_attrs = (
+        f" data-tt-age='{updated_attr}'"
+        f" data-tt-no='{_esc(t.id)}'"
+        f" data-tt-ticket='{_esc((t.title or '').lower())}'"
+        f" data-tt-labels='{_esc(' '.join(labels).lower())}'"
+        f" data-tt-status='{_esc(t.status)}'"
+        f" data-tt-pri='{int(t.priority or 3)}'"
+    )
     return (
-        f"<tr class='tt-row' onclick=\"location.href='{href}'\">"
+        f"<tr class='tt-row'{sort_attrs} onclick=\"location.href='{href}'\">"
         f"<td class='tt-c-age'>{age_html}</td>"
         f"<td class='tt-c-no'><span class='tb-card-id'>{_esc(t.id)}</span>{ext}</td>"
         f"<td class='tt-c-ticket'><a href='{href}'>{_esc(t.title)}</a></td>"
-        f"<td class='tt-c-labels'>{_render_labels(_scoped_labels(t.labels, scope_product))}</td>"
+        f"<td class='tt-c-labels'>{_render_labels(labels)}</td>"
         f"<td class='tt-c-status'>{_render_status_badge(t.status)}</td>"
         f"<td class='tt-c-pri'>{_render_priority_badge(int(t.priority or 3))}</td>"
         "</tr>"
     )
+
+
+# wl-38 follow-on: click a timetable column header to sort the loaded rows
+# client-side. First click uses the column's natural direction (Age newest
+# first, Pri. most urgent first, everything else ascending); clicking the
+# same header again flips it. Sorting is a pure tbody reorder — row markup,
+# zebra striping (positional nth-child), and row-click navigation all
+# survive untouched.
+_TIMETABLE_SORT_JS = """
+<script>
+(function() {
+  var STATUS_ORDER = { backlog: 0, in_progress: 1, in_review: 2, done: 3, canceled: 4 };
+
+  function ticketNoKey(id) {
+    // "wl-99" / "t-1253" → [prefix, number] so wl-9 sorts before wl-99.
+    var m = /^(.*?)-?(\\d+)$/.exec(id || "");
+    return m ? [m[1], parseInt(m[2], 10)] : [id || "", 0];
+  }
+
+  function cmp(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+
+  function rowValue(row, key) {
+    var v = row.getAttribute("data-tt-" + key) || "";
+    if (key === "no") return ticketNoKey(v);
+    if (key === "status") return STATUS_ORDER[v] !== undefined ? STATUS_ORDER[v] : 99;
+    if (key === "pri") {
+      var p = parseInt(v, 10) || 0;
+      return p === 0 ? 99 : p;  // 0 = no priority, always last
+    }
+    return v;
+  }
+
+  function compareRows(a, b, key) {
+    var va = rowValue(a, key), vb = rowValue(b, key);
+    if (key === "no") return cmp(va[0], vb[0]) || cmp(va[1], vb[1]);
+    if (key === "age") {
+      // Empty updated_at sorts last regardless of direction (handled by
+      // caller keeping empties pinned), here plain ISO string compare.
+      if (va === "" && vb === "") return 0;
+      if (va === "") return 1;
+      if (vb === "") return -1;
+      return cmp(va, vb);
+    }
+    return cmp(va, vb);
+  }
+
+  function sortTable(table, th) {
+    var key = th.getAttribute("data-tt-key");
+    var tbody = table.tBodies[0];
+    if (!key || !tbody) return;
+
+    var current = th.getAttribute("aria-sort");
+    var firstDesc = key === "age";  // Age: first click = newest first
+    var dir;
+    if (current === "ascending") dir = "descending";
+    else if (current === "descending") dir = "ascending";
+    else dir = firstDesc ? "descending" : "ascending";
+
+    var ths = table.tHead.querySelectorAll("th[data-tt-key]");
+    for (var i = 0; i < ths.length; i++) ths[i].removeAttribute("aria-sort");
+    th.setAttribute("aria-sort", dir);
+
+    var rows = Array.prototype.slice.call(tbody.rows);
+    var sign = dir === "descending" ? -1 : 1;
+    rows.sort(function(a, b) {
+      var c = compareRows(a, b, key);
+      // Keep empty-age rows pinned to the bottom in both directions.
+      if (key === "age") {
+        var ea = !a.getAttribute("data-tt-age"), eb = !b.getAttribute("data-tt-age");
+        if (ea !== eb) return ea ? 1 : -1;
+      }
+      return sign * c;
+    });
+    for (var j = 0; j < rows.length; j++) tbody.appendChild(rows[j]);
+  }
+
+  function init() {
+    var table = document.querySelector(".ts-timetable-table");
+    if (!table || !table.tHead) return;
+    var ths = table.tHead.querySelectorAll("th[data-tt-key]");
+    for (var i = 0; i < ths.length; i++) {
+      (function(th) {
+        th.addEventListener("click", function() { sortTable(table, th); });
+      })(ths[i]);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
+"""
 
 
 
@@ -5996,6 +6103,14 @@ def _task_server_extra_css() -> str:
     padding: 6px 8px; border-bottom: 1px solid var(--border);
     white-space: nowrap;
   }
+  .ts-timetable-table th[data-tt-key] { cursor: pointer; user-select: none; }
+  .ts-timetable-table th[data-tt-key]:hover { color: var(--fg); }
+  .ts-timetable-table th[data-tt-key][aria-sort] { color: var(--accent); }
+  .ts-timetable-table th[data-tt-key][aria-sort]::after {
+    display: inline-block; margin-left: 4px; letter-spacing: 0;
+  }
+  .ts-timetable-table th[data-tt-key][aria-sort="ascending"]::after { content: "\\2191"; }
+  .ts-timetable-table th[data-tt-key][aria-sort="descending"]::after { content: "\\2193"; }
   .ts-timetable-table td {
     padding: 0 8px; height: 29px; border-bottom: 1px solid var(--border);
     font-size: var(--fs-sm); vertical-align: middle; overflow: hidden;
