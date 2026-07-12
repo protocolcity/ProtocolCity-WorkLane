@@ -1,6 +1,8 @@
 """Dev-mode work queue (SEO-180).
 
-Semi-autonomous ticket dispatch for ``./tradeos dev``. The queue reads
+Semi-autonomous ticket dispatch, consumed by ``worklane/task_server.py``
+(the ``/api/dev/queue/*`` routes) and ``worklane/mcp/handlers.py``
+(``wl_ready`` blocker filtering) — see this package's TRUTH.md. The queue reads
 tasks through the :class:`worklane.trackers.protocol.ProjectTracker`
 abstraction (default: SQLiteTracker), prioritizes them, drops anything
 whose blockers aren't Done, and groups overlapping work into batches the
