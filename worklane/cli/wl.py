@@ -17,7 +17,7 @@ Usage:
     wl create --title T --description D --project P [--priority N] [--label L ...] [--author A]
     wl list [--status S] [--label L] [--priority N] [--project P] [--limit N] [--json]
     wl show <ID> [--json]
-    wl comment <ID> "body..." [--author A] [--stdin]
+    wl comment <ID> ["body..." | --body TEXT | --stdin] [--author A]
     wl status <ID> <STATUS>
     wl label <ID> [--add L ...] [--remove L ...]
     wl demo [--force] [--project SLUG]
@@ -380,10 +380,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("id")
     p_show.add_argument("--json", action="store_true")
 
-    p_comment = sub.add_parser("comment", help="Add a signed comment")
+    p_comment = sub.add_parser(
+        "comment",
+        help="Add a signed comment",
+        description=(
+            "Body sources (exactly one non-empty, unless --stdin): "
+            "positional text, --body TEXT, or trailing words after flags. "
+            "Interleaving `--author` before the body is supported (wl-97)."
+        ),
+    )
     p_comment.add_argument("id")
-    p_comment.add_argument("body", nargs="?", default="")
-    p_comment.add_argument("--stdin", action="store_true")
+    p_comment.add_argument(
+        "body",
+        nargs="?",
+        default="",
+        help="Comment body (optional if --body or --stdin is used)",
+    )
+    p_comment.add_argument(
+        "--body",
+        dest="body_opt",
+        default=None,
+        metavar="TEXT",
+        help="Comment body (alias for the positional form; works after flags)",
+    )
+    p_comment.add_argument("--stdin", action="store_true", help="Read body from stdin")
     p_comment.add_argument("--author", default="")
 
     p_status = sub.add_parser("status", help="Update task status")
@@ -471,12 +491,58 @@ _COMMANDS = {
 }
 
 
-def main() -> None:
+def _finalize_comment_args(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    unknown: List[str],
+) -> argparse.Namespace:
+    """Resolve comment body across positional / --body / trailing fragments.
+
+    argparse drops an optional positional once a flag appears after ``id``
+    (``wl comment t-1 --author x "body"`` → body lost as unrecognized).
+    ``parse_known_args`` leaves those words in ``unknown``; fold them in
+    here. ``--body`` is the explicit alias agents keep guessing (wl-97).
+    """
+    sources: List[str] = []
+    if args.body:
+        sources.append(args.body)
+    body_opt = getattr(args, "body_opt", None)
+    if body_opt is not None and body_opt != "":
+        sources.append(body_opt)
+    if unknown:
+        # Preserve each argv token; a quoted multi-word body is one token.
+        sources.append(" ".join(unknown))
+    if len(sources) > 1:
+        parser.error(
+            "comment body specified more than once "
+            "(use one of: positional, --body, or trailing text)"
+        )
+    if sources:
+        args.body = sources[0]
+    else:
+        args.body = ""
+    # Clear so callers don't re-read a second source.
+    if hasattr(args, "body_opt"):
+        args.body_opt = None
+    return args
+
+
+def parse_cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse argv the way ``main`` does (comment body interleave fix, wl-97)."""
     parser = _build_parser()
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args(argv)
     if not args.command:
         parser.print_help()
         sys.exit(1)
+    if args.command == "comment":
+        return _finalize_comment_args(parser, args, unknown)
+    if unknown:
+        parser.error("unrecognized arguments: %s" % " ".join(unknown))
+    return args
+
+
+def main() -> None:
+    args = parse_cli_args()
     try:
         _COMMANDS[args.command](args)
     except ApiError as exc:

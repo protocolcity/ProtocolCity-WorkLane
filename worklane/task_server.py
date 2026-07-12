@@ -2380,6 +2380,153 @@ def _render_flow_panel(
     )
 
 
+# wl-94: movable/resizable Overview panels — drag handle + width/height
+# toggles shared by every panel-head; layout state lives client-side only
+# (localStorage), so no server round-trip on rearrange.
+_PANEL_DRAG_HANDLE = (
+    "<span class='pulse-panel-drag' title='Drag to reorder'>&#10241;</span>"
+)
+_PANEL_CONTROLS = (
+    "<span class='pulse-panel-controls'>"
+    "<button type='button' class='pulse-panel-btn pulse-panel-width' "
+    "title='Toggle width (side/main/full)'>&#8596;</button>"
+    "<button type='button' class='pulse-panel-btn pulse-panel-height' "
+    "title='Toggle height (normal/compact)'>&#8597;</button>"
+    "</span>"
+)
+
+
+def _pulse_layout_js(scope: str) -> str:
+    """wl-94: client-only panel layout (order/column/height) for the Overview
+    grid. Panels are server-rendered; this only moves the CSS `order` /
+    `grid-column` of existing `[data-panel-id]` nodes and persists the
+    result to localStorage — no server round-trip, survives the 30s
+    auto-reload (wl-theme pattern: scoped key, plain get/setItem).
+    """
+    script = r"""
+<script>
+(function() {
+  var KEY = 'wl-overview-layout:__SCOPE__';
+  var COLMAP = { main: '1', side: '2', full: '1 / -1' };
+  var WIDTH_CYCLE = ['side', 'main', 'full'];
+  var grid = document.querySelector('.pulse-grid');
+  if (!grid) return;
+  var panels = Array.prototype.slice.call(grid.querySelectorAll('[data-panel-id]'));
+
+  function loadLayout() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function saveLayout(layout) {
+    try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch (e) {}
+  }
+  function domOrder() {
+    return panels.map(function(p) { return p.getAttribute('data-panel-id'); });
+  }
+  function applyLayout(layout) {
+    var order = (layout.order || []).filter(function(id) {
+      return panels.some(function(p) { return p.getAttribute('data-panel-id') === id; });
+    });
+    domOrder().forEach(function(id) { if (order.indexOf(id) === -1) order.push(id); });
+    panels.forEach(function(p) {
+      var id = p.getAttribute('data-panel-id');
+      p.style.order = String(order.indexOf(id));
+      var col = (layout.column && layout.column[id]) || p.getAttribute('data-default-col');
+      p.style.gridColumn = COLMAP[col] || COLMAP[p.getAttribute('data-default-col')];
+      p.setAttribute('data-col', col);
+      var h = (layout.height && layout.height[id]) || 'normal';
+      p.classList.toggle('pulse-panel--compact', h === 'compact');
+      p.setAttribute('data-height', h);
+    });
+  }
+  function currentOrder() {
+    return panels.slice().sort(function(a, b) {
+      return parseInt(a.style.order || '0', 10) - parseInt(b.style.order || '0', 10);
+    }).map(function(p) { return p.getAttribute('data-panel-id'); });
+  }
+  function mutateLayout(fn) {
+    var layout = loadLayout();
+    layout.order = layout.order && layout.order.length ? layout.order : currentOrder();
+    layout.column = layout.column || {};
+    layout.height = layout.height || {};
+    fn(layout);
+    saveLayout(layout);
+    applyLayout(layout);
+  }
+
+  applyLayout(loadLayout());
+
+  var dragId = null;
+  panels.forEach(function(p) {
+    var id = p.getAttribute('data-panel-id');
+    var handle = p.querySelector('.pulse-panel-drag');
+    if (handle) {
+      p.setAttribute('draggable', 'true');
+      p.addEventListener('dragstart', function(e) {
+        dragId = id;
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        p.classList.add('pulse-panel--dragging');
+      });
+      p.addEventListener('dragend', function() {
+        p.classList.remove('pulse-panel--dragging');
+      });
+    }
+    p.addEventListener('dragover', function(e) {
+      if (!dragId) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      p.classList.add('pulse-panel--drop-target');
+    });
+    p.addEventListener('dragleave', function() {
+      p.classList.remove('pulse-panel--drop-target');
+    });
+    p.addEventListener('drop', function(e) {
+      e.preventDefault();
+      p.classList.remove('pulse-panel--drop-target');
+      var targetId = id;
+      if (!dragId || dragId === targetId) { dragId = null; return; }
+      mutateLayout(function(layout) {
+        var order = currentOrder();
+        var from = order.indexOf(dragId);
+        var to = order.indexOf(targetId);
+        if (from !== -1 && to !== -1) {
+          order.splice(from, 1);
+          order.splice(order.indexOf(targetId), 0, dragId);
+        }
+        layout.order = order;
+        layout.column[dragId] = p.getAttribute('data-col') || p.getAttribute('data-default-col');
+      });
+      dragId = null;
+    });
+
+    var widthBtn = p.querySelector('.pulse-panel-width');
+    if (widthBtn) widthBtn.addEventListener('click', function() {
+      mutateLayout(function(layout) {
+        var cur = p.getAttribute('data-col') || p.getAttribute('data-default-col');
+        var next = WIDTH_CYCLE[(WIDTH_CYCLE.indexOf(cur) + 1) % WIDTH_CYCLE.length];
+        layout.column[id] = next;
+      });
+    });
+
+    var heightBtn = p.querySelector('.pulse-panel-height');
+    if (heightBtn) heightBtn.addEventListener('click', function() {
+      mutateLayout(function(layout) {
+        var cur = p.getAttribute('data-height') || 'normal';
+        layout.height[id] = cur === 'compact' ? 'normal' : 'compact';
+      });
+    });
+  });
+
+  var resetBtn = document.getElementById('pulse-reset-layout');
+  if (resetBtn) resetBtn.addEventListener('click', function() {
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    applyLayout({});
+  });
+})();
+</script>
+"""
+    return script.replace("__SCOPE__", (scope or "all").replace("'", ""))
+
+
 def _render_pulse_page(scope: str = "") -> str:
     """Live metrics strip — 'what's happening in the in-scope stores right now'.
 
@@ -2591,97 +2738,116 @@ def _render_pulse_page(scope: str = "") -> str:
           <span class='dim'>updated</span>
           <span class='pulse-stamp-val' id='pulse-updated'>{last_updated}</span>
           <span class='dim'>· auto-refresh 30s</span>
+          <button type='button' id='pulse-reset-layout' class='pulse-panel-btn' title='Reset panel layout to default'>reset layout</button>
         </div>
       </div>
 
       {metrics_html}
 
       <div class='pulse-grid'>
-        <div class='pulse-col pulse-col--main'>
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='inflight' data-default-col='main'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>In flight</span>
               <span class='pulse-panel-meta'>{len(in_progress)} active · {len(in_review)} reserved</span>
+              {_PANEL_CONTROLS}
             </div>
             <div class='pulse-cards'>{cards_html}</div>
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='activity' data-default-col='main'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Activity · last 20 updates</span>
+              {_PANEL_CONTROLS}
             </div>
             <div class='pulse-ticker'>{ticker_items}</div>
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='breakdown' data-default-col='main'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Breakdown</span>
               <span class='pulse-panel-meta'>{breakdown_meta}</span>
+              {_PANEL_CONTROLS}
             </div>
             {breakdown_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='recent14' data-default-col='main'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Recent activity · 14 days</span>
+              {_PANEL_CONTROLS}
             </div>
             {activity14_html}
           </div>
-        </div>
 
-        <div class='pulse-col pulse-col--side'>
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='throughput' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Throughput</span>
+              {_PANEL_CONTROLS}
             </div>
             {spark_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='nextup' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Next up</span>
               <span class='pulse-panel-meta'>{len(ready_tasks)} ready</span>
+              {_PANEL_CONTROLS}
             </div>
             {next_up_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='attention' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Attention</span>
               <span class='pulse-panel-meta'>{attention_count or 'clear'}</span>
+              {_PANEL_CONTROLS}
             </div>
             {attention_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='flow' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Flow · 7 days</span>
+              {_PANEL_CONTROLS}
             </div>
             {flow_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='agents' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Active agents</span>
+              {_PANEL_CONTROLS}
             </div>
             {agents_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='authors' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Authors · tickets worked</span>
               <span class='pulse-panel-meta'>{len(author_tallies)} signed</span>
+              {_PANEL_CONTROLS}
             </div>
             {authors_html}
           </div>
 
-          <div class='pulse-panel'>
+          <div class='pulse-panel' data-panel-id='health' data-default-col='side'>
             <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
               <span class='pulse-panel-title'>Service health</span>
+              {_PANEL_CONTROLS}
             </div>
             {health_html}
           </div>
-        </div>
       </div>
     </div>
 
@@ -2707,18 +2873,31 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-metric-val {{ font-size:24px; font-weight:700; line-height:1; display:flex; align-items:center; gap:6px; }}
       .pulse-metric-lbl {{ font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--dim); margin-top:6px; }}
 
-      /* wl-86: explicit main + side columns — every cell filled, no half-empty
+      /* wl-86/94: panels are direct grid children (not fixed-column wrappers)
+         so wl-94's layout JS can move any panel between main/side/full via
+         an inline grid-column + order — every cell filled, no half-empty
          auto-fit rows. Collapses to one column on narrow viewports. */
       .pulse-grid {{ display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr);
         gap:12px; align-items:start; }}
-      .pulse-col {{ display:flex; flex-direction:column; gap:12px; min-width:0; }}
-      @media (max-width: 960px) {{ .pulse-grid {{ grid-template-columns:1fr; }} }}
+      @media (max-width: 960px) {{ .pulse-grid {{ grid-template-columns:1fr; }}
+        .pulse-grid > .pulse-panel {{ grid-column:1 !important; }} }}
       .pulse-panel {{ background:var(--bg2, #211d16); border:1px solid var(--border); border-radius:6px;
-        padding:12px 14px; }}
-      .pulse-panel-head {{ display:flex; justify-content:space-between; align-items:baseline;
+        padding:12px 14px; grid-column:1; }}
+      .pulse-panel-head {{ display:flex; align-items:baseline; gap:8px;
         padding-bottom:8px; margin-bottom:10px; border-bottom:1px dashed var(--border); }}
       .pulse-panel-title {{ font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--dim); font-weight:600; }}
       .pulse-panel-meta {{ font-size:11px; color:var(--dim); }}
+
+      /* wl-94: drag handle + width/height toggles, shared across all panels */
+      .pulse-panel-drag {{ cursor:grab; color:var(--dim); font-size:13px; line-height:1; flex:none; }}
+      .pulse-panel[draggable='true']:active .pulse-panel-drag {{ cursor:grabbing; }}
+      .pulse-panel--dragging {{ opacity:0.4; }}
+      .pulse-panel--drop-target {{ outline:1px dashed var(--neon); outline-offset:2px; }}
+      .pulse-panel-controls {{ margin-left:auto; display:flex; gap:4px; align-items:center; flex:none; }}
+      .pulse-panel-btn {{ background:transparent; border:1px solid var(--border); border-radius:4px;
+        color:var(--dim); font-size:11px; line-height:1; padding:2px 5px; cursor:pointer; }}
+      .pulse-panel-btn:hover {{ color:var(--fg); border-color:var(--neon); }}
+      .pulse-panel--compact {{ max-height:220px; overflow-y:auto; }}
 
       .pulse-cards {{ display:flex; flex-direction:column; gap:6px; }}
       .pulse-card {{ display:block; padding:8px 10px; background:rgba(250,250,249,0.03); border:1px solid var(--border);
@@ -2827,7 +3006,7 @@ def _render_pulse_page(scope: str = "") -> str:
         setTimeout(function() {{ window.location.reload(); }}, REFRESH_MS);
       }})();
     </script>
-    """
+    """ + _pulse_layout_js(scope)
     # wl-89: 4s live refresh for the breakdown bars + activity chart
     # (data-cockpit-* hooks) rides along with the page.
     return body + _cockpit_live_js()

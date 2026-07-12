@@ -260,6 +260,101 @@ class RequestBuildingTest(unittest.TestCase):
         sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
         self.assertEqual(sent_body["author"], "grok")
 
+    # --- wl-97: positional body must survive flag interleave + --body alias ---
+
+    def test_parse_comment_positional_body_before_author(self) -> None:
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "hello world", "--author", "wl-pool"]
+        )
+        self.assertEqual(args.id, "wl-13")
+        self.assertEqual(args.body, "hello world")
+        self.assertEqual(args.author, "wl-pool")
+        self.assertFalse(args.stdin)
+
+    def test_parse_comment_positional_body_after_author(self) -> None:
+        """Founder repro: `wl comment id --author x \"body\"` was exit 2."""
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--author", "wl-pool", "hello world"]
+        )
+        self.assertEqual(args.body, "hello world")
+        self.assertEqual(args.author, "wl-pool")
+
+    def test_parse_comment_author_before_id_and_body(self) -> None:
+        args = wl_cli.parse_cli_args(
+            ["comment", "--author", "wl-pool", "wl-13", "hello world"]
+        )
+        self.assertEqual(args.id, "wl-13")
+        self.assertEqual(args.body, "hello world")
+        self.assertEqual(args.author, "wl-pool")
+
+    def test_parse_comment_body_flag_after_author(self) -> None:
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--author", "wl-pool", "--body", "via flag"]
+        )
+        self.assertEqual(args.body, "via flag")
+        self.assertEqual(args.author, "wl-pool")
+
+    def test_parse_comment_body_flag_before_author(self) -> None:
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--body", "via flag", "--author", "wl-pool"]
+        )
+        self.assertEqual(args.body, "via flag")
+
+    def test_parse_comment_stdin_flag_unchanged(self) -> None:
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--stdin", "--author", "wl-pool"]
+        )
+        self.assertTrue(args.stdin)
+        self.assertEqual(args.body, "")
+        self.assertEqual(args.author, "wl-pool")
+
+    def test_parse_comment_rejects_double_body_sources(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            wl_cli.parse_cli_args(
+                ["comment", "wl-13", "positional", "--body", "flag", "--author", "x"]
+            )
+        self.assertEqual(ctx.exception.code, 2)
+
+    @mock.patch("urllib.request.urlopen")
+    def test_comment_interleaved_author_posts_body(self, mock_urlopen) -> None:
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "comment": {"id": "9", "body": "close-out text",
+                                      "author": "grok", "created_at": "now"}}
+        )
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--author", "grok", "close-out text"]
+        )
+        wl_cli.cmd_comment(args)
+        sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_body, {"body": "close-out text", "author": "grok"})
+
+    @mock.patch("urllib.request.urlopen")
+    def test_comment_body_flag_posts_body(self, mock_urlopen) -> None:
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "comment": {"id": "10", "body": "flag body",
+                                      "author": "grok", "created_at": "now"}}
+        )
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--author", "grok", "--body", "flag body"]
+        )
+        wl_cli.cmd_comment(args)
+        sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_body, {"body": "flag body", "author": "grok"})
+
+    @mock.patch("urllib.request.urlopen")
+    def test_comment_stdin_unchanged_end_to_end(self, mock_urlopen) -> None:
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "comment": {"id": "11", "body": "from stdin\n",
+                                      "author": "grok", "created_at": "now"}}
+        )
+        args = wl_cli.parse_cli_args(
+            ["comment", "wl-13", "--stdin", "--author", "grok"]
+        )
+        with mock.patch("sys.stdin", io.StringIO("from stdin\n")):
+            wl_cli.cmd_comment(args)
+        sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_body, {"body": "from stdin\n", "author": "grok"})
+
     @mock.patch("urllib.request.urlopen")
     def test_status_sends_patch(self, mock_urlopen) -> None:
         mock_urlopen.return_value = _ok_response(
