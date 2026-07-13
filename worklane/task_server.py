@@ -489,8 +489,17 @@ def _task_page(
     background: transparent;
     box-shadow: none;
   }}
-  /* Product tabs inline in the primary row (wl-36) */
-  .task-server-header-primary .ts-tickets-surface-nav {{ margin: 0; }}
+  /* Product tabs inline in the primary row (wl-36). min-width:0 overrides the
+     flex-item content-based default so the pill row can shrink and scroll
+     instead of forcing the header (and page) wider than the viewport as
+     more project stores get discovered (wl-111). */
+  .task-server-header-primary .ts-tickets-surface-nav {{
+    margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }}
   .task-server-header-primary .ts-segmented--tools {{
     padding: 2px;
     border-radius: 8px;
