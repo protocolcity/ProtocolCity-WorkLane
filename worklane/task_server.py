@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 
 # :mod:`worklane.trackers.sqlite` mirrors to Ops Cockpit HTTP; when this
@@ -5242,6 +5243,37 @@ def api_get_task(task_id: str) -> JSONResponse:
     return JSONResponse({"ok": True, "task": out, "archived": archived})
 
 
+# Match sqlite lifecycle auto-transition predicate (PROTOCOL.md §3):
+# Completed: + Verification: on a comment → eligible for done.
+_DONE_CLOSEOUT_COMPLETED_RE = re.compile(
+    r"^\s*completed\s*:", re.IGNORECASE | re.MULTILINE
+)
+_DONE_CLOSEOUT_VERIFICATION_RE = re.compile(
+    r"^\s*verification\s*:", re.IGNORECASE | re.MULTILINE
+)
+
+_DONE_WITHOUT_CLOSEOUT_HINT = (
+    "cannot transition to done without a §5 close-out comment "
+    "(Completed: + Verification:). Post a compliant close-out "
+    "(or use wl_close) first — bare status→done is refused "
+    "(PROTOCOL.md §3/§5; wl-114)"
+)
+
+
+def _comments_have_done_closeout(comments: List[Any]) -> bool:
+    """True if any comment satisfies the §3 done auto-transition predicate."""
+    for c in comments:
+        body = getattr(c, "body", None)
+        if body is None and isinstance(c, dict):
+            body = c.get("body")
+        text = body or ""
+        if _DONE_CLOSEOUT_COMPLETED_RE.search(text) and _DONE_CLOSEOUT_VERIFICATION_RE.search(
+            text
+        ):
+            return True
+    return False
+
+
 @router.patch("/api/admin/tasks/{task_id}")
 async def api_update_task(task_id: str, request: Request) -> JSONResponse:
     try:
@@ -5275,6 +5307,22 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             out = dict(tm) if isinstance(tm, dict) else {}
             out["id"] = task_id
             return JSONResponse({"ok": True, "task": out})
+        # wl-114: CLI `wl status <id> done` hits this PATCH. Refuse done
+        # without a Completed:+Verification: close-out already on the ticket
+        # (same predicate as the comment lifecycle auto-transition).
+        if new_status == TaskStatus.DONE:
+            current = tracker.get_task(raw_id)
+            if current is None:
+                return JSONResponse(
+                    {"ok": False, "error": "task not found"}, status_code=404
+                )
+            if current.status != TaskStatus.DONE:
+                comments = tracker.list_comments(raw_id)
+                if not _comments_have_done_closeout(comments):
+                    return JSONResponse(
+                        {"ok": False, "error": _DONE_WITHOUT_CLOSEOUT_HINT},
+                        status_code=400,
+                    )
         updated = tracker.update_status(raw_id, new_status)
         if updated is None:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)

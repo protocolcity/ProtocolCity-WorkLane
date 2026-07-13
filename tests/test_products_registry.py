@@ -584,6 +584,66 @@ class SurfaceRoutingTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200)
 
+    def test_status_done_without_closeout_is_refused(self) -> None:
+        """wl-114: bare PATCH status→done (CLI `wl status N done`) must 400
+        when no Completed:+Verification: close-out is on the ticket — even
+        after a malformed Completed: comment was rejected by the comment guard.
+        """
+        tid = self._mk_task()
+        r = self.client.patch(
+            f"/api/admin/tasks/{tid}", json={"status": "in_progress"}
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["task"]["status"], "in_progress")
+
+        # Malformed close-out rejected (comment guard) — ticket stays open.
+        r = self.client.post(
+            f"/api/admin/tasks/{tid}/comments",
+            json={
+                "body": "Completed: shipped\nVerification (pytest): green",
+                "author": "grok",
+            },
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Verification", r.json()["error"])
+
+        # Bare status→done must not succeed (the live gap on pc-9).
+        r = self.client.patch(f"/api/admin/tasks/{tid}", json={"status": "done"})
+        self.assertEqual(r.status_code, 400, msg=r.text)
+        err = r.json().get("error", "")
+        self.assertIn("close-out", err.lower())
+        self.assertIn("Verification", err)
+
+        got = self.client.get(f"/api/admin/tasks/{tid}").json()["task"]
+        self.assertEqual(got["status"], "in_progress")
+
+    def test_status_done_allowed_after_compliant_closeout(self) -> None:
+        """wl-114: once a §5 close-out is on the ticket, status→done is ok.
+
+        Posting the close-out while still backlog avoids the comment
+        lifecycle auto-transition (only fires on in_progress/in_review),
+        so the explicit PATCH path is what we exercise.
+        """
+        tid = self._mk_task()
+        ok_body = (
+            "Completed:\n- the thing\n\nVerification:\n- pytest green\n\n"
+            "Links:\n- abc123 on main\n\nFollow-ups:\n- none"
+        )
+        r = self.client.post(
+            f"/api/admin/tasks/{tid}/comments",
+            json={"body": ok_body, "author": "grok"},
+        )
+        self.assertEqual(r.status_code, 200)
+        # Still backlog — lifecycle does not auto-done from backlog.
+        self.assertEqual(
+            self.client.get(f"/api/admin/tasks/{tid}").json()["task"]["status"],
+            "backlog",
+        )
+
+        r = self.client.patch(f"/api/admin/tasks/{tid}", json={"status": "done"})
+        self.assertEqual(r.status_code, 200, msg=r.text)
+        self.assertEqual(r.json()["task"]["status"], "done")
+
     def test_blocked_comment_requires_next_step(self) -> None:
         tid = self._mk_task()
         r = self.client.post(
