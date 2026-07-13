@@ -167,6 +167,83 @@ def _render_tickets_context_strip() -> str:
 # that ties _page() to the full tradeOS stack.
 
 
+def _split_for_middle_truncate(display: str, tail_len: int = 12) -> Tuple[str, str]:
+    """Split a scope display name into a shrinkable head and an always-visible tail
+    so long names truncate in the middle (wl-117 design req 2) instead of losing the
+    public-facing half — the internal→public arrow convention (wl-113/wl-115, e.g.
+    "WorkLane → WorkLane") puts the interesting part at the end."""
+    s = display or ""
+    if len(s) <= tail_len:
+        return s, ""
+    arrow = " → "
+    idx = s.rfind(arrow)
+    if idx != -1 and len(s) - idx <= tail_len + 8:
+        return s[:idx], s[idx:]
+    return s[:-tail_len], s[-tail_len:]
+
+
+def _seg_label_html(display: str) -> str:
+    """Render a scope pill's label as a head/tail split that CSS truncates in the
+    middle (min-width:0 + ellipsis on the head, fixed-width tail) — no JS text
+    measurement needed."""
+    head, tail = _split_for_middle_truncate(display)
+    if not tail:
+        return f"<span class='ts-seg-label'><span class='ts-seg-head'>{_esc(head)}</span></span>"
+    return (
+        "<span class='ts-seg-label'>"
+        f"<span class='ts-seg-head'>{_esc(head)}</span>"
+        f"<span class='ts-seg-tail'>{_esc(tail)}</span>"
+        "</span>"
+    )
+
+
+# Pills shown inline before the rest collapse into "More" — covers today's 6 stores
+# (All + 6) with room to spare; scales to ~20 without the row growing unbounded
+# (wl-117 design req 1, 4). Tune here if the steady-state store count grows.
+_SCOPE_NAV_MAX_INLINE = 6
+
+
+def _render_scope_nav(
+    items: List[Tuple[str, str, bool, str]],
+) -> str:
+    """Render a project-scope switcher from ``(href, display, is_active, title)``
+    tuples (items[0] is always "All"). Beyond :data:`_SCOPE_NAV_MAX_INLINE` pills the
+    rest collapse into a keyboard/click-accessible "More" disclosure so the row stays
+    bounded at any store count instead of overflowing or endlessly scrolling
+    (wl-117 — the flat tab row broke past ~6 stores, had no answer for 20)."""
+    inline, overflow = items[: _SCOPE_NAV_MAX_INLINE + 1], items[_SCOPE_NAV_MAX_INLINE + 1 :]
+
+    def _pill(href: str, display: str, on: bool, title: str) -> str:
+        cls = "ts-seg ts-seg--on" if on else "ts-seg"
+        ac = ' aria-current="page"' if on else ""
+        return (
+            f"<a href='{_esc(href)}' class='{cls}' title='{_esc(title)}'{ac}>"
+            f"{_seg_label_html(display)}</a>"
+        )
+
+    html = ["".join(_pill(h, d, on, t) for h, d, on, t in inline)]
+    if overflow:
+        active = next((it for it in overflow if it[2]), None)
+        summary_cls = "ts-seg ts-seg-more" + (" ts-seg--on" if active else "")
+        summary_label = _seg_label_html(active[1]) if active else "<span class='ts-seg-label'><span class='ts-seg-head'>More</span></span>"
+        rows = "".join(
+            f"<a href='{_esc(h)}' class='ts-seg-more-item{' ts-seg-more-item--on' if on else ''}' "
+            f"title='{_esc(t)}'>{_esc(d)}</a>"
+            for h, d, on, t in overflow
+        )
+        html.append(
+            f"<details class='ts-seg-more-wrap'><summary class='{summary_cls}'>"
+            f"{summary_label}<span class='ts-seg-more-caret'>&#9662;</span></summary>"
+            f"<div class='ts-seg-more-menu' role='menu'>{rows}</div></details>"
+        )
+    return (
+        '<nav class="ts-tickets-surface-nav" aria-label="Project scopes">'
+        '<div class="ts-segmented ts-segmented--tools" role="tablist">'
+        + "".join(html)
+        + "</div></nav>"
+    )
+
+
 def _render_tickets_surface_nav(
     current_path: str,
     view: str,
@@ -174,67 +251,55 @@ def _render_tickets_surface_nav(
     label: str,
     priority: Optional[int],
 ) -> str:
-    """Segmented control for Ticketing surfaces (All + tradeOS)."""
-    _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
+    """Scope switcher for Ticketing surfaces (All + every discovered project store)."""
     cur = (current_path or "").rstrip("/")
 
-    def _item(dest: str, text: str, title: str) -> str:
-        q = _wq_query_for_view(
-            view, status, label, priority, list_path=dest
-        )
-        on = cur == dest.rstrip("/")
-        ac = ' aria-current="page"' if on else ""
-        return (
-            f"<a href='{_esc(dest)}?{_esc(q)}' class='{_seg(on)}' "
-            f"title='{_esc(title)}'{ac}>{_esc(text)}</a>"
-        )
+    def _href(dest: str) -> str:
+        q = _wq_query_for_view(view, status, label, priority, list_path=dest)
+        return f"{dest}?{q}"
 
-    items = [_item(TICKETS_APP_ALL, "All", "Every ticket across all project stores")]
+    items: List[Tuple[str, str, bool, str]] = [
+        (
+            _href(TICKETS_APP_ALL),
+            "All",
+            cur == TICKETS_APP_ALL.rstrip("/"),
+            "Every ticket across all project stores",
+        )
+    ]
     for spec in discover_products():
+        dest = f"/admin/tickets/{spec.slug}"
         items.append(
-            _item(
-                f"/admin/tickets/{spec.slug}",
+            (
+                _href(dest),
                 spec.display,
+                cur == dest.rstrip("/"),
                 f"{spec.display} tickets ({spec.db_path.name})",
             )
         )
-    return (
-        '<nav class="ts-tickets-surface-nav" aria-label="Project scopes">'
-        '<div class="ts-segmented ts-segmented--tools" role="tablist">'
-        + "".join(items)
-        + "</div></nav>"
-    )
+    return _render_scope_nav(items)
 
 
 def _render_overview_scope_nav(scope: str) -> str:
-    """Segmented product control for the Overview landing — same scopes as the
-    Board/Table (All + every discovered project store), each filtering the whole page.
-    """
-    _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
-
-    def _item(slug: str, text: str, title: str) -> str:
-        on = (scope or "") == slug or (slug == "all" and not scope)
-        ac = ' aria-current="page"' if on else ""
-        return (
-            f"<a href='/admin/overview/{_esc(slug)}' class='{_seg(on)}' "
-            f"title='{_esc(title)}'{ac}>{_esc(text)}</a>"
+    """Scope switcher for the Overview landing — same scopes as the Board/Table
+    (All + every discovered project store), each filtering the whole page."""
+    items: List[Tuple[str, str, bool, str]] = [
+        (
+            "/admin/overview/all",
+            "All",
+            (scope or "") == "all" or not scope,
+            "Every ticket across all project stores",
         )
-
-    items = [_item("all", "All", "Every ticket across all project stores")]
+    ]
     for spec in discover_products():
         items.append(
-            _item(
-                spec.slug,
+            (
+                f"/admin/overview/{spec.slug}",
                 spec.display,
+                (scope or "") == spec.slug,
                 f"Overview for the {spec.display} project ({spec.db_path.name})",
             )
         )
-    return (
-        '<nav class="ts-tickets-surface-nav" aria-label="Project scopes">'
-        '<div class="ts-segmented ts-segmented--tools" role="tablist">'
-        + "".join(items)
-        + "</div></nav>"
-    )
+    return _render_scope_nav(items)
 
 
 def _ticket_create_surface_from_scope(scope: str) -> str:
@@ -798,6 +863,82 @@ def _task_page(
     display: inline-flex;
     align-items: center;
     gap: 8px;
+  }}
+  /* Project-scope switcher (wl-117): middle-truncating labels + a "More" overflow
+     disclosure so the pill row stays bounded at any discovered-store count instead
+     of overflowing or relying on horizontal scroll alone (wl-111 stopgap). */
+  .ts-tickets-surface-nav .ts-seg-label {{
+    display: flex;
+    min-width: 0;
+    max-width: 132px;
+  }}
+  .ts-tickets-surface-nav .ts-seg-head {{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }}
+  .ts-tickets-surface-nav .ts-seg-tail {{
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }}
+  .ts-seg-more-wrap {{
+    position: relative;
+    display: inline-flex;
+  }}
+  .ts-seg-more-wrap > summary.ts-seg {{
+    cursor: pointer;
+    list-style: none;
+    gap: 4px;
+  }}
+  .ts-seg-more-wrap > summary.ts-seg::-webkit-details-marker {{
+    display: none;
+  }}
+  .ts-seg-more-caret {{
+    font-size: 10px;
+    opacity: .7;
+  }}
+  .ts-seg-more-wrap[open] > summary.ts-seg-more {{
+    color: var(--fg);
+    background: color-mix(in srgb, var(--bg2) 70%, transparent);
+  }}
+  .ts-seg-more-menu {{
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    max-width: 320px;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--card, #fff);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    padding: 4px;
+  }}
+  .ts-seg-more-item {{
+    display: block;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--dim);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }}
+  .ts-seg-more-item:hover {{
+    color: var(--fg);
+    background: color-mix(in srgb, var(--bg2) 70%, transparent);
+  }}
+  .ts-seg-more-item--on {{
+    color: var(--fg);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--bg2) 94%, var(--neon, #e8622c) 8%);
   }}
   /* Main content — full-bleed fluid (wl-87): every page uses the real
      viewport, like the board always did. No static max-width clamp;

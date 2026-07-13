@@ -8,6 +8,7 @@ redirect. The board-summary pills API takes the same scope.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -126,6 +127,56 @@ class OverviewScopeTest(unittest.TestCase):
     def test_old_summary_route_removed(self) -> None:
         r = self.client.get("/api/admin/cockpit/summary")
         self.assertEqual(r.status_code, 404)
+
+    # ── wl-117: scope switcher stays bounded at any store count ───────────
+
+    def test_scope_nav_no_overflow_at_current_scale(self) -> None:
+        """alpha (tradeos) + beta = 2 stores today; well under the inline
+        threshold, so no "More" collapse — matches the current 6-store
+        steady state (wl-117 design req: no regression at today's scale)."""
+        r = self.client.get("/admin/overview/all")
+        self.assertEqual(r.status_code, 200)
+        # The CSS rule for .ts-seg-more-wrap is always present in the page
+        # <style> block; check for the actual <details> element, not the
+        # class name (which would false-positive against the stylesheet).
+        self.assertNotIn("<details class='ts-seg-more-wrap'", r.text)
+
+    def test_scope_nav_collapses_beyond_inline_threshold(self) -> None:
+        """20 project stores (wl-117's synthetic scale target) must not
+        render 20 flat pills — the row bounds at _SCOPE_NAV_MAX_INLINE and
+        the rest collapse into the "More" disclosure, reachable and titled."""
+        from worklane.task_server import _SCOPE_NAV_MAX_INLINE
+
+        for i in range(20):
+            SQLiteTracker(db_path=self.root / "data" / f"synth{i:02d}.db").create_task(
+                title=f"synth {i}"
+            )
+        r = self.client.get("/admin/overview/all")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("<details class='ts-seg-more-wrap'", r.text)
+        self.assertIn("ts-seg-more-menu", r.text)
+        # Inline pills (exact "ts-seg" / "ts-seg ts-seg--on" classes, not the
+        # "-more"/"-more-item" variants) = All + first N stores, capped.
+        inline_pills = re.findall(r"class='ts-seg(?: ts-seg--on)?'", r.text)
+        self.assertLessEqual(len(inline_pills), _SCOPE_NAV_MAX_INLINE + 1)
+        # Overflowed stores still reachable inside the menu.
+        self.assertIn("synth19", r.text)
+        # wl-117 design req 4: utility chrome (settings/theme) still present.
+        self.assertIn("id=\"theme-toggle\"", r.text)
+        self.assertIn("/admin/settings", r.text)
+
+    def test_scope_nav_middle_truncates_long_display_names(self) -> None:
+        """The internal→public arrow convention (wl-113/wl-115) produces long
+        display names; the switcher must keep the public-facing tail visible
+        rather than end-truncating it away (wl-117 design req 2)."""
+        from worklane.task_server import _split_for_middle_truncate
+
+        head, tail = _split_for_middle_truncate("WorkLane → WorkLane")
+        self.assertEqual(head, "WorkLane")
+        self.assertEqual(tail, " → WorkLane")
+        # Short names pass through untouched.
+        head, tail = _split_for_middle_truncate("Socials")
+        self.assertEqual((head, tail), ("Socials", ""))
 
 
 if __name__ == "__main__":
