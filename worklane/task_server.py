@@ -5428,13 +5428,19 @@ def _activity_ts_sort_key(raw: object) -> float:
 
 
 @router.get("/api/dev/activity")
-def api_dev_activity(limit: int = 30):
+def api_dev_activity(limit: int = 30, project: str = ""):
     """Recent comments + status changes across all tasks, newest first.
 
     Returns a unified feed mixing comments and status transitions so the
     board's activity widget shows everything happening in one timeline.
+
+    ``project`` scopes the feed to a specific product's tracker (e.g. a
+    machine-wide worker roster on a host reads each lane's rounds from the
+    project it signs into — tradeOS t-1327). Omitted or unknown → the
+    server default tracker (``product_tracker`` falls back for an unknown
+    slug, so a stale ?project= degrades to today's behavior, never errors).
     """
-    tracker = get_default_tracker()
+    tracker = product_tracker(project) if project else get_default_tracker()
     if not hasattr(tracker, "_connect"):
         return JSONResponse({"entries": []})
     with tracker._connect() as conn:
@@ -5506,6 +5512,26 @@ def api_dev_activity(limit: int = 30):
         deduped.append(e)
     deduped.sort(key=lambda e: _activity_ts_sort_key(e.get("created_at")), reverse=True)
     return JSONResponse({"entries": deduped[:limit]})
+
+
+@router.get("/api/events")
+def api_events(since: int = 0, project: str = "", limit: int = 200) -> JSONResponse:
+    """Poll-cursor change feed (wl-101): ordered ticket events after ``since``.
+
+    Event ids are the store's own autoincrement, so the cursor is durable
+    across server restarts with no separate cursor-store — a consumer
+    just remembers the highest ``id`` it has seen and passes it back as
+    ``since`` next poll. ``project`` scopes to one product tracker (same
+    convention as ``/api/dev/activity``, wl-105); omitted/unknown falls
+    back to the server default tracker rather than erroring.
+    """
+    tracker = product_tracker(project) if project else get_default_tracker()
+    if not hasattr(tracker, "list_events"):
+        return JSONResponse({"events": [], "cursor": since})
+    limit = max(1, min(int(limit), 500))
+    events = tracker.list_events(since=max(0, int(since)), limit=limit)
+    cursor = events[-1]["id"] if events else since
+    return JSONResponse({"events": events, "cursor": cursor})
 
 
 @router.get("/api/dev/board-summary")

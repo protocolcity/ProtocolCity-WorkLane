@@ -335,6 +335,19 @@ class SQLiteTracker(ProjectTracker):
                         ON task_relations(to_id);
                     CREATE INDEX IF NOT EXISTS ix_task_relations_type
                         ON task_relations(relation_type);
+
+                    -- wl-101: append-only change feed. The row id IS the
+                    -- cursor — durable across restarts because it's the
+                    -- table's own autoincrement, not an in-memory counter.
+                    CREATE TABLE IF NOT EXISTS task_events (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        event_type  TEXT    NOT NULL,
+                        status      TEXT,
+                        labels      TEXT,
+                        created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_task_events_task ON task_events(task_id);
                     """
                 )
                 # wl-21: gate_* columns didn't exist before this ticket, so
@@ -421,6 +434,9 @@ class SQLiteTracker(ProjectTracker):
                      labels_json, now, now),
                 )
                 task_pk = cur.lastrowid
+                self._insert_event(
+                    conn, task_pk, "created", status=status, labels=merged, now=now
+                )
             row = conn.execute(
                 "SELECT * FROM tasks WHERE id = ?", (task_pk,)
             ).fetchone()
@@ -476,6 +492,11 @@ class SQLiteTracker(ProjectTracker):
                             "dependency-guard",
                             now,
                         )
+                        if target_status != cur_task.status:
+                            self._insert_event(
+                                conn, int(cur_row["id"]), "status_change",
+                                status=target_status, now=now,
+                            )
                         self._thaw_dependency_frozen(conn, now)
                     return self.get_task(task_id)
 
@@ -487,6 +508,11 @@ class SQLiteTracker(ProjectTracker):
                     """,
                     (target_status, now, self._maybe_int(task_id), str(task_id)),
                 )
+                if target_status != cur_task.status:
+                    self._insert_event(
+                        conn, int(cur_row["id"]), "status_change",
+                        status=target_status, now=now,
+                    )
                 # Entering in_progress freezes backlog dependents.
                 if (
                     target_status == TaskStatus.IN_PROGRESS
@@ -605,6 +631,44 @@ class SQLiteTracker(ProjectTracker):
             ).fetchall()
         return [_row_to_comment(r) for r in rows]
 
+    def list_events(self, *, since: int = 0, limit: int = 100) -> List[dict]:
+        """Ordered change events with ``id > since`` — the poll-cursor feed (wl-101).
+
+        ``since`` is the last event id a consumer already saw (0 for the
+        full backlog). Event ids are the table's own autoincrement, so a
+        cursor is just an integer — durable across server restarts with
+        no separate cursor-store to keep in sync.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT e.id, e.task_id, e.event_type, e.status, e.labels,
+                       e.created_at, t.ext_id, t.title
+                  FROM task_events e
+                  JOIN tasks t ON t.id = e.task_id
+                 WHERE e.id > ?
+                 ORDER BY e.id ASC
+                 LIMIT ?
+                """,
+                (int(since), int(limit)),
+            ).fetchall()
+        events: List[dict] = []
+        for r in rows:
+            try:
+                labels = json.loads(r["labels"]) if r["labels"] else None
+            except Exception:
+                labels = None
+            events.append({
+                "id": r["id"],
+                "task_id": r["ext_id"] or str(r["task_id"]),
+                "task_title": r["title"],
+                "event_type": r["event_type"],
+                "status": r["status"],
+                "labels": labels,
+                "created_at": r["created_at"],
+            })
+        return events
+
     # ── helpers ──────────────────────────────────────────────────────
 
     @staticmethod
@@ -631,6 +695,30 @@ class SQLiteTracker(ProjectTracker):
             (task_pk, body, author, now),
         )
 
+    def _insert_event(
+        self,
+        conn: sqlite3.Connection,
+        task_pk: int,
+        event_type: str,
+        *,
+        status: Optional[str] = None,
+        labels: Optional[List[str]] = None,
+        now: Optional[str] = None,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO task_events (task_id, event_type, status, labels, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                task_pk,
+                event_type,
+                status,
+                json.dumps(labels) if labels is not None else None,
+                now or _now_iso(),
+            ),
+        )
+
     def _apply_comment_lifecycle(
         self,
         conn: sqlite3.Connection,
@@ -649,6 +737,9 @@ class SQLiteTracker(ProjectTracker):
                 conn.execute(
                     "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
                     (TaskStatus.IN_REVIEW, now, task_pk),
+                )
+                self._insert_event(
+                    conn, task_pk, "status_change", status=TaskStatus.IN_REVIEW, now=now
                 )
                 fresh = conn.execute(
                     "SELECT * FROM tasks WHERE id = ? LIMIT 1",
@@ -670,11 +761,17 @@ class SQLiteTracker(ProjectTracker):
                 "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
                 (TaskStatus.DONE, now, task_pk),
             )
+            self._insert_event(
+                conn, task_pk, "status_change", status=TaskStatus.DONE, now=now
+            )
             return
         if has_blocked and has_next_step:
             conn.execute(
                 "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
                 (TaskStatus.BACKLOG, now, task_pk),
+            )
+            self._insert_event(
+                conn, task_pk, "status_change", status=TaskStatus.BACKLOG, now=now
             )
 
     def _unresolved_blockers(
@@ -738,6 +835,11 @@ class SQLiteTracker(ProjectTracker):
                 "dependency-guard",
                 now,
             )
+            if t.status != TaskStatus.IN_REVIEW:
+                self._insert_event(
+                    conn, int(row["id"]), "status_change",
+                    status=TaskStatus.IN_REVIEW, now=now,
+                )
 
     def update_task(
         self,
@@ -889,6 +991,9 @@ class SQLiteTracker(ProjectTracker):
                     (json.dumps(labels), now, task_pk),
                 )
                 self._insert_comment(conn, task_pk, audit, actor or "cli-label", now)
+                self._insert_event(
+                    conn, task_pk, "labels_changed", labels=labels, now=now
+                )
 
         return self.get_task(task_id)
 
@@ -921,6 +1026,11 @@ class SQLiteTracker(ProjectTracker):
                 "dependency-guard",
                 now,
             )
+            if t.status != TaskStatus.BACKLOG:
+                self._insert_event(
+                    conn, int(row["id"]), "status_change",
+                    status=TaskStatus.BACKLOG, now=now,
+                )
 
 
 __all__ = [
