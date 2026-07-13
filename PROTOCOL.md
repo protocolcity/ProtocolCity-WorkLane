@@ -279,6 +279,54 @@ project tab; discovery now skips `<slug>.db` stems matching a backup/scratch
 glob (`*.pre-*`, `*.backup*`, `*bak*`, `zzz*`) unless the slug is explicitly
 registered in `local/config/products.json`.
 
+### 7.1) Onboarding a project (added 2026-07-13, wl-102)
+
+This is the *store* onboarding path — dropping a new `<slug>.db` into WL so
+a project's work is trackable. It is narrower than
+[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md): a project needs none
+of this to be a real ticket surface, and doesn't need agent lanes to exist
+yet (a docs/planning-stage project like ProtocolCity has tickets with no
+lane running against it). Only do the full host-profile writeup (§5.3, four
+items) once the project gets its own dispatched agent lane.
+
+1. **Create the store** — `POST /api/admin/products` with a JSON body
+   `{"slug": "<slug>", "display": "<Display Name>", "prefix": "<pfx>"}`
+   (`display`/`prefix` optional). This is the only sanctioned door in — WL
+   deliberately does not auto-create a store from a typo'd `surface=` on
+   `/api/admin/tasks`. It materializes `local/data/<slug>.db` and,
+   if `display`/`prefix` were given, writes them into the
+   `local/config/products.json` overlay (`register_product_meta`).
+2. **Slug naming rule** — `^[a-z][a-z0-9_-]{0,39}$`; `all`, `ops`, `op` are
+   reserved. Avoid the backup/scratch globs above (`*.pre-*`, `*bak*`,
+   `zzz*`, …) — a slug that matches one is still honored if registered in
+   the config overlay, but plain lowercase words never collide.
+3. **Prefix** — optional; `^[a-z][a-z0-9]{0,7}$`, must be unique across
+   `discover_products()` (`o` is reserved for the retired ops store). Omit
+   it and the slug itself becomes the composite-id prefix (`protocolcity-3`,
+   not `pc-3`) — set one explicitly if you want a short id like `pc-`.
+4. **Label taxonomy** — every ticket filed into the new store is
+   auto-labeled `product:<slug>` by the tracker (no agent action needed).
+   Don't add `lane:*` labels until an actual agent lane is registered
+   against the project (§5.3) — an unlabeled backlog is the correct state
+   for a project with no dispatched lane yet; `area:*`/`sys:*` stay
+   project-specific conventions the first agent working that backlog
+   establishes.
+5. **CLAUDE.md pointer** — add a short "Ticketing" section (template in
+   [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)) to the project's
+   own `CLAUDE.md`/`AGENTS.md` naming the slug and reminding agents to pass
+   `project=<slug>` explicitly on every WL call — required, not optional,
+   once more than one project store exists (no single call may rely on
+   `WL_PRODUCT`/`WL_DEFAULT_PRODUCT` defaulting to the right one). See the
+   cross-project rule in `~/Developer/CLAUDE.md` for a worked multi-project
+   example.
+6. **UI wiring is automatic** — `discover_products()` re-scans
+   `local/data/*.db` on every request (no restart), so Board/Table's
+   segmented project nav, the Overview scope nav, and `wl_counts`/`wl_ready`
+   pick up the new project the moment its store exists — zero further code
+   or server changes for any N. Verified live at three concurrent project
+   stores: all three surfaces render correctly with no code
+   changes needed.
+
 
 ## 6) Host Profiles
 
