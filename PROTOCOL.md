@@ -256,6 +256,25 @@ Interactive use counts as a workdir: if a founder can open the tool by hand
 in a checkout, item 2 applies to that checkout — "the launchd prompt covers
 it" is not a pass.
 
+### 5.4) Pointer-wiring verification doctrine (added 2026-07-13, wl-108)
+
+Verify pointer/click wiring at the **hit-testing level**: resolve
+`document.elementFromPoint(x, y)` at the element's real visual on-screen
+location, then dispatch the click on *that* resolved element — never by
+calling the handler directly, and never by dispatching on the element you
+intended to be the target. Applies to any close-out that claims a UI click,
+hover, or selection path works.
+
+Two real bugs shipped "green" past close-out verification and were dead in a
+real browser for days, because direct-call tests are blind to both:
+
+- **A guard sits between target and listener.** A modal wrapper's
+  `stopPropagation()` silently ate a `document`-level delegated listener;
+  calling the handler directly skips the guard entirely.
+- **Painted element ≠ hit-tested element.** Overlapping/stacked geometry (a
+  dashed ring segment painted as a full circle) means the browser resolves a
+  click to a different element than the one the test dispatched on.
+
 ## 7) API and Surface
 
 WL exposes API/UI so other cockpits can read ticket state. Board/table and API reflect the same DB truth. External aggregators should be read-first unless write is explicitly enabled. Host products are WL clients; a host must never depend on WL availability to start.
