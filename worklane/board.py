@@ -15,6 +15,7 @@ import os
 import re
 import urllib.parse
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -294,12 +295,19 @@ def list_tasks_for_scope_multi(
 _OWNER_LINE_RE = re.compile(r"^Owner:\s*([^\n(]+)", re.MULTILINE)
 
 
-def _extract_owner(comments: List[Any]) -> str:
+def _extract_owner_claim(comments: List[Any]) -> Tuple[str, str]:
+    """Return (owner, claimed_at) from the newest comment carrying an Owner:
+    marker — claimed_at is that comment's own timestamp, not the latest
+    comment's, so claim age stays correct even after later activity."""
     for c in sorted(comments, key=lambda c: c.created_at or "", reverse=True):
         m = _OWNER_LINE_RE.search(c.body or "")
         if m:
-            return m.group(1).strip()
-    return ""
+            return m.group(1).strip(), (c.created_at or "")
+    return "", ""
+
+
+def _extract_owner(comments: List[Any]) -> str:
+    return _extract_owner_claim(comments)[0]
 
 
 def _load_preview_comments_multi(
@@ -332,11 +340,13 @@ def _load_preview_comments_multi(
         first_line = next((ln.strip() for ln in body.split("\n") if ln.strip()), "")
         if len(first_line) > 180:
             first_line = first_line[:177].rstrip() + "…"
+        owner, owner_claimed_at = _extract_owner_claim(comments)
         preview[cid] = {
             "body": first_line,
             "author": latest.author or "",
             "created_at": latest.created_at or "",
-            "owner": _extract_owner(comments),
+            "owner": owner,
+            "owner_claimed_at": owner_claimed_at,
         }
     return preview
 
@@ -701,6 +711,62 @@ def _detect_worker(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
     return None
 
 
+_INFLIGHT_STATUSES = (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)
+
+
+def _claim_stale_minutes() -> int:
+    """Staleness threshold for claim-age badges — env override (wl-104),
+    default matches the existing 90-min stalled-ticket convention
+    (PROTOCOL.md §4) though this is a distinct, narrower check (no comment
+    since the claim itself, not just no update)."""
+    try:
+        return int(os.environ.get("TICKETING_CLAIM_STALE_MINUTES", "90"))
+    except ValueError:
+        return 90
+
+
+def _parse_iso_ts(s: str) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _worker_claim_html(
+    t: Task, preview: Dict[str, str], *, now: Optional[datetime] = None
+) -> str:
+    """Owner byline for a ticket, plus claim age + staleness hint when the
+    ticket is in_progress/in_review (wl-104). Shared by Board cards and
+    Table rows so the two views never drift."""
+    if not preview:
+        return ""
+    worker = _detect_worker(preview)
+    if not worker:
+        return ""
+    icon, label_text = worker
+    parts = [f"<span>{icon}</span> <span>{_esc(label_text)}</span>"]
+    if t.status in _INFLIGHT_STATUSES:
+        claimed_at = (preview.get("owner_claimed_at") or "").strip()
+        if claimed_at:
+            esc_claimed = _esc(claimed_at)
+            parts.append(
+                f"<span class='tb-card-ago tb-card-claim-age' data-iso='{esc_claimed}'>"
+                f"{_esc(claimed_at[:19])}</span>"
+            )
+            ts = _parse_iso_ts(claimed_at)
+            no_comment_since_claim = (preview.get("created_at") or "").strip() == claimed_at
+            if ts is not None and no_comment_since_claim:
+                now_ = now or datetime.now(ts.tzinfo or timezone.utc)
+                if (now_ - ts) >= timedelta(minutes=_claim_stale_minutes()):
+                    parts.append(
+                        "<span class='tb-card-stale' "
+                        "title='Claimed, no comment since — possible dead worker'>stale</span>"
+                    )
+    return "".join(parts)
+
+
 def _scoped_labels(labels: Optional[List[str]], scope_product: str) -> List[str]:
     """Drop the label the view already states (wl-55): in a scoped view the
     product:<scope> chip is redundant on every card. Other product: labels
@@ -760,16 +826,9 @@ def _render_task_card(
         )
     # Byline on every column (wl-54): backlog reads as "responsible",
     # done reads as "worked by" — same signal, the newest identity on record.
-    worker_html = ""
-    if preview:
-        worker = _detect_worker(preview)
-        if worker:
-            icon, label_text = worker
-            worker_html = (
-                f"<div class='tb-card-worker'>"
-                f"<span>{icon}</span> <span>{_esc(label_text)}</span>"
-                f"</div>"
-            )
+    # in_progress/in_review also get claim age + staleness (wl-104).
+    claim_html = _worker_claim_html(t, preview)
+    worker_html = f"<div class='tb-card-worker'>{claim_html}</div>" if claim_html else ""
     decision_html = ""
     # Any needs:* label reads as "waiting on somebody" — label vocabulary is
     # store data, so no specific label names are special-cased here (wl-84).
@@ -1054,6 +1113,13 @@ def _board_styles() -> str:
 .tb-card-worker { display:flex; align-items:center; gap:4px; margin-top:4px;
                   font-family:var(--font-mono); font-size:10px;
                   color:var(--muted); letter-spacing:.03em; }
+/* Claim age (wl-104): dimmer than the identity it trails. */
+.tb-card-claim-age { color:var(--dim); }
+/* Staleness hint (wl-104): claimed, no comment since, past threshold —
+   a possible dead worker, not a process-state claim. */
+.tb-card-stale { color:#f59e0b; border:1px solid #f59e0b; border-radius:3px;
+                 padding:0 4px; font-size:9px; text-transform:uppercase;
+                 letter-spacing:.04em; }
 /* Gate chip (wl-21): shown while gate_type withholds the ticket from ready. */
 .tb-card-gate { margin-top:4px; }
 /* Meta row (wl-36): labels + age share one line; age right-aligned. */
@@ -1598,11 +1664,13 @@ def _load_preview_comments(
         first_line = next((ln.strip() for ln in body.split("\n") if ln.strip()), "")
         if len(first_line) > 180:
             first_line = first_line[:177].rstrip() + "…"
+        owner, owner_claimed_at = _extract_owner_claim(comments)
         preview[t.id] = {
             "body": first_line,
             "author": latest.author or "",
             "created_at": latest.created_at or "",
-            "owner": _extract_owner(comments),
+            "owner": owner,
+            "owner_claimed_at": owner_claimed_at,
         }
     return preview
 

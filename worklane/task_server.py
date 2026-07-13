@@ -105,6 +105,7 @@ from worklane.board import (
     _render_task_board,
     _render_task_card,
     _render_work_queue_filters,
+    _worker_claim_html,
     _STATUS_LABELS,
     _STATUS_TIERS,
     TICKETS_APP_ALL,
@@ -3150,10 +3151,17 @@ def _wq_poll_script(
     return f"<script>window.__WQ_POLL_PARAMS = {payload};</script>"
 
 
-def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
+def _render_task_table(
+    tasks: List[Task],
+    previews: Optional[Dict[str, Dict[str, str]]] = None,
+    scope_product: str = "",
+) -> str:
     if not tasks:
         return "<p class='dim'>No tickets match the current filters.</p>"
-    rows = "".join(_render_task_row(t, scope_product) for t in tasks)
+    previews = previews or {}
+    rows = "".join(
+        _render_task_row(t, previews.get(t.id, {}), scope_product) for t in tasks
+    )
     return (
         "<div class='ts-timetable'><table class='ts-timetable-table'>"
         "<thead><tr>"
@@ -3161,6 +3169,7 @@ def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
         "<th class='tt-c-no' data-tt-key='no'>No.</th>"
         "<th class='tt-c-ticket' data-tt-key='ticket'>Ticket</th>"
         "<th class='tt-c-labels' data-tt-key='labels'>Labels</th>"
+        "<th class='tt-c-worker' data-tt-key='worker'>Worker</th>"
         "<th class='tt-c-status' data-tt-key='status'>Status</th>"
         "<th class='tt-c-pri' data-tt-key='pri'>Pri.</th>"
         "</tr></thead>"
@@ -3170,7 +3179,9 @@ def _render_task_table(tasks: List[Task], scope_product: str = "") -> str:
     )
 
 
-def _render_task_row(t: Task, scope_product: str = "") -> str:
+def _render_task_row(
+    t: Task, preview: Optional[Dict[str, str]] = None, scope_product: str = ""
+) -> str:
     # wl-38: timetable row — whole row opens the ticket (no inline status
     # edit here; that stays on the task detail page's _status_select).
     href = f"/admin/tasks/{_esc(t.id)}"
@@ -3182,6 +3193,9 @@ def _render_task_row(t: Task, scope_product: str = "") -> str:
         if t.updated_at else "<span class='dim'>—</span>"
     )
     labels = _scoped_labels(t.labels, scope_product)
+    # Worker column (wl-104): same claim identity/age/staleness as Board cards.
+    claim_html = _worker_claim_html(t, preview or {})
+    worker_html = claim_html or "<span class='dim'>—</span>"
     # Sort keys as row data attributes so header sorting never has to parse
     # rendered cell markup (badges, relative-time spans, label chips).
     sort_attrs = (
@@ -3198,6 +3212,7 @@ def _render_task_row(t: Task, scope_product: str = "") -> str:
         f"<td class='tt-c-no'><span class='tb-card-id'>{_esc(t.id)}</span>{ext}</td>"
         f"<td class='tt-c-ticket'><a href='{href}'>{_esc(t.title)}</a></td>"
         f"<td class='tt-c-labels'>{_render_labels(labels)}</td>"
+        f"<td class='tt-c-worker'>{worker_html}</td>"
         f"<td class='tt-c-status'>{_render_status_badge(t.status)}</td>"
         f"<td class='tt-c-pri'>{_render_priority_badge(int(t.priority or 3))}</td>"
         "</tr>"
@@ -3765,7 +3780,8 @@ def _tickets_app_html(
         else parse_wq_product(product_query)
     )
 
-    want_preview = view_norm == "board"
+    # wl-104: Table also needs preview data (owner/claim-age/staleness column).
+    want_preview = view_norm in ("board", "table")
     tasks, tradeos_prev = _list_tasks_for_wq_multi_resolved(
         products,
         status=st,
@@ -3821,12 +3837,16 @@ def _tickets_app_html(
     dispatched_banner = _render_dispatched_banner(dispatched, prompt)
     dispatch_hygiene = _render_work_queue_dispatch_hygiene(tracker_tradeos)
 
-    if view_norm == "board":
-        previews = _load_preview_comments_multi(
+    previews = (
+        _load_preview_comments_multi(
             products,
             tasks,
             tradeos_preview=tradeos_prev if tradeos_prev else None,
         )
+        if want_preview else {}
+    )
+
+    if view_norm == "board":
         body = (
             "<div class='ts-wq-shell'>"
             + wq_notif
@@ -3857,7 +3877,7 @@ def _tickets_app_html(
             + _OPS_READING_SHEET_OPEN
             + _OPS_WORKSPACE_OPEN
             + command_bar
-            + _render_task_table(tasks, scope_product=prod or "")
+            + _render_task_table(tasks, previews, scope_product=prod or "")
             + _OPS_WORKSPACE_CLOSE
             + _OPS_READING_SHEET_CLOSE
             + dispatch_hygiene
@@ -6240,6 +6260,13 @@ def _task_server_extra_css() -> str:
   .ts-timetable-table .tt-c-ticket a:hover { color: var(--accent); }
   .ts-timetable-table .tt-c-labels { font-family: var(--font-mono); color: var(--dim); }
   .ts-timetable-table .tt-c-labels .label-chip { color: inherit; text-decoration-color: var(--border); }
+  /* Worker column (wl-104): same byline/claim-age/stale markup as Board cards. */
+  .ts-timetable-table th.tt-c-worker, .ts-timetable-table td.tt-c-worker { width: 170px; }
+  .ts-timetable-table .tt-c-worker {
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+    letter-spacing: .03em; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;
+  }
 </style>
 """
 
