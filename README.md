@@ -26,7 +26,7 @@ shared backlog daily for months.
 ## Quickstart
 
 ```bash
-git clone https://github.com/protocolcity/worklane && cd worklane
+git clone https://github.com/protocolcity/ProtocolCity-WorkLane && cd ProtocolCity-WorkLane
 pip install -e .
 
 worklane                     # server + board UI on http://127.0.0.1:8799
