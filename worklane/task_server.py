@@ -2232,6 +2232,82 @@ def _render_author_tally_panel(
     return f"<div class='pulse-side-rows'>{rows}</div>"
 
 
+_LANE_LABEL_PREFIX = "lane:"
+
+
+def _lane_lens_rows(
+    all_tasks: List[Task], *, prefix: str = _LANE_LABEL_PREFIX
+) -> List[Dict[str, Any]]:
+    """wl-100: queue depth per lane:* label — backlog/gated/in-flight counts.
+
+    Forward-looking counterpart to the Authors panel: a straight facet over
+    labels already on each task (no comment parsing). Backlog tasks with no
+    lane:* label collect into a synthetic 'unlabeled' row so triage-starved
+    lanes are visible. The prefix is a convention, not a hardcoded roster —
+    any label matching it becomes its own row.
+    """
+    buckets: Dict[str, Dict[str, int]] = {}
+
+    def _bucket(name: str) -> Dict[str, int]:
+        return buckets.setdefault(name, {"backlog": 0, "gated": 0, "inflight": 0})
+
+    for t in all_tasks:
+        lanes = [lbl[len(prefix):] for lbl in (t.labels or []) if lbl.startswith(prefix)]
+        if t.status == TaskStatus.BACKLOG:
+            key = "gated" if task_is_gated(t) else "backlog"
+            for lane in (lanes or ["unlabeled"]):
+                _bucket(lane)[key] += 1
+        elif t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+            for lane in lanes:
+                _bucket(lane)["inflight"] += 1
+
+    rows = [
+        {"lane": lane, **counts}
+        for lane, counts in buckets.items()
+        if counts["backlog"] or counts["gated"] or counts["inflight"]
+    ]
+    rows.sort(
+        key=lambda r: (
+            r["lane"] != "unlabeled",
+            -(r["backlog"] + r["gated"] + r["inflight"]),
+            r["lane"],
+        )
+    )
+    return rows
+
+
+def _render_lane_lens_panel(rows: List[Dict[str, Any]]) -> str:
+    """wl-100: per-lane queue depth — backlog · gated · in-flight rows."""
+    if not rows:
+        return "<div class='pulse-empty'>No lane:* labels in scope.</div>"
+    head = (
+        "<div class='pulse-lane-hd'>"
+        "<span></span><span>backlog</span><span>gated</span><span>in-flight</span>"
+        "</div>"
+    )
+    body = ""
+    for r in rows:
+        gated_cell = (
+            f"<span class='pulse-lane-n pulse-lane-n--gated'>{r['gated']}</span>"
+            if r["gated"] else
+            "<span class='pulse-lane-n pulse-lane-n--zero'>0</span>"
+        )
+        inflight_cell = (
+            f"<span class='pulse-lane-n pulse-lane-n--inflight'>{r['inflight']}</span>"
+            if r["inflight"] else
+            "<span class='pulse-lane-n pulse-lane-n--zero'>0</span>"
+        )
+        body += (
+            "<div class='pulse-lane-row'>"
+            f"<span class='pulse-lane-name'>{_esc(r['lane'])}</span>"
+            f"<span class='pulse-lane-n'>{r['backlog']}</span>"
+            f"{gated_cell}"
+            f"{inflight_cell}"
+            "</div>"
+        )
+    return f"<div class='pulse-side-rows'>{head}{body}</div>"
+
+
 # wl-86: PROTOCOL.md §4 — in-flight tickets with no update in over 90 minutes
 # count as stalled; the Attention panel surfaces them alongside blocked and
 # aging backlog work.
@@ -2630,6 +2706,9 @@ def _render_pulse_page(scope: str = "") -> str:
             pending_by_owner[owner] = pending_by_owner.get(owner, 0) + 1
     author_tallies = _author_tally(scope, pending=pending_by_owner)
     authors_html = _render_author_tally_panel(author_tallies, now=now)
+    # wl-100: forward-looking queue depth per lane:* label.
+    lane_rows = _lane_lens_rows(all_tasks)
+    lanelens_html = _render_lane_lens_panel(lane_rows)
 
     # Metrics strip
     avg_inflight_age = ""
@@ -2800,6 +2879,16 @@ def _render_pulse_page(scope: str = "") -> str:
               {_PANEL_CONTROLS}
             </div>
             {next_up_html}
+          </div>
+
+          <div class='pulse-panel' data-panel-id='lanelens' data-default-col='side'>
+            <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
+              <span class='pulse-panel-title'>Lane lens</span>
+              <span class='pulse-panel-meta'>{len(lane_rows)} lane{'' if len(lane_rows) == 1 else 's'}</span>
+              {_PANEL_CONTROLS}
+            </div>
+            {lanelens_html}
           </div>
 
           <div class='pulse-panel' data-panel-id='attention' data-default-col='side'>
@@ -2985,6 +3074,21 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-author-n--pending {{ color:#f97316; }}
       .pulse-author-n--zero {{ color:var(--dim); font-weight:400; }}
       .pulse-author-age {{ color:var(--dim); font-variant-numeric:tabular-nums; }}
+
+      /* wl-100: lane lens — queue depth per lane:* label, backlog · gated · in-flight */
+      .pulse-lane-hd, .pulse-lane-row {{ display:grid;
+        grid-template-columns:minmax(0, 1fr) 56px 56px 64px; gap:8px;
+        align-items:baseline; padding:3px 6px; font-size:11px; }}
+      .pulse-lane-hd {{ font-size:9px; text-transform:uppercase; letter-spacing:0.08em;
+        color:var(--dim); padding-bottom:5px; border-bottom:1px dashed var(--border); }}
+      .pulse-lane-hd span, .pulse-lane-n {{ text-align:right; }}
+      .pulse-lane-hd span:first-child {{ text-align:left; }}
+      .pulse-lane-name {{ font-weight:600; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }}
+      .pulse-lane-n {{ font-variant-numeric:tabular-nums; font-weight:700; }}
+      .pulse-lane-n--gated {{ color:#f59e0b; }}
+      .pulse-lane-n--inflight {{ color:#f97316; }}
+      .pulse-lane-n--zero {{ color:var(--dim); font-weight:400; }}
 
       /* wl-89: breakdown panel — status + priority bars side by side */
       .pulse-breakdown {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
