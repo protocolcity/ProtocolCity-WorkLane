@@ -2318,6 +2318,23 @@ def _parse_iso_ts(s: str) -> Optional[datetime]:
         return None
 
 
+def _percentile(sorted_vals: List[float], pct: float) -> Optional[float]:
+    """Linear-interpolation percentile over an already-sorted list (wl-107).
+
+    ``pct`` is a 0..1 fraction (0.5 = median, 0.9 = p90). Same convention as
+    numpy's default interpolation so results are easy to sanity-check.
+    """
+    if not sorted_vals:
+        return None
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    idx = pct * (len(sorted_vals) - 1)
+    lo = int(idx)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = idx - lo
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * frac
+
+
 # wl-106: allocation view — filed-vs-closed per lane and per author over a
 # selectable window, plus a totals row reconciling with wl_counts.
 _ALLOCATION_WINDOWS = (7, 14, 30)
@@ -2433,7 +2450,7 @@ def _render_allocation_panel(
         for d in _ALLOCATION_WINDOWS
     )
 
-    def _table(rows: List[Dict[str, Any]], key: str, empty_msg: str) -> str:
+    def _table(rows: List[Dict[str, Any]], key: str, empty_msg: str, *, flag_imbalance: bool = False) -> str:
         if not rows:
             return f"<div class='pulse-empty'>{empty_msg}</div>"
         head = (
@@ -2443,7 +2460,12 @@ def _render_allocation_panel(
         )
         body = "".join(
             "<div class='pulse-alloc-row'>"
-            f"<span class='pulse-alloc-name'>{_esc(r[key])}</span>"
+            f"<span class='pulse-alloc-name'>{_esc(r[key])}"
+            + (
+                " <span class='pulse-alloc-flag' title='intake &gt; drain this window'>&#9650;</span>"
+                if flag_imbalance and r["filed"] > r["closed"] else ""
+            )
+            + "</span>"
             f"<span class='pulse-alloc-n pulse-alloc-n--filed'>{r['filed']}</span>"
             f"<span class='pulse-alloc-n pulse-alloc-n--closed'>{r['closed']}</span>"
             "</div>"
@@ -2451,7 +2473,10 @@ def _render_allocation_panel(
         )
         return f"<div class='pulse-side-rows'>{head}{body}</div>"
 
-    lane_html = _table(lane_rows, "lane", "No lane:* labels filed or closed in this window.")
+    lane_html = _table(
+        lane_rows, "lane", "No lane:* labels filed or closed in this window.",
+        flag_imbalance=True,
+    )
     author_html = _table(author_rows, "author", "No signed comments in this window.")
 
     totals_counts = totals["counts"]
@@ -2472,6 +2497,193 @@ def _render_allocation_panel(
         f"<span class='pulse-alloc-totals-row'>{_esc(totals_row)}</span>"
         "</div>"
     )
+
+
+# wl-107: cycle-time (closed-in-window) and age (currently-open) distributions
+# per lane:* label and per priority — median/p90 in hours, exposing where work
+# stalls. Same created/updated proxy as the Allocation view (no closed_at
+# column).
+def _cycle_age_lane_rows(
+    all_tasks: List[Task], since: datetime, now: datetime, *, prefix: str = _LANE_LABEL_PREFIX
+) -> List[Dict[str, Any]]:
+    cycle_buckets: Dict[str, List[float]] = {}
+    age_buckets: Dict[str, List[float]] = {}
+    for t in all_tasks:
+        lanes = [lbl[len(prefix):] for lbl in (t.labels or []) if lbl.startswith(prefix)] or ["unlabeled"]
+        if t.status == TaskStatus.DONE:
+            closed = _parse_iso_ts(t.updated_at)
+            created = _parse_iso_ts(t.created_at)
+            if closed is not None and created is not None and closed >= since and closed >= created:
+                hrs = (closed - created).total_seconds() / 3600
+                for lane in lanes:
+                    cycle_buckets.setdefault(lane, []).append(hrs)
+        elif t.status in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+            created = _parse_iso_ts(t.created_at)
+            if created is not None:
+                hrs = max(0.0, (now - created).total_seconds() / 3600)
+                for lane in lanes:
+                    age_buckets.setdefault(lane, []).append(hrs)
+    return _cycle_age_rows_from_buckets(cycle_buckets, age_buckets, sort_key=lambda lane: lane != "unlabeled")
+
+
+def _cycle_age_priority_rows(
+    all_tasks: List[Task], since: datetime, now: datetime
+) -> List[Dict[str, Any]]:
+    cycle_buckets: Dict[str, List[float]] = {}
+    age_buckets: Dict[str, List[float]] = {}
+    for t in all_tasks:
+        pri = f"P{int(t.priority or 3)}"
+        if t.status == TaskStatus.DONE:
+            closed = _parse_iso_ts(t.updated_at)
+            created = _parse_iso_ts(t.created_at)
+            if closed is not None and created is not None and closed >= since and closed >= created:
+                hrs = (closed - created).total_seconds() / 3600
+                cycle_buckets.setdefault(pri, []).append(hrs)
+        elif t.status in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+            created = _parse_iso_ts(t.created_at)
+            if created is not None:
+                hrs = max(0.0, (now - created).total_seconds() / 3600)
+                age_buckets.setdefault(pri, []).append(hrs)
+    return _cycle_age_rows_from_buckets(cycle_buckets, age_buckets, sort_key=lambda pri: pri)
+
+
+def _cycle_age_rows_from_buckets(
+    cycle_buckets: Dict[str, List[float]],
+    age_buckets: Dict[str, List[float]],
+    *,
+    sort_key,
+) -> List[Dict[str, Any]]:
+    names = sorted(set(cycle_buckets) | set(age_buckets), key=sort_key)
+    rows = []
+    for name in names:
+        c = sorted(cycle_buckets.get(name, []))
+        a = sorted(age_buckets.get(name, []))
+        rows.append({
+            "name": name,
+            "cycle_median": _percentile(c, 0.5),
+            "cycle_p90": _percentile(c, 0.9),
+            "age_median": _percentile(a, 0.5),
+            "age_p90": _percentile(a, 0.9),
+            "cycle_n": len(c),
+            "age_n": len(a),
+        })
+    return rows
+
+
+def _fmt_hours(hrs: Optional[float]) -> str:
+    if hrs is None:
+        return "—"
+    return _fmt_minutes(int(hrs * 60))
+
+
+def _render_cycle_age_panel(
+    lane_rows: List[Dict[str, Any]], priority_rows: List[Dict[str, Any]], *, window_days: int
+) -> str:
+    """wl-107: median/p90 cycle time (closed in window) and age (open now)
+    per lane and per priority, in compact duration form."""
+
+    def _table(rows: List[Dict[str, Any]], empty_msg: str) -> str:
+        if not rows:
+            return f"<div class='pulse-empty'>{empty_msg}</div>"
+        head = (
+            "<div class='pulse-cycle-hd'>"
+            "<span></span><span>cyc.med</span><span>cyc.p90</span>"
+            "<span>age.med</span><span>age.p90</span>"
+            "</div>"
+        )
+        body = "".join(
+            "<div class='pulse-cycle-row'>"
+            f"<span class='pulse-cycle-name'>{_esc(r['name'])}</span>"
+            f"<span class='pulse-cycle-n'>{_fmt_hours(r['cycle_median'])}</span>"
+            f"<span class='pulse-cycle-n'>{_fmt_hours(r['cycle_p90'])}</span>"
+            f"<span class='pulse-cycle-n pulse-cycle-n--age'>{_fmt_hours(r['age_median'])}</span>"
+            f"<span class='pulse-cycle-n pulse-cycle-n--age'>{_fmt_hours(r['age_p90'])}</span>"
+            "</div>"
+            for r in rows
+        )
+        return f"<div class='pulse-side-rows'>{head}{body}</div>"
+
+    lane_html = _table(lane_rows, "No lane:* labels closed or open in this window.")
+    priority_html = _table(priority_rows, "No tasks closed or open in this window.")
+    return (
+        f"<div class='pulse-alloc-selector'>window {window_days}d — cyc. = closed-in-window, "
+        "age = currently open</div>"
+        "<div class='pulse-alloc-section'>"
+        "<div class='pulse-alloc-label'>By lane</div>" + lane_html + "</div>"
+        "<div class='pulse-alloc-section'>"
+        "<div class='pulse-alloc-label'>By priority</div>" + priority_html + "</div>"
+    )
+
+
+# wl-107: focus cut — founder-session prep list. Clusters (by lane:* label)
+# ranked by open P1/P2 count x staleness x blocked-status. Data only, no
+# prescriptions — the founder decides what to do with the ranking.
+def _focus_cut_rows(
+    all_tasks: List[Task], blocked_entries: List[Any], *, now: datetime, prefix: str = _LANE_LABEL_PREFIX
+) -> List[Dict[str, Any]]:
+    blocked_ids = {bt.task.id for bt in blocked_entries}
+    buckets: Dict[str, Dict[str, Any]] = {}
+
+    def _bucket(name: str) -> Dict[str, Any]:
+        return buckets.setdefault(name, {"lane": name, "open_p1p2": 0, "blocked": 0, "ages": []})
+
+    for t in all_tasks:
+        if t.status not in (TaskStatus.BACKLOG, TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+            continue
+        lanes = [lbl[len(prefix):] for lbl in (t.labels or []) if lbl.startswith(prefix)] or ["unlabeled"]
+        ts = _parse_iso_ts(t.updated_at) or _parse_iso_ts(t.created_at)
+        age_hours = max(0.0, (now - ts).total_seconds() / 3600) if ts is not None else 0.0
+        is_p1p2 = int(t.priority or 3) <= 2
+        is_blocked = t.id in blocked_ids
+        for lane in lanes:
+            b = _bucket(lane)
+            if is_p1p2:
+                b["open_p1p2"] += 1
+            if is_blocked:
+                b["blocked"] += 1
+            b["ages"].append(age_hours)
+
+    rows = []
+    for b in buckets.values():
+        if not (b["open_p1p2"] or b["blocked"]):
+            continue
+        staleness = max(b["ages"]) if b["ages"] else 0.0
+        score = b["open_p1p2"] * (1.0 + staleness / 24.0) * (2.0 if b["blocked"] else 1.0)
+        rows.append({
+            "lane": b["lane"],
+            "open_p1p2": b["open_p1p2"],
+            "blocked": b["blocked"],
+            "staleness_hours": staleness,
+            "score": score,
+        })
+    rows.sort(key=lambda r: (-r["score"], r["lane"]))
+    return rows
+
+
+def _render_focus_panel(rows: List[Dict[str, Any]]) -> str:
+    if not rows:
+        return "<div class='pulse-empty'>No lane has open P1/P2 or blocked work.</div>"
+    head = (
+        "<div class='pulse-focus-hd'>"
+        "<span></span><span>P1/P2</span><span>stale</span><span>blocked</span>"
+        "</div>"
+    )
+    body = ""
+    for r in rows[:8]:
+        blocked_cell = (
+            f"<span class='pulse-focus-n pulse-focus-n--blocked'>{r['blocked']}</span>"
+            if r["blocked"] else
+            "<span class='pulse-focus-n pulse-focus-n--zero'>0</span>"
+        )
+        body += (
+            "<div class='pulse-focus-row'>"
+            f"<span class='pulse-focus-name'>{_esc(r['lane'])}</span>"
+            f"<span class='pulse-focus-n'>{r['open_p1p2']}</span>"
+            f"<span class='pulse-focus-n'>{_fmt_hours(r['staleness_hours'])}</span>"
+            f"{blocked_cell}"
+            "</div>"
+        )
+    return f"<div class='pulse-side-rows'>{head}{body}</div>"
 
 
 # wl-86: PROTOCOL.md §4 — in-flight tickets with no update in over 90 minutes
@@ -2887,6 +3099,17 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
         alloc_lane_rows, alloc_author_rows, alloc_totals,
         scope=scope, window_days=window_days,
     )
+    # wl-107: cycle-time (closed-in-window) and age (currently-open) medians/
+    # p90s per lane and per priority — where work stalls.
+    cycle_lane_rows = _cycle_age_lane_rows(all_tasks, alloc_since, now)
+    cycle_priority_rows = _cycle_age_priority_rows(all_tasks, alloc_since, now)
+    cycle_age_html = _render_cycle_age_panel(
+        cycle_lane_rows, cycle_priority_rows, window_days=window_days,
+    )
+    # wl-107: founder-session prep — lanes ranked by open P1/P2 x staleness x
+    # blocked-status (blocked_entries already computed above for Attention).
+    focus_rows = _focus_cut_rows(all_tasks, blocked_entries, now=now)
+    focus_html = _render_focus_panel(focus_rows)
 
     # Metrics strip
     avg_inflight_age = ""
@@ -3077,6 +3300,26 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
               {_PANEL_CONTROLS}
             </div>
             {allocation_html}
+          </div>
+
+          <div class='pulse-panel' data-panel-id='cycleage' data-default-col='main'>
+            <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
+              <span class='pulse-panel-title'>Cycle &amp; age · {window_days}d</span>
+              <span class='pulse-panel-meta'>{len(cycle_lane_rows)} lane{'' if len(cycle_lane_rows) == 1 else 's'}</span>
+              {_PANEL_CONTROLS}
+            </div>
+            {cycle_age_html}
+          </div>
+
+          <div class='pulse-panel' data-panel-id='focus' data-default-col='side'>
+            <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
+              <span class='pulse-panel-title'>Focus cut</span>
+              <span class='pulse-panel-meta'>{len(focus_rows)} lane{'' if len(focus_rows) == 1 else 's'}</span>
+              {_PANEL_CONTROLS}
+            </div>
+            {focus_html}
           </div>
 
           <div class='pulse-panel' data-panel-id='attention' data-default-col='side'>
@@ -3304,6 +3547,34 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
       .pulse-alloc-totals-label {{ color:var(--dim); font-size:9px; text-transform:uppercase;
         letter-spacing:0.08em; }}
       .pulse-alloc-totals-row {{ font-variant-numeric:tabular-nums; }}
+      .pulse-alloc-flag {{ color:#f59e0b; font-size:9px; }}
+
+      /* wl-107: cycle-time (closed-in-window) + age (open-now) medians/p90s */
+      .pulse-cycle-hd, .pulse-cycle-row {{ display:grid;
+        grid-template-columns:minmax(0, 1fr) 48px 48px 48px 48px; gap:6px;
+        align-items:baseline; padding:3px 6px; font-size:11px; }}
+      .pulse-cycle-hd {{ font-size:9px; text-transform:uppercase; letter-spacing:0.08em;
+        color:var(--dim); padding-bottom:5px; border-bottom:1px dashed var(--border); }}
+      .pulse-cycle-hd span, .pulse-cycle-n {{ text-align:right; }}
+      .pulse-cycle-hd span:first-child {{ text-align:left; }}
+      .pulse-cycle-name {{ font-weight:600; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }}
+      .pulse-cycle-n {{ font-variant-numeric:tabular-nums; font-weight:700; }}
+      .pulse-cycle-n--age {{ color:#38bdf8; }}
+
+      /* wl-107: focus cut — lanes ranked by open P1/P2 x staleness x blocked */
+      .pulse-focus-hd, .pulse-focus-row {{ display:grid;
+        grid-template-columns:minmax(0, 1fr) 44px 56px 56px; gap:8px;
+        align-items:baseline; padding:3px 6px; font-size:11px; }}
+      .pulse-focus-hd {{ font-size:9px; text-transform:uppercase; letter-spacing:0.08em;
+        color:var(--dim); padding-bottom:5px; border-bottom:1px dashed var(--border); }}
+      .pulse-focus-hd span, .pulse-focus-n {{ text-align:right; }}
+      .pulse-focus-hd span:first-child {{ text-align:left; }}
+      .pulse-focus-name {{ font-weight:600; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }}
+      .pulse-focus-n {{ font-variant-numeric:tabular-nums; font-weight:700; }}
+      .pulse-focus-n--blocked {{ color:#ef4444; }}
+      .pulse-focus-n--zero {{ color:var(--dim); font-weight:400; }}
 
       /* wl-89: breakdown panel — status + priority bars side by side */
       .pulse-breakdown {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
