@@ -2309,6 +2309,171 @@ def _render_lane_lens_panel(rows: List[Dict[str, Any]]) -> str:
     return f"<div class='pulse-side-rows'>{head}{body}</div>"
 
 
+def _parse_iso_ts(s: str) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+# wl-106: allocation view — filed-vs-closed per lane and per author over a
+# selectable window, plus a totals row reconciling with wl_counts.
+_ALLOCATION_WINDOWS = (7, 14, 30)
+
+
+def _allocation_lane_rows(
+    all_tasks: List[Task], since: datetime, *, prefix: str = _LANE_LABEL_PREFIX
+) -> List[Dict[str, Any]]:
+    """Filed-vs-closed per lane:* label within the window.
+
+    Filed = created_at in window (any status); closed = status==done and
+    updated_at in window — same created/updated proxy _render_flow_panel
+    uses (no closed_at column). Unlabeled tasks collect into a synthetic
+    'unlabeled' row, same convention as _lane_lens_rows.
+    """
+    buckets: Dict[str, Dict[str, int]] = {}
+
+    def _bucket(name: str) -> Dict[str, int]:
+        return buckets.setdefault(name, {"filed": 0, "closed": 0})
+
+    for t in all_tasks:
+        lanes = [lbl[len(prefix):] for lbl in (t.labels or []) if lbl.startswith(prefix)] or ["unlabeled"]
+        created = _parse_iso_ts(t.created_at)
+        if created is not None and created >= since:
+            for lane in lanes:
+                _bucket(lane)["filed"] += 1
+        if t.status == TaskStatus.DONE:
+            closed_at = _parse_iso_ts(t.updated_at)
+            if closed_at is not None and closed_at >= since:
+                for lane in lanes:
+                    _bucket(lane)["closed"] += 1
+
+    rows = [
+        {"lane": lane, **counts}
+        for lane, counts in buckets.items()
+        if counts["filed"] or counts["closed"]
+    ]
+    rows.sort(key=lambda r: (r["lane"] != "unlabeled", -(r["filed"] + r["closed"]), r["lane"]))
+    return rows
+
+
+def _allocation_author_rows(scope: str, since: datetime) -> List[Dict[str, Any]]:
+    """Filed-vs-closed per comment author within the window.
+
+    Same signed-comment derivation as _author_tally: filed = 'Intake: filed
+    by%' comment (PROTOCOL.md §5 intake marker), closed = 'Completed:%'
+    closeout comment — windowed on the comment's own created_at.
+    """
+    merged: Dict[str, Dict[str, Any]] = {}
+    since_s = since.isoformat()
+    for _spec, tracker in _scoped_product_trackers(scope):
+        db_path = _tracker_db_path(tracker)
+        if db_path is None or not Path(db_path).exists():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT author,
+                           COUNT(DISTINCT CASE WHEN body LIKE 'Intake: filed by%'
+                                               AND created_at >= ? THEN task_id END) AS filed,
+                           COUNT(DISTINCT CASE WHEN body LIKE 'Completed:%'
+                                               AND created_at >= ? THEN task_id END) AS closed
+                    FROM task_comments
+                    WHERE author != ''
+                    GROUP BY author
+                    """,
+                    (since_s, since_s),
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception:
+            continue
+        for author, filed, closed in rows:
+            agg = merged.setdefault(author, {"author": author, "filed": 0, "closed": 0})
+            agg["filed"] += int(filed or 0)
+            agg["closed"] += int(closed or 0)
+    out = [a for a in merged.values() if a["filed"] or a["closed"]]
+    out.sort(key=lambda a: (-(a["filed"] + a["closed"]), a["author"]))
+    return out
+
+
+def _status_totals(all_tasks: List[Task]) -> Dict[str, Any]:
+    """All-time status histogram — mirrors MCPHandlers.wl_counts's bucket
+    logic exactly (same TaskStatus.ALL buckets, zero buckets dropped, no
+    window) so the Allocation totals row never drifts from wl_counts.
+    """
+    counts: Dict[str, int] = {s: 0 for s in TaskStatus.ALL}
+    total = 0
+    for t in all_tasks:
+        if t.status not in counts:
+            continue
+        counts[t.status] += 1
+        total += 1
+    return {"total": total, "counts": {k: v for k, v in counts.items() if v > 0}}
+
+
+def _render_allocation_panel(
+    lane_rows: List[Dict[str, Any]],
+    author_rows: List[Dict[str, Any]],
+    totals: Dict[str, Any],
+    *,
+    scope: str,
+    window_days: int,
+) -> str:
+    """wl-106: stacked filed-vs-closed per lane and per author, plus an
+    all-time totals row reconciling with wl_counts."""
+    scope_path = scope or "all"
+    selector = "".join(
+        f"<a href='/admin/overview/{_esc(scope_path)}?days={d}' "
+        f"class='pulse-alloc-seg{' pulse-alloc-seg--on' if d == window_days else ''}'>{d}d</a>"
+        for d in _ALLOCATION_WINDOWS
+    )
+
+    def _table(rows: List[Dict[str, Any]], key: str, empty_msg: str) -> str:
+        if not rows:
+            return f"<div class='pulse-empty'>{empty_msg}</div>"
+        head = (
+            "<div class='pulse-alloc-hd'>"
+            "<span></span><span>filed</span><span>closed</span>"
+            "</div>"
+        )
+        body = "".join(
+            "<div class='pulse-alloc-row'>"
+            f"<span class='pulse-alloc-name'>{_esc(r[key])}</span>"
+            f"<span class='pulse-alloc-n pulse-alloc-n--filed'>{r['filed']}</span>"
+            f"<span class='pulse-alloc-n pulse-alloc-n--closed'>{r['closed']}</span>"
+            "</div>"
+            for r in rows
+        )
+        return f"<div class='pulse-side-rows'>{head}{body}</div>"
+
+    lane_html = _table(lane_rows, "lane", "No lane:* labels filed or closed in this window.")
+    author_html = _table(author_rows, "author", "No signed comments in this window.")
+
+    totals_counts = totals["counts"]
+    totals_row = " · ".join(
+        f"{_STATUS_LABELS.get(s, s)} {totals_counts.get(s, 0)}"
+        for s in TaskStatus.ALL if totals_counts.get(s, 0)
+    ) or "empty store"
+
+    return (
+        f"<div class='pulse-alloc-selector' data-testid='allocation-window'>{selector}</div>"
+        "<div class='pulse-alloc-section'>"
+        "<div class='pulse-alloc-label'>By lane</div>" + lane_html + "</div>"
+        "<div class='pulse-alloc-section'>"
+        "<div class='pulse-alloc-label'>By author</div>" + author_html + "</div>"
+        "<div class='pulse-alloc-totals'>"
+        f"<span class='pulse-alloc-totals-label'>All-time totals &Sigma; {totals['total']} "
+        f"(reconciles with wl_counts)</span>"
+        f"<span class='pulse-alloc-totals-row'>{_esc(totals_row)}</span>"
+        "</div>"
+    )
+
+
 # wl-86: PROTOCOL.md §4 — in-flight tickets with no update in over 90 minutes
 # count as stalled; the Attention panel surfaces them alongside blocked and
 # aging backlog work.
@@ -2604,10 +2769,12 @@ def _pulse_layout_js(scope: str) -> str:
     return script.replace("__SCOPE__", (scope or "all").replace("'", ""))
 
 
-def _render_pulse_page(scope: str = "") -> str:
+def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
     """Live metrics strip — 'what's happening in the in-scope stores right now'.
 
-    Auto-refreshes every 6s. Dark, monospace, neon-accented. No user input.
+    Auto-refreshes every 6s. Dark, monospace, neon-accented. No user input
+    besides the Allocation panel's window selector (wl-106; ?days= query
+    param on this same route).
     """
     all_tasks = _merged_scope_tasks_for_filters(scope)
 
@@ -2710,6 +2877,16 @@ def _render_pulse_page(scope: str = "") -> str:
     # wl-100: forward-looking queue depth per lane:* label.
     lane_rows = _lane_lens_rows(all_tasks)
     lanelens_html = _render_lane_lens_panel(lane_rows)
+    # wl-106: filed-vs-closed per lane/author over a selectable window, plus
+    # an all-time totals row reconciling with wl_counts.
+    alloc_since = now - timedelta(days=window_days)
+    alloc_lane_rows = _allocation_lane_rows(all_tasks, alloc_since)
+    alloc_author_rows = _allocation_author_rows(scope, alloc_since)
+    alloc_totals = _status_totals(all_tasks)
+    allocation_html = _render_allocation_panel(
+        alloc_lane_rows, alloc_author_rows, alloc_totals,
+        scope=scope, window_days=window_days,
+    )
 
     # Metrics strip
     avg_inflight_age = ""
@@ -2890,6 +3067,16 @@ def _render_pulse_page(scope: str = "") -> str:
               {_PANEL_CONTROLS}
             </div>
             {lanelens_html}
+          </div>
+
+          <div class='pulse-panel' data-panel-id='allocation' data-default-col='main'>
+            <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
+              <span class='pulse-panel-title'>Allocation · {window_days}d</span>
+              <span class='pulse-panel-meta'>{len(alloc_lane_rows)} lane{'' if len(alloc_lane_rows) == 1 else 's'} · {len(alloc_author_rows)} author{'' if len(alloc_author_rows) == 1 else 's'}</span>
+              {_PANEL_CONTROLS}
+            </div>
+            {allocation_html}
           </div>
 
           <div class='pulse-panel' data-panel-id='attention' data-default-col='side'>
@@ -3090,6 +3277,33 @@ def _render_pulse_page(scope: str = "") -> str:
       .pulse-lane-n--gated {{ color:#f59e0b; }}
       .pulse-lane-n--inflight {{ color:#f97316; }}
       .pulse-lane-n--zero {{ color:var(--dim); font-weight:400; }}
+
+      /* wl-106: allocation view — filed-vs-closed per lane/author + totals */
+      .pulse-alloc-selector {{ display:flex; gap:6px; margin-bottom:10px; }}
+      .pulse-alloc-seg {{ font-size:10px; font-weight:700; letter-spacing:0.05em;
+        color:var(--dim); text-decoration:none; padding:2px 8px; border:1px solid var(--border);
+        border-radius:3px; }}
+      .pulse-alloc-seg:hover {{ color:var(--fg); }}
+      .pulse-alloc-seg--on {{ color:var(--fg); border-color:var(--neon); background:rgba(232,98,44,0.08); }}
+      .pulse-alloc-section {{ margin-bottom:12px; }}
+      .pulse-alloc-label {{ font-size:10px; text-transform:uppercase; letter-spacing:0.1em;
+        color:var(--dim); font-weight:600; margin-bottom:6px; }}
+      .pulse-alloc-hd, .pulse-alloc-row {{ display:grid;
+        grid-template-columns:minmax(0, 1fr) 52px 52px; gap:8px;
+        align-items:baseline; padding:3px 6px; font-size:11px; }}
+      .pulse-alloc-hd {{ font-size:9px; text-transform:uppercase; letter-spacing:0.08em;
+        color:var(--dim); padding-bottom:5px; border-bottom:1px dashed var(--border); }}
+      .pulse-alloc-hd span, .pulse-alloc-n {{ text-align:right; }}
+      .pulse-alloc-hd span:first-child {{ text-align:left; }}
+      .pulse-alloc-name {{ font-weight:600; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }}
+      .pulse-alloc-n {{ font-variant-numeric:tabular-nums; font-weight:700; }}
+      .pulse-alloc-n--closed {{ color:#4caf7d; }}
+      .pulse-alloc-totals {{ display:flex; flex-direction:column; gap:3px;
+        border-top:1px dashed var(--border); padding-top:8px; font-size:11px; }}
+      .pulse-alloc-totals-label {{ color:var(--dim); font-size:9px; text-transform:uppercase;
+        letter-spacing:0.08em; }}
+      .pulse-alloc-totals-row {{ font-variant-numeric:tabular-nums; }}
 
       /* wl-89: breakdown panel — status + priority bars side by side */
       .pulse-breakdown {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
@@ -3335,18 +3549,22 @@ def index():
 
 @router.get("/admin/overview", response_class=HTMLResponse)
 @router.get("/admin/overview/{scope}", response_class=HTMLResponse)
-def ops_overview(scope: str = "all") -> Any:
+def ops_overview(scope: str = "all", days: int = 14) -> Any:
     """WorkLane landing — the store visually interpreted (wl-85):
     live metrics on top, breakdown charts below, everything filtered to the
     chosen scope (All or one project store, same tabs as Board/Table).
+
+    wl-106: ``days`` selects the Allocation panel's window (7/14/30); any
+    other value falls back to the 14d default rather than erroring.
     """
     scope = (scope or "all").strip().lower()
     if scope != "all" and get_product(scope) is None:
         raise HTTPException(status_code=404, detail="Unknown overview scope")
     prod = "" if scope == "all" else scope
+    window_days = days if days in _ALLOCATION_WINDOWS else 14
     # wl-89: one themed surface — the analytics cards live inside the Pulse
     # grid now; no separate cockpit section below.
-    body = _render_pulse_page(prod) + _task_server_extra_css()
+    body = _render_pulse_page(prod, window_days) + _task_server_extra_css()
     return _task_page(
         "Overview", body, nav_active="overview", page_scope=prod
     )
