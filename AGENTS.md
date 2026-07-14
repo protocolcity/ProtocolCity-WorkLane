@@ -2,6 +2,8 @@
 
 WorkLane (WL) is a **standalone local-first ticketing product**. It is independent of any host repo; the protocol makes no assumptions about the host.
 
+This file is the repo's canonical law (ProtocolCity Charter §3 vendor-pointer rule): `CLAUDE.md` (`@AGENTS.md`) and `GROK.md` (symlink) are pointers to it — one law, every vendor reads it. **The normative process rules live in [PROTOCOL.md](PROTOCOL.md) — nothing in this file overrides it.**
+
 Read this file when:
 
 - You've scoped into `worklane/` and need to know what the folder is.
@@ -34,4 +36,5 @@ WL ships Python and uses FastAPI. When writing WL code:
 
 ## Host-specific instructions
 
-Each host that adopts WL owns its own agent-instructions file (AGENTS.md / CLAUDE.md) and repo docs. Host rules (server management, runtime tiers, supported platforms, etc.) live there, not here. This file is about WL the product — not about what a user of any particular host sees. When working inside a host repo, read that repo's own agent instructions first.
+Each host that adopts WL owns its own AGENTS.md and repo docs (vendor files like CLAUDE.md are pointers to it). Host rules (server management, runtime tiers, supported platforms, etc.) live there, not here. This file is about WL the product — not about what a user of any particular host sees. When working inside a host repo, read that repo's own agent instructions first.
+

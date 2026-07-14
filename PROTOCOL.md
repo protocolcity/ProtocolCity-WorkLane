@@ -236,13 +236,15 @@ safety rules. All four items land **before the lane's first ticket**:
    commit (the existing "new lane, new row" rule).
 2. **Entry file in every workdir** — the tool's *native auto-loaded
    instruction file* must exist at the root of every repo the lane operates
-   in: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex CLI, Cursor — the
-   cross-tool standard), `GROK.md` (Grok CLI; symlink to `AGENTS.md` is
-   fine), `.cursor/rules/*.mdc` (Cursor, when repo rules are preferred over
-   `AGENTS.md`). Written as a **thin router** — identity, pointer to the §6
-   profile, that repo's safety rules — never duplicated normative content;
-   PROTOCOL.md stays the single source. House pattern: a host's
-   `.cursor/rules/<host>.mdc` (or thin `AGENTS.md` router at repo root).
+   in, per the **vendor-pointer rule** (ProtocolCity Charter §3, adopted
+   2026-07-13): `AGENTS.md` is the single canonical law file (auto-loaded
+   by Codex CLI and Cursor — the cross-tool standard) and carries identity
+   lookup, the pointer to the §6 profile, and that repo's safety rules —
+   never duplicated normative content; PROTOCOL.md stays the single source.
+   Vendor-specific files are pointers, never content: `CLAUDE.md`
+   containing only `@AGENTS.md` (Claude Code), `GROK.md` as a symlink to
+   `AGENTS.md` (Grok CLI), `.cursor/rules/*.mdc` as a thin pointer when
+   Cursor repo rules are preferred over `AGENTS.md`.
 3. **Packaged run form** — a dispatched (headless) lane ships its prompt in
    the host repo (`ops/tasks/<lane>/prompt.md`) and the prompt states that
    PROTOCOL.md wins on conflict (house pattern: host
@@ -330,13 +332,14 @@ items) once the project gets its own dispatched agent lane.
    for a project with no dispatched lane yet; `area:*`/`sys:*` stay
    project-specific conventions the first agent working that backlog
    establishes.
-5. **CLAUDE.md pointer** — add a short "Ticketing" section (template in
+5. **AGENTS.md section** — add a short "Ticketing" section (template in
    [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)) to the project's
-   own `CLAUDE.md`/`AGENTS.md` naming the slug and reminding agents to pass
+   own `AGENTS.md` (the canonical law file — vendor files like `CLAUDE.md`
+   point to it) naming the slug and reminding agents to pass
    `project=<slug>` explicitly on every WL call — required, not optional,
    once more than one project store exists (no single call may rely on
    `WL_PRODUCT`/`WL_DEFAULT_PRODUCT` defaulting to the right one). See the
-   cross-project rule in `~/Developer/CLAUDE.md` for a worked multi-project
+   cross-project rule in `~/Developer/AGENTS.md` for a worked multi-project
    example.
 6. **UI wiring is automatic** — `discover_products()` re-scans
    `local/data/*.db` on every request (no restart), so Board/Table's

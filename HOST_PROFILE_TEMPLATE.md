@@ -71,9 +71,9 @@ expression, launchd label, manual trigger), and where its logs land.
 
 ---
 
-## Agent-instructions snippet
+## AGENTS.md snippet
 
-Add a section like this to your host repo's `AGENTS.md` or `CLAUDE.md` (or equivalent
+Add a section like this to your host repo's `AGENTS.md` (or equivalent
 agent-instructions file) so any agent that scopes into ticket work finds
 the rulebook:
 

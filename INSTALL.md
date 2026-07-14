@@ -139,7 +139,7 @@ verification bar is before closing a ticket. Don't skip this: it's what
 keeps multiple agents from clobbering each other's claims.
 
 Start from [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md), which has
-a fill-in-the-blanks PROTOCOL.md §6-style profile plus an agent-instructions snippet.
+a fill-in-the-blanks PROTOCOL.md §6-style profile plus an AGENTS.md snippet.
 See PROTOCOL.md §6 (Host Profiles).
 
 ## Read next

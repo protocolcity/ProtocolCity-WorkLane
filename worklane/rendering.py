@@ -35,7 +35,7 @@ def _esc(s: str) -> str:
 # dependency just to render the repo's own truth files) — a small line-based
 # block parser plus a regex inline pass. Not CommonMark-complete: nested list
 # indentation is flattened to one level, no images, no reference-style links.
-# Sized to what PROTOCOL.md/TRUTH.md/README.md/CLAUDE.md actually use.
+# Sized to what PROTOCOL.md/TRUTH.md/README.md/AGENTS.md actually use.
 
 _MD_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _MD_HR_RE = re.compile(r"^(-{3,}|\*{3,})\s*$")
@@ -61,7 +61,7 @@ def _md_inline(text: str) -> str:
         escaped,
     )
     # Non-greedy `.+?` (not a `[^*]+` class) so bold spans that wrap a nested
-    # italic (`**WL *is* right now:**`, seen in README.md/CLAUDE.md) still
+    # italic (`**WL *is* right now:**`, seen in README.md/AGENTS.md) still
     # find their real closing `**` instead of failing on the inner `*`.
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
     # `_` emphasis follows CommonMark's intraword rule (word char must not sit

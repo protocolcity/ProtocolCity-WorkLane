@@ -297,7 +297,7 @@ def build_dispatch_prompt(tickets: Iterable[Task]) -> str:
 
     Output is the literal text the developer pastes into a fresh Claude
     Code session — e.g. ``"work SEO-164, SEO-180"``. The session
-    instructions in :doc:`CLAUDE.md` already define the per-ticket
+    instructions in :doc:`AGENTS.md` already define the per-ticket
     protocol, so the prompt only needs to name the tickets.
     """
     ids = [t.ext_id or t.id for t in tickets if (t.ext_id or t.id)]
