@@ -518,7 +518,7 @@ def _task_page(
         <a href="{_esc(_workforce_url)}" target="_blank" rel="noopener"
            title="WorkForce — the machine's worker/shift/law board (separate port)"
            style="text-decoration:none; color:var(--dim); font-size:12px; padding:4px 6px;">WorkForce</a>''' if _workforce_url else ''}
-        <a href="/admin/docs" title="Docs — PROCESS/TRUTH/README + per-agent instruction files rendered in-app"
+        <a href="/admin/docs" title="Docs — PROCESS/ARCHITECTURE/README + per-agent instruction files rendered in-app"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'docs' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#128220;</a>
         <a href="/admin/settings" title="Settings — projects, prefixes, numbering, service"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'settings' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#9881;</a>
@@ -4442,10 +4442,10 @@ def admin_settings() -> str:
 
 # Docs surface (wl-27): read-only render of the repo's own truth files.
 # PROTOCOL.md/README.md/CLAUDE.md live at the repo root and ship in every
-# export; TRUTH.md is host-boundary internal content, deliberately excluded
-# from the WorkLane public export (scripts/export_worklane.sh) — it lives in
-# _OPTIONAL_DOCS below so the tab disappears rather than always rendering a
-# "could not read" error on a public install (wl-125).
+# export; ARCHITECTURE.md is host-boundary internal content, deliberately
+# excluded from the WorkLane public export (scripts/export_worklane.sh) — it
+# lives in _OPTIONAL_DOCS below so the tab disappears rather than always
+# rendering a "could not read" error on a public install (wl-125).
 _DOCS: List[Tuple[str, str, str]] = [
     ("process", "PROTOCOL.md", os.path.join(_ROOT, "PROTOCOL.md")),
     ("readme", "README.md", os.path.join(_ROOT, "README.md")),
@@ -4453,7 +4453,7 @@ _DOCS: List[Tuple[str, str, str]] = [
 ]
 
 _OPTIONAL_DOCS: List[Tuple[str, str, str]] = [
-    ("truth", "TRUTH.md", os.path.join(_ROOT, "worklane", "TRUTH.md")),
+    ("truth", "ARCHITECTURE.md", os.path.join(_ROOT, "worklane", "ARCHITECTURE.md")),
 ]
 
 # Per-agent instruction files. Lane operating rules are normative in

@@ -35,7 +35,7 @@ def _esc(s: str) -> str:
 # dependency just to render the repo's own truth files) — a small line-based
 # block parser plus a regex inline pass. Not CommonMark-complete: nested list
 # indentation is flattened to one level, no images, no reference-style links.
-# Sized to what PROTOCOL.md/TRUTH.md/README.md/AGENTS.md actually use.
+# Sized to what PROTOCOL.md/ARCHITECTURE.md/README.md/AGENTS.md actually use.
 
 _MD_HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _MD_HR_RE = re.compile(r"^(-{3,}|\*{3,})\s*$")
