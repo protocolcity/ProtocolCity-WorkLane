@@ -215,32 +215,37 @@ _SCOPE_NAV_MAX_INLINE = 6
 
 
 def _render_scope_nav(
-    items: List[Tuple[str, str, bool, str]],
+    items: List[Tuple[str, str, bool, str, str]],
 ) -> str:
-    """Render a project-scope switcher from ``(href, display, is_active, title)``
-    tuples (items[0] is always "All"). Beyond :data:`_SCOPE_NAV_MAX_INLINE` pills the
-    rest collapse into a keyboard/click-accessible "More" disclosure so the row stays
-    bounded at any store count instead of overflowing or endlessly scrolling
-    (wl-117 — the flat tab row broke past ~6 stores, had no answer for 20)."""
+    """Render a project-scope switcher from ``(href, display, is_active, title, slug)``
+    tuples (items[0] is always "All", slug "all"). Beyond :data:`_SCOPE_NAV_MAX_INLINE`
+    pills the rest collapse into a keyboard/click-accessible "More" disclosure so the
+    row stays bounded at any store count instead of overflowing or endlessly scrolling
+    (wl-117 — the flat tab row broke past ~6 stores, had no answer for 20). Each pill
+    carries a hidden count badge (``data-scope-badge``) that tsFetchScopeNavCounts()
+    populates client-side from the batch counts endpoint (wl-120)."""
     inline, overflow = items[: _SCOPE_NAV_MAX_INLINE + 1], items[_SCOPE_NAV_MAX_INLINE + 1 :]
 
-    def _pill(href: str, display: str, on: bool, title: str) -> str:
+    def _badge(slug: str) -> str:
+        return f"<span class='ts-seg-badge' data-scope-badge='{_esc(slug)}' hidden></span>"
+
+    def _pill(href: str, display: str, on: bool, title: str, slug: str) -> str:
         cls = "ts-seg ts-seg--on" if on else "ts-seg"
         ac = ' aria-current="page"' if on else ""
         return (
             f"<a href='{_esc(href)}' class='{cls}' title='{_esc(title)}'{ac}>"
-            f"{_seg_label_html(display)}</a>"
+            f"{_seg_label_html(display)}{_badge(slug)}</a>"
         )
 
-    html = ["".join(_pill(h, d, on, t) for h, d, on, t in inline)]
+    html = ["".join(_pill(h, d, on, t, s) for h, d, on, t, s in inline)]
     if overflow:
         active = next((it for it in overflow if it[2]), None)
         summary_cls = "ts-seg ts-seg-more" + (" ts-seg--on" if active else "")
         summary_label = _seg_label_html(active[1]) if active else "<span class='ts-seg-label'><span class='ts-seg-head'>More</span></span>"
         rows = "".join(
             f"<a href='{_esc(h)}' class='ts-seg-more-item{' ts-seg-more-item--on' if on else ''}' "
-            f"title='{_esc(t)}'>{_esc(d)}</a>"
-            for h, d, on, t in overflow
+            f"title='{_esc(t)}'>{_esc(d)}{_badge(s)}</a>"
+            for h, d, on, t, s in overflow
         )
         html.append(
             f"<details class='ts-seg-more-wrap'><summary class='{summary_cls}'>"
@@ -269,12 +274,13 @@ def _render_tickets_surface_nav(
         q = _wq_query_for_view(view, status, label, priority, list_path=dest)
         return f"{dest}?{q}"
 
-    items: List[Tuple[str, str, bool, str]] = [
+    items: List[Tuple[str, str, bool, str, str]] = [
         (
             _href(TICKETS_APP_ALL),
             "All",
             cur == TICKETS_APP_ALL.rstrip("/"),
             "Every ticket across all project stores",
+            "all",
         )
     ]
     for spec in discover_products():
@@ -285,6 +291,7 @@ def _render_tickets_surface_nav(
                 spec.display,
                 cur == dest.rstrip("/"),
                 f"{spec.display} tickets ({spec.db_path.name})",
+                spec.slug,
             )
         )
     return _render_scope_nav(items)
@@ -293,12 +300,13 @@ def _render_tickets_surface_nav(
 def _render_overview_scope_nav(scope: str) -> str:
     """Scope switcher for the Overview landing — same scopes as the Board/Table
     (All + every discovered project store), each filtering the whole page."""
-    items: List[Tuple[str, str, bool, str]] = [
+    items: List[Tuple[str, str, bool, str, str]] = [
         (
             "/admin/overview/all",
             "All",
             (scope or "") == "all" or not scope,
             "Every ticket across all project stores",
+            "all",
         )
     ]
     for spec in discover_products():
@@ -308,6 +316,7 @@ def _render_overview_scope_nav(scope: str) -> str:
                 spec.display,
                 (scope or "") == spec.slug,
                 f"Overview for the {spec.display} project ({spec.db_path.name})",
+                spec.slug,
             )
         )
     return _render_scope_nav(items)
@@ -952,6 +961,30 @@ def _task_page(
     color: var(--fg);
     font-weight: 600;
     background: color-mix(in srgb, var(--bg2) 94%, var(--neon, #e8622c) 8%);
+  }}
+  /* Per-scope ready/stalled counts (wl-120): compact badges next to each
+     pill and "More" row, populated client-side from the batch counts
+     endpoint so the switcher stays a single request regardless of store count. */
+  .ts-seg-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 6px;
+  }}
+  .ts-seg-count {{
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 5px;
+    border-radius: 999px;
+  }}
+  .ts-seg-count--ready {{
+    background: color-mix(in srgb, var(--neon) 12%, transparent);
+    color: var(--neon, #e8622c);
+  }}
+  .ts-seg-count--stalled {{
+    background: rgba(255,59,59,.15);
+    color: var(--red, #ff3b3b);
   }}
   /* Main content — full-bleed fluid (wl-87): every page uses the real
      viewport, like the board always did. No static max-width clamp;
@@ -6418,6 +6451,35 @@ def api_dev_board_summary(scope: str = ""):
     })
 
 
+@router.get("/api/dev/board-summary/all-scopes")
+def api_dev_board_summary_all_scopes():
+    """Batch counterpart to /api/dev/board-summary (wl-120): ready/in-flight/
+    stalled counts for every discovered product store plus "all", in one call
+    — the scope switcher polls this once instead of one request per pill.
+    """
+    now = datetime.now(timezone.utc)
+    stale_cutoff = now - timedelta(minutes=90)
+
+    def _counts(prod: str) -> Dict[str, int]:
+        ready_count = _merged_ready_count(prod)
+        in_flight_tasks = _merged_in_flight_tasks(prod)
+        stalled_count = 0
+        for t in in_flight_tasks:
+            dt = _parse_task_date_utc(t.updated_at)
+            if dt is not None and dt < stale_cutoff:
+                stalled_count += 1
+        return {
+            "ready_count": ready_count,
+            "in_flight_count": len(in_flight_tasks),
+            "stalled_count": stalled_count,
+        }
+
+    scopes: Dict[str, Dict[str, int]] = {"all": _counts("")}
+    for spec in discover_products():
+        scopes[spec.slug] = _counts(spec.slug)
+    return JSONResponse({"scopes": scopes, "stale_minutes": 90})
+
+
 @router.get("/api/dev/attention")
 def api_dev_attention():
     """wl-135: the founder-attention feed — everything blocked on the
@@ -6672,6 +6734,7 @@ def _task_server_extra_js() -> str:
     }
     tsFetchBoardSummary();
     tsFetchAttentionSummary();
+    tsFetchScopeNavCounts();
   };
 
   /* Tick elapsed timers every 30s */
@@ -6735,6 +6798,42 @@ def _task_server_extra_js() -> str:
     } catch (e) { /* silent */ }
   }
 
+  /* wl-120: per-scope ready/stalled badges in the scope switcher pills
+     ("All" + each discovered store, plus overflow "More" rows) — one batch
+     request populates every data-scope-badge element on the page. */
+  async function tsFetchScopeNavCounts() {
+    var badges = document.querySelectorAll('[data-scope-badge]');
+    if (!badges.length) return;
+    try {
+      var resp = await fetch('/api/dev/board-summary/all-scopes', {
+        headers: { 'Accept': 'application/json' }
+      });
+      var j = await resp.json();
+      var scopes = j.scopes || {};
+      for (var i = 0; i < badges.length; i++) {
+        var el = badges[i];
+        var slug = el.getAttribute('data-scope-badge');
+        var s = scopes[slug];
+        if (!s) { el.hidden = true; continue; }
+        var parts = [];
+        if (s.ready_count > 0) {
+          parts.push('<span class="ts-seg-count ts-seg-count--ready" title="' +
+            s.ready_count + ' ready">' + s.ready_count + '</span>');
+        }
+        if (s.stalled_count > 0) {
+          parts.push('<span class="ts-seg-count ts-seg-count--stalled" title="' +
+            s.stalled_count + ' stalled">' + s.stalled_count + '</span>');
+        }
+        if (parts.length) {
+          el.innerHTML = parts.join('');
+          el.hidden = false;
+        } else {
+          el.hidden = true;
+        }
+      }
+    } catch (e) { /* silent */ }
+  }
+
   /* wl-135: founder-attention chip — always all-store, unlike the
      scope-aware pills above (no ?scope= — same "all stores" convention as
      board-summary's scope=all). */
@@ -6760,6 +6859,7 @@ def _task_server_extra_js() -> str:
     tsUpdateLastUpdated();
     tsFetchBoardSummary();
     tsFetchAttentionSummary();
+    tsFetchScopeNavCounts();
     /* Snapshot initial statuses from server-rendered cards */
     var cards = document.querySelectorAll('.tb-card[data-task-id]');
     for (var i = 0; i < cards.length; i++) {
