@@ -88,10 +88,10 @@ _BOARD_COLUMNS: List[str] = [
     TaskStatus.DONE,
 ]
 
-# Byline icon for any worker identity. Identities come from the store's
+# Byline icon for any claim-owner identity. Identities come from the store's
 # signed comments and render verbatim — no baked-in agent roster (wl-84):
-# which agents exist is the host deployment's business, not the product's.
-WORKER_BYLINE_ICON = "·"
+# which identities exist is the host deployment's business, not the product's.
+OWNER_BYLINE_ICON = "·"
 
 
 # ── Badge / label helpers ─────────────────────────────────────────────────
@@ -697,7 +697,7 @@ def _render_work_queue_filters(
 
 # ── Board rendering ───────────────────────────────────────────────────────
 
-def _detect_worker(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
+def _detect_owner(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
     # Newest Owner: marker wins, then the signed latest-comment author
     # (PROTOCOL.md §3.8: any stable signed id is an identity) — rendered
     # verbatim, no roster (wl-84). `owner` already comes from _extract_owner,
@@ -707,7 +707,7 @@ def _detect_worker(preview: Dict[str, str]) -> Optional[Tuple[str, str]]:
     for candidate in (preview.get("owner") or "", preview.get("author") or ""):
         candidate = candidate.strip()
         if candidate:
-            return (WORKER_BYLINE_ICON, candidate)
+            return (OWNER_BYLINE_ICON, candidate)
     return None
 
 
@@ -734,7 +734,7 @@ def _parse_iso_ts(s: str) -> Optional[datetime]:
         return None
 
 
-def _worker_claim_html(
+def _owner_claim_html(
     t: Task, preview: Dict[str, str], *, now: Optional[datetime] = None
 ) -> str:
     """Owner byline for a ticket, plus claim age + staleness hint when the
@@ -742,10 +742,10 @@ def _worker_claim_html(
     Table rows so the two views never drift."""
     if not preview:
         return ""
-    worker = _detect_worker(preview)
-    if not worker:
+    owner = _detect_owner(preview)
+    if not owner:
         return ""
-    icon, label_text = worker
+    icon, label_text = owner
     parts = [f"<span>{icon}</span> <span>{_esc(label_text)}</span>"]
     if t.status in _INFLIGHT_STATUSES:
         claimed_at = (preview.get("owner_claimed_at") or "").strip()
@@ -762,7 +762,7 @@ def _worker_claim_html(
                 if (now_ - ts) >= timedelta(minutes=_claim_stale_minutes()):
                     parts.append(
                         "<span class='tb-card-stale' "
-                        "title='Claimed, no comment since — possible dead worker'>stale</span>"
+                        "title='Claimed, no comment since — stale claim.'>stale</span>"
                     )
     return "".join(parts)
 
@@ -827,8 +827,8 @@ def _render_task_card(
     # Byline on every column (wl-54): backlog reads as "responsible",
     # done reads as "worked by" — same signal, the newest identity on record.
     # in_progress/in_review also get claim age + staleness (wl-104).
-    claim_html = _worker_claim_html(t, preview)
-    worker_html = f"<div class='tb-card-worker'>{claim_html}</div>" if claim_html else ""
+    claim_html = _owner_claim_html(t, preview)
+    owner_html = f"<div class='tb-card-owner'>{claim_html}</div>" if claim_html else ""
     decision_html = ""
     # Any needs:* label reads as "waiting on somebody" — label vocabulary is
     # store data, so no specific label names are special-cased here (wl-84).
@@ -869,7 +869,7 @@ def _render_task_card(
         f"{_esc(t.title)}</a>"
         + decision_html
         + gate_html
-        + worker_html
+        + owner_html
         + meta_row
         + detail_html
         + "</article>"
@@ -1110,13 +1110,13 @@ def _board_styles() -> str:
                  font-size:var(--fs-xs); line-height:1.4; }
 .tb-card-title:hover { color:var(--neon); }
 /* Byline (wl-54): responsible/worked-by identity, shown on every column. */
-.tb-card-worker { display:flex; align-items:center; gap:4px; margin-top:4px;
+.tb-card-owner { display:flex; align-items:center; gap:4px; margin-top:4px;
                   font-family:var(--font-mono); font-size:10px;
                   color:var(--muted); letter-spacing:.03em; }
 /* Claim age (wl-104): dimmer than the identity it trails. */
 .tb-card-claim-age { color:var(--dim); }
 /* Staleness hint (wl-104): claimed, no comment since, past threshold —
-   a possible dead worker, not a process-state claim. */
+   a stale claim signal, not a process-state claim. */
 .tb-card-stale { color:#f59e0b; border:1px solid #f59e0b; border-radius:3px;
                  padding:0 4px; font-size:9px; text-transform:uppercase;
                  letter-spacing:.04em; }

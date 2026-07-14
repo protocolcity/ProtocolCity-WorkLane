@@ -82,7 +82,7 @@ from worklane.board import (
     _board_styles,
     _BOARD_COLUMNS,
     _client_js,
-    _detect_worker,
+    _detect_owner,
     _label_tier,
     _OWNER_LINE_RE,
     get_ops_ticket_tracker,
@@ -106,7 +106,7 @@ from worklane.board import (
     _render_task_board,
     _render_task_card,
     _render_work_queue_filters,
-    _worker_claim_html,
+    _owner_claim_html,
     _STATUS_LABELS,
     _STATUS_TIERS,
     TICKETS_APP_ALL,
@@ -2271,12 +2271,12 @@ def _render_active_agents_panel(
     Start: timestamp parser needed.
     """
     if not inflight_tasks:
-        return "<div class='pulse-empty'>⚙ No agents active.</div>"
+        return "<div class='pulse-empty'>⚙ No claims in flight.</div>"
     rows = ""
     for t in inflight_tasks:
         preview = previews.get(t.id) or {}
-        worker = _detect_worker(preview) if preview else None
-        icon, label = worker if worker else ("●", "unknown")
+        owner = _detect_owner(preview) if preview else None
+        icon, label = owner if owner else ("●", "unknown")
         ts = preview.get("created_at") or t.updated_at or t.created_at
         age = _pulse_relative_time(ts, now=now)
         rows += (
@@ -3495,7 +3495,7 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
           <div class='pulse-panel' data-panel-id='agents' data-default-col='side'>
             <div class='pulse-panel-head'>
               {_PANEL_DRAG_HANDLE}
-              <span class='pulse-panel-title'>Active agents</span>
+              <span class='pulse-panel-title'>In-flight claims</span>
               {_PANEL_CONTROLS}
             </div>
             {agents_html}
@@ -3805,7 +3805,7 @@ def _render_task_table(
         "<th class='tt-c-no' data-tt-key='no'>No.</th>"
         "<th class='tt-c-ticket' data-tt-key='ticket'>Ticket</th>"
         "<th class='tt-c-labels' data-tt-key='labels'>Labels</th>"
-        "<th class='tt-c-worker' data-tt-key='worker'>Worker</th>"
+        "<th class='tt-c-owner' data-tt-key='owner'>Owner</th>"
         "<th class='tt-c-status' data-tt-key='status'>Status</th>"
         "<th class='tt-c-pri' data-tt-key='pri'>Pri.</th>"
         "</tr></thead>"
@@ -3829,9 +3829,9 @@ def _render_task_row(
         if t.updated_at else "<span class='dim'>—</span>"
     )
     labels = _scoped_labels(t.labels, scope_product)
-    # Worker column (wl-104): same claim identity/age/staleness as Board cards.
-    claim_html = _worker_claim_html(t, preview or {})
-    worker_html = claim_html or "<span class='dim'>—</span>"
+    # Owner column (wl-104): same claim identity/age/staleness as Board cards.
+    claim_html = _owner_claim_html(t, preview or {})
+    owner_html = claim_html or "<span class='dim'>—</span>"
     # Sort keys as row data attributes so header sorting never has to parse
     # rendered cell markup (badges, relative-time spans, label chips).
     sort_attrs = (
@@ -3848,7 +3848,7 @@ def _render_task_row(
         f"<td class='tt-c-no'><span class='tb-card-id'>{_esc(t.id)}</span>{ext}</td>"
         f"<td class='tt-c-ticket'><a href='{href}'>{_esc(t.title)}</a></td>"
         f"<td class='tt-c-labels'>{_render_labels(labels)}</td>"
-        f"<td class='tt-c-worker'>{worker_html}</td>"
+        f"<td class='tt-c-owner'>{owner_html}</td>"
         f"<td class='tt-c-status'>{_render_status_badge(t.status)}</td>"
         f"<td class='tt-c-pri'>{_render_priority_badge(int(t.priority or 3))}</td>"
         "</tr>"
@@ -6973,9 +6973,9 @@ def _task_server_extra_css() -> str:
   .ts-timetable-table .tt-c-ticket a:hover { color: var(--accent); }
   .ts-timetable-table .tt-c-labels { font-family: var(--font-mono); color: var(--dim); }
   .ts-timetable-table .tt-c-labels .label-chip { color: inherit; text-decoration-color: var(--border); }
-  /* Worker column (wl-104): same byline/claim-age/stale markup as Board cards. */
-  .ts-timetable-table th.tt-c-worker, .ts-timetable-table td.tt-c-worker { width: 170px; }
-  .ts-timetable-table .tt-c-worker {
+  /* Owner column (wl-104): same byline/claim-age/stale markup as Board cards. */
+  .ts-timetable-table th.tt-c-owner, .ts-timetable-table td.tt-c-owner { width: 170px; }
+  .ts-timetable-table .tt-c-owner {
     font-family: var(--font-mono); font-size: 10px; color: var(--muted);
     letter-spacing: .03em; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;

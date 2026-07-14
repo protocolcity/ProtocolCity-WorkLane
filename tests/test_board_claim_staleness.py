@@ -3,8 +3,8 @@
 The board byline (wl-54) already shows *who* claimed a ticket. This adds
 *when* (age since the winning Owner: marker's own timestamp, not just the
 latest comment) and a staleness hint when no comment has landed since that
-claim past a configurable threshold — signal for a possible dead worker,
-not a claim about process state.
+claim past a configurable threshold — signal for a stale claim, not a claim
+about process state.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from worklane.board import (
     _claim_stale_minutes,
     _extract_owner_claim,
     _render_task_card,
-    _worker_claim_html,
+    _owner_claim_html,
 )
 from worklane.trackers.protocol import Task, TaskStatus
 
@@ -45,7 +45,7 @@ class ExtractOwnerClaimTest(unittest.TestCase):
         )
 
 
-class WorkerClaimHtmlTest(unittest.TestCase):
+class OwnerClaimHtmlTest(unittest.TestCase):
     NOW = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
 
     def test_backlog_and_done_get_no_age_or_stale(self) -> None:
@@ -53,7 +53,7 @@ class WorkerClaimHtmlTest(unittest.TestCase):
         preview = {"owner": "grok", "author": "grok", "owner_claimed_at": old,
                    "created_at": old}
         for status in (TaskStatus.BACKLOG, TaskStatus.DONE):
-            html = _worker_claim_html(
+            html = _owner_claim_html(
                 Task(id="1", title="t", status=status), preview, now=self.NOW
             )
             self.assertIn("grok", html)
@@ -64,7 +64,7 @@ class WorkerClaimHtmlTest(unittest.TestCase):
         recent = (self.NOW - timedelta(minutes=5)).isoformat()
         preview = {"owner": "grok", "author": "grok", "owner_claimed_at": recent,
                    "created_at": recent}
-        html = _worker_claim_html(
+        html = _owner_claim_html(
             Task(id="1", title="t", status=TaskStatus.IN_PROGRESS),
             preview, now=self.NOW,
         )
@@ -75,26 +75,27 @@ class WorkerClaimHtmlTest(unittest.TestCase):
         old = (self.NOW - timedelta(minutes=120)).isoformat()
         preview = {"owner": "grok", "author": "grok", "owner_claimed_at": old,
                    "created_at": old}
-        html = _worker_claim_html(
+        html = _owner_claim_html(
             Task(id="1", title="t", status=TaskStatus.IN_REVIEW),
             preview, now=self.NOW,
         )
         self.assertIn("tb-card-stale", html)
+        self.assertIn("stale claim", html)
 
     def test_inflight_old_claim_with_activity_since_is_not_stale(self) -> None:
         old = (self.NOW - timedelta(minutes=120)).isoformat()
         newer = (self.NOW - timedelta(minutes=1)).isoformat()
         preview = {"owner": "grok", "author": "grok", "owner_claimed_at": old,
                    "created_at": newer}
-        html = _worker_claim_html(
+        html = _owner_claim_html(
             Task(id="1", title="t", status=TaskStatus.IN_PROGRESS),
             preview, now=self.NOW,
         )
         self.assertIn("tb-card-claim-age", html)
         self.assertNotIn("tb-card-stale", html)
 
-    def test_no_worker_no_html(self) -> None:
-        html = _worker_claim_html(
+    def test_no_owner_no_html(self) -> None:
+        html = _owner_claim_html(
             Task(id="1", title="t", status=TaskStatus.IN_PROGRESS),
             {"owner": "", "author": "", "created_at": ""}, now=self.NOW,
         )
@@ -127,7 +128,7 @@ class ClaimStaleMinutesTest(unittest.TestCase):
 class CardStaleBadgeTest(unittest.TestCase):
     def test_card_renders_stale_badge_for_dead_claim(self) -> None:
         # _render_task_card doesn't thread a `now` through to
-        # _worker_claim_html, so it resolves the real wall-clock — anchor
+        # _owner_claim_html, so it resolves the real wall-clock — anchor
         # the fixture to actual now rather than a fixed fictional date.
         old = (datetime.now(timezone.utc) - timedelta(minutes=200)).isoformat()
         task = Task(id="7", title="t", status=TaskStatus.IN_PROGRESS)

@@ -1,4 +1,4 @@
-"""wl-54: board card byline — worker identity on every column.
+"""wl-54: board card byline — owner identity on every column.
 
 The chip used to render only on in_progress cards, keyed off the latest
 comment author. Now the newest ``Owner:`` marker wins, signed-but-unknown
@@ -10,7 +10,7 @@ from __future__ import annotations
 import unittest
 
 from worklane.board import (
-    _detect_worker,
+    _detect_owner,
     _extract_owner,
     _render_task_card,
 )
@@ -41,18 +41,18 @@ class ExtractOwnerTest(unittest.TestCase):
         self.assertEqual(_extract_owner([_Comment("hi", "2026-07-01")]), "")
 
 
-class DetectWorkerTest(unittest.TestCase):
+class DetectOwnerTest(unittest.TestCase):
     """wl-84: every identity renders verbatim from store data — the byline
     carries no baked-in agent roster or per-agent decoration."""
 
     def test_owner_beats_latest_author(self) -> None:
-        got = _detect_worker(
+        got = _detect_owner(
             {"owner": "agent-a", "author": "agent-b", "body": "Completed:"}
         )
         self.assertEqual(got, ("·", "agent-a"))
 
     def test_signed_author_when_no_owner(self) -> None:
-        got = _detect_worker({"owner": "", "author": "agent-b", "body": ""})
+        got = _detect_owner({"owner": "", "author": "agent-b", "body": ""})
         self.assertEqual(got, ("·", "agent-b"))
 
     def test_body_text_alone_is_not_detected(self) -> None:
@@ -60,13 +60,13 @@ class DetectWorkerTest(unittest.TestCase):
         # scans every comment's full body for an Owner: line upstream of
         # this, so a bare Owner: line in `body` with no owner/author
         # resolved from that scan does not get re-parsed here.
-        got = _detect_worker(
+        got = _detect_owner(
             {"owner": "", "author": "", "body": "Owner: agent-c (model-x)\nPlan:"}
         )
         self.assertIsNone(got)
 
     def test_nothing_detected(self) -> None:
-        self.assertIsNone(_detect_worker({"owner": "", "author": "", "body": "hi"}))
+        self.assertIsNone(_detect_owner({"owner": "", "author": "", "body": "hi"}))
 
 
 class CardBylineTest(unittest.TestCase):
@@ -79,7 +79,7 @@ class CardBylineTest(unittest.TestCase):
     def test_byline_on_backlog_and_done(self) -> None:
         for status in (TaskStatus.BACKLOG, TaskStatus.DONE,
                        TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
-            self.assertIn("tb-card-worker", self._card(status), status)
+            self.assertIn("tb-card-owner", self._card(status), status)
 
 
 if __name__ == "__main__":
