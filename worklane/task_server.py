@@ -170,7 +170,13 @@ def _render_tickets_context_strip() -> str:
 # must default to "standalone" (wl-134 — flip the default in the export).
 _BRAND_MODE = os.environ.get("WL_BRAND", "city")
 _BRAND_NAME = "ProtocolCity — Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
-_BRAND_SUBTITLE = "powered by WorkLane" if _BRAND_MODE == "city" else ""
+# wl-130: WorkLane's ratified city-institution epithet (pc-21) — "the
+# work-order desk: every job filed, claimed, and signed" — doubles as the
+# first-run "what am I looking at" line for a fresh standalone install.
+_WORKLANE_EPITHET = "the work-order desk: every job filed, claimed, and signed"
+_BRAND_SUBTITLE = (
+    f"powered by WorkLane — {_WORKLANE_EPITHET}" if _BRAND_MODE == "city" else _WORKLANE_EPITHET
+)
 
 # ── Lightweight page wrapper ────────────────────────────────────────────
 # Mirrors the design tokens and card/badge CSS from the main app but skips
