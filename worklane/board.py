@@ -1012,12 +1012,21 @@ def _render_view_toggle(
     )
 
 
-def _render_comments(comments: List[TaskComment]) -> str:
+def _render_comments(
+    comments: List[TaskComment],
+    founder_id: str = "",
+    founder_alias: str = "",
+) -> str:
+    """Comment trail, newest first. wl-149: founder-signed entries render
+    the alias with the canonical id dimmed beside it (aliases are paint,
+    ids are identity — same signer treatment as the desk drawer, wl-148)."""
     if not comments:
         return "<p class='dim'>No comments yet.</p>"
     parts: List[str] = []
     for c in reversed(comments):
         author = _esc(c.author or "anon")
+        if founder_alias and (c.author or "") == founder_id:
+            author = f"{_esc(founder_alias)} <span class='dim'>({_esc(founder_id)})</span>"
         when = _esc(c.created_at[:19] if c.created_at else "")
         body = _esc(c.body).replace("\n", "<br/>")
         parts.append(

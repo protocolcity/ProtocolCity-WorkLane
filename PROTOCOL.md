@@ -283,6 +283,40 @@ real browser for days, because direct-call tests are blind to both:
   dashed ring segment painted as a full circle) means the browser resolves a
   click to a different element than the one the test dispatched on.
 
+### 5.5) Concurrent-edit safety — soft-lock + no-broadcast (added 2026-07-14, wl-159)
+
+Founder-ratified 2026-07-14 (a same-file concurrent-edit near-miss). ROOT-only
+checkouts share one working tree: cursor, grok, codex, **founder-terminal**
+sessions (the only ROOT-checkout lane with no per-lane CONTRACT.md), and any
+Claude CLI dispatch lane when working main-direct rather than in an isolated
+worktree. Two sessions can touch the same file before either commits; the
+pre-commit dirty-file guard (§5.1.6) catches *other* files, not same-file
+concurrent edits.
+
+Two disciplines, **mandatory for every ROOT-checkout lane including
+founder-terminal**:
+
+1. **Soft-lock before editing under an umbrella/grind ticket.** `wl_reserve`
+   (or the legacy `status … in_review` + Owner comment) the umbrella before you
+   start editing its files. Immediately before committing, re-check
+   `git rev-parse HEAD` against your dispatch-start HEAD; if it moved, a
+   concurrent writer landed — re-read the file and redo your edit rather than
+   committing over a stale read. If the moved HEAD does not overlap your
+   paths, you may proceed after confirming via `git diff <start>..HEAD --
+   <your-paths>` that your files are untouched.
+2. **Never broadcast exact coordinates.** Close-out and progress comments must
+   not publish the precise next-target `file:line`. That synchronizes two
+   independent grinders onto the same edit (the 2026-07-14 near-miss this
+   section codifies). Next-target notes are allowed only as ticket-level
+   pointers explicitly marked "reserve before working".
+
+Worktree-isolated runs (e.g. a Claude CLI dispatch lane's Phase worktrees) are
+already structurally isolated from ROOT uncommitted files — this rule still
+applies whenever those lanes work main-direct. Per-lane CONTRACT.md files
+(e.g. a host repo's `ops/tasks/*/CONTRACT.md`) may restate this for per-run
+loading; **this section is the one-owner canonical source** those
+restatements point at.
+
 ## 6) Host Profiles
 
 Every host that adopts WorkLane writes its own profile — the per-agent

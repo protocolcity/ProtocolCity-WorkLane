@@ -265,37 +265,41 @@ def _css() -> str:
     }
 
     /* ── Light theme — Dispatch "paper" (wl-34/wl-35) — default (wl-37) ── */
+    /* wl-149: the light theme IS the paper voice — the desk's palette
+       (cream desk, paper cards, blue verbs, stamp red reserved for brand
+       and danger) so the benches read as the same room's material. */
     :root, [data-theme="light"] {
-      --bg: #f1efe8;
-      --bg2: #faf9f4;
-      --bg3: #e6e3d8;
-      --fg: #211d17;
-      --muted: rgba(33,29,23,.68);
-      --dim: rgba(33,29,23,.45);
-      --neon: #d94f1e;
+      --bg: #e9e7e2;
+      --bg2: #fdfdfb;
+      --bg3: #eceae2;
+      --fg: #1f2328;
+      --muted: rgba(31,35,40,.68);
+      --dim: rgba(31,35,40,.45);
+      --neon: #1c4f9c;
+      --stamp: #c0392b;
       --mag: #7a6248;
-      --green: #2c7a4b;
-      --yellow: #a06b13;
-      --red: #b3341f;
+      --green: #1e7a45;
+      --yellow: #a8681e;
+      --red: #c0392b;
       --border: rgba(33,29,23,.16);
       --shadow: rgba(33,29,23,.08);
       --hover-tint: color-mix(in srgb, var(--neon) 5%, transparent);
       --code-bg: rgba(33,29,23,.05);
-      --surface: #faf9f4;
-      --surface-alt: #f1efe8;
-      --text: #211d17;
+      --surface: #fdfdfb;
+      --surface-alt: #efede6;
+      --text: #1f2328;
       --text-bright: #17140f;
-      --text-muted: rgba(33,29,23,.68);
+      --text-muted: rgba(31,35,40,.68);
       --bright: #17140f;
-      --accent: #d94f1e;
-      --blue: #52667a;
+      --accent: #1c4f9c;
+      --blue: #1c4f9c;
       --purple: #7a6248;
       --magenta: #8a6a4c;
       --orange: #995f1a;
-      --clr-positive:    #2c7a4b;
-      --clr-negative:    #b3341f;
-      --clr-warning:     #a06b13;
-      --clr-interactive: #d94f1e;
+      --clr-positive:    #1e7a45;
+      --clr-negative:    #c0392b;
+      --clr-warning:     #a8681e;
+      --clr-interactive: #1c4f9c;
       --clr-neutral:     rgba(33,29,23,.45);
       --clr-long:        #52667a;
       --clr-short:       #995f1a;
@@ -352,6 +356,7 @@ def _css() -> str:
       --muted: rgba(244,242,234,.70);
       --dim: rgba(244,242,234,.42);
       --neon: #e8622c;
+      --stamp: #e05c3a;
       --mag: #b58a5a;
       --green: #4caf7d;
       --yellow: #d9a441;
@@ -436,11 +441,12 @@ def _css() -> str:
 
     /* ── Badges → status/priority stamps (wl-37) ── */
     .badge {
+      /* wl-149: badges read as rubber stamps — the desk's status grammar */
       display: inline-flex; align-items: center;
-      padding: 1px 7px; border-radius: 2px;
-      font-family: var(--font-mono); font-size: var(--text-badge); font-weight: 600;
-      letter-spacing: .12em; text-transform: uppercase;
-      line-height: 1.6; border: 1.5px solid currentColor;
+      padding: 1px 7px; border-radius: 3px;
+      font-family: var(--font-mono); font-size: var(--text-badge); font-weight: 700;
+      letter-spacing: .14em; text-transform: uppercase;
+      line-height: 1.6; border: 2px solid currentColor;
       background: transparent;
       white-space: nowrap;
     }

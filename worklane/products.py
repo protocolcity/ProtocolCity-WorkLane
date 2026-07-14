@@ -285,6 +285,48 @@ def _legacy_prefix_map() -> Dict[str, str]:
     return mapping
 
 
+def prefix_collisions() -> List[Dict[str, Any]]:
+    """Overlay-declared prefix collisions, for operator visibility (wl-151).
+
+    :func:`discover_products` already RESOLVES collisions deterministically
+    (the later store falls back to its slug as prefix), so nothing
+    mis-routes — but the operator who hand-edited ``products.json`` never
+    learns the overlay is bad. This reports what discovery had to fix:
+    one entry per contested prefix, naming the declared owner set and the
+    fallback in effect. Empty list = healthy registry.
+    """
+    default = default_product_slug()
+    data = wl_data_dir()
+    slugs: Dict[str, Path] = {}
+    if default:
+        slugs[default] = data / f"{default}.db"
+    if data.is_dir():
+        for p in sorted(data.glob("*.db")):
+            stem = p.stem.strip().lower()
+            if _is_product_db_stem(stem):
+                slugs.setdefault(stem, p)
+    declared: Dict[str, List[str]] = {}
+    for s in sorted(slugs):
+        declared.setdefault(_spec_for_slug(s, slugs[s]).prefix, []).append(s)
+    legacy = _legacy_prefix_map()
+    out: List[Dict[str, Any]] = []
+    for prefix, owners in sorted(declared.items()):
+        legacy_owner = legacy.get(prefix)
+        contested = len(owners) > 1 or (
+            legacy_owner is not None and any(s != legacy_owner for s in owners)
+        )
+        if not contested:
+            continue
+        resolved = {s.slug: s.prefix for s in discover_products() if s.slug in owners}
+        out.append({
+            "prefix": prefix,
+            "slugs": owners,
+            "legacy_owner": legacy_owner,
+            "resolved": resolved,
+        })
+    return out
+
+
 def all_taken_prefixes(exclude_slug: Optional[str] = None) -> Set[str]:
     """Every prefix — live or legacy — already claimed by a product other
     than ``exclude_slug``. Used by the product create/rename endpoints so a

@@ -117,6 +117,27 @@ class ProductRegistryTest(unittest.TestCase):
 
     # ── config overlay ───────────────────────────────────────────────
 
+    def test_prefix_collisions_reported_and_resolved(self) -> None:
+        # wl-151: a hand-edited overlay declaring the same prefix twice must
+        # be VISIBLE (prefix_collisions) while discovery keeps ids unique
+        # via the slug-as-prefix fallback (wl-152).
+        SQLiteTracker(db_path=self.root / "data" / "alpha.db").list_tasks(limit=1)
+        SQLiteTracker(db_path=self.root / "data" / "beta.db").list_tasks(limit=1)
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('{"alpha": {"prefix": "x"}, "beta": {"prefix": "x"}}')
+        cols = products.prefix_collisions()
+        self.assertEqual(len(cols), 1)
+        self.assertEqual(cols[0]["prefix"], "x")
+        self.assertEqual(sorted(cols[0]["slugs"]), ["alpha", "beta"])
+        self.assertIn("alpha", cols[0]["resolved"])
+        self.assertIn("beta", cols[0]["resolved"])
+        prefixes = [s.prefix for s in products.discover_products()]
+        self.assertEqual(len(prefixes), len(set(prefixes)))
+        # a healthy overlay reports nothing
+        cfg.write_text('{"alpha": {"prefix": "x"}, "beta": {"prefix": "y"}}')
+        self.assertEqual(products.prefix_collisions(), [])
+
     def test_products_json_overrides_display_and_prefix(self) -> None:
         self._seed("myapp", "hello")
         cfg = self.root / "config" / "products.json"
@@ -517,11 +538,17 @@ class SurfaceRoutingTest(unittest.TestCase):
 
     def test_create_product_rejects_prefix_collision(self) -> None:
         r = self.client.post(
-            "/api/admin/products", json={"slug": "one", "prefix": "x"}
+            "/api/admin/products", json={"slug": "one", "prefix": "xx"}
         )
         self.assertEqual(r.status_code, 200)
         r = self.client.post(
-            "/api/admin/products", json={"slug": "two", "prefix": "x"}
+            "/api/admin/products", json={"slug": "two", "prefix": "xx"}
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_product_rejects_one_char_prefix(self) -> None:
+        r = self.client.post(
+            "/api/admin/products", json={"slug": "myapp", "prefix": "x"}
         )
         self.assertEqual(r.status_code, 400)
 
@@ -568,19 +595,24 @@ class SurfaceRoutingTest(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_update_product_rejects_prefix_collision(self) -> None:
-        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
-        self.client.post("/api/admin/products", json={"slug": "two", "prefix": "y"})
-        r = self.client.patch("/api/admin/products/two", json={"prefix": "x"})
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "xx"})
+        self.client.post("/api/admin/products", json={"slug": "two", "prefix": "yy"})
+        r = self.client.patch("/api/admin/products/two", json={"prefix": "xx"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_product_rejects_one_char_prefix(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "myapp"})
+        r = self.client.patch("/api/admin/products/myapp", json={"prefix": "x"})
         self.assertEqual(r.status_code, 400)
 
     def test_update_product_allows_keeping_own_prefix(self) -> None:
-        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "xx"})
         r = self.client.patch(
-            "/api/admin/products/one", json={"display": "One", "prefix": "x"}
+            "/api/admin/products/one", json={"display": "One", "prefix": "xx"}
         )
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["product"]["prefix"], "x")
-        # a no-op rename does not retire "x" into legacy_prefixes
+        self.assertEqual(r.json()["product"]["prefix"], "xx")
+        # a no-op rename does not retire "xx" into legacy_prefixes
         self.assertEqual(products.get_product("one").legacy_prefixes, ())
 
     # ── legacy-prefix rename roundtrip + collision guard (wl-152) ────
@@ -617,18 +649,18 @@ class SurfaceRoutingTest(unittest.TestCase):
     def test_update_product_rejects_prefix_colliding_with_other_stores_legacy(
         self,
     ) -> None:
-        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
-        self.client.patch("/api/admin/products/one", json={"prefix": "y"})
-        # "x" is now a legacy alias of "one" — "two" may not claim it live.
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "xx"})
+        self.client.patch("/api/admin/products/one", json={"prefix": "yy"})
+        # "xx" is now a legacy alias of "one" — "two" may not claim it live.
         self.client.post("/api/admin/products", json={"slug": "two"})
-        r = self.client.patch("/api/admin/products/two", json={"prefix": "x"})
+        r = self.client.patch("/api/admin/products/two", json={"prefix": "xx"})
         self.assertEqual(r.status_code, 400)
 
     def test_create_product_rejects_prefix_colliding_with_legacy_alias(self) -> None:
-        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
-        self.client.patch("/api/admin/products/one", json={"prefix": "y"})
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "xx"})
+        self.client.patch("/api/admin/products/one", json={"prefix": "yy"})
         r = self.client.post(
-            "/api/admin/products", json={"slug": "two", "prefix": "x"}
+            "/api/admin/products", json={"slug": "two", "prefix": "xx"}
         )
         self.assertEqual(r.status_code, 400)
 

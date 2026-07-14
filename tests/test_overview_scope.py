@@ -82,6 +82,8 @@ class OverviewScopeTest(unittest.TestCase):
                 self.assertIn(marker, r.text, path)
             self.assertIn("setInterval", r.text)
             self.assertNotIn("requestAnimationFrame", r.text)
+            # wl-158: the way back to the room lives in the nameplate
+            self.assertIn("room-back", r.text)
 
     def test_api_report_shape(self) -> None:
         j = self.client.get("/api/report").json()
@@ -130,6 +132,15 @@ class OverviewScopeTest(unittest.TestCase):
         for marker in ('id="wo"', 'id="scrim"', "openWO", "signWO",
                        "/api/admin/tasks/", "woSignBtn"):
             self.assertIn(marker, body)
+        # wl-157: per-store skim chips; ids render bare (no WO pseudo-prefix)
+        self.assertIn('id="trayFilter"', body)
+        self.assertIn("wl_desk_tray_filter", body)
+        self.assertNotIn(">WO '+", body)
+        # wl-165 city DNA: the plat's kiosk fronts the nameplate, outbox
+        # papers wear their worker's sprite chip in the shared identity color
+        for marker in ('class="kiosk"', "spriteChip", "DNA_PALETTE",
+                       "dnaHash"):
+            self.assertIn(marker, body)
 
     def test_attention_attributes_non_default_store(self) -> None:
         # wl-144: in-flight work in a non-default store must surface with its
@@ -149,6 +160,24 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertNotEqual(str(it["id"]), str(t.id))  # composite, never bare
         self.assertTrue(str(it["id"]).endswith(f"-{t.id}"), it["id"])
         self.assertEqual(it["url"], f"/admin/tasks/{it['id']}")
+
+    def test_add_project_warns_without_neighborhood_folder(self) -> None:
+        # wl-155: founding-path guardrail — slug must match a neighborhood
+        # folder for the city join; warn, never refuse. WL_CITY_ROOT drives
+        # the check deterministically here.
+        city = self.root / "city"
+        (city / "goodhood").mkdir(parents=True)
+        (city / "goodhood" / "AGENTS.md").write_text("# hood\n")
+        os.environ["WL_CITY_ROOT"] = str(city)
+        try:
+            r = self.client.post("/api/admin/products", json={"slug": "goodhood"}).json()
+            self.assertTrue(r["ok"])
+            self.assertIsNone(r["warning"])
+            r = self.client.post("/api/admin/products", json={"slug": "ghost"}).json()
+            self.assertTrue(r["ok"])  # soft guardrail: created anyway
+            self.assertIn("no neighborhood folder", r["warning"])
+        finally:
+            os.environ.pop("WL_CITY_ROOT", None)
 
     def test_founder_identity_roundtrip_and_desk_prefill(self) -> None:
         # wl-148: default identity, alias PATCH roundtrip, desk injection
@@ -174,6 +203,13 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertNotIn('id="woAuthor"', body)
         self.assertIn('id="woSignAs"', body)
         self.assertIn("SIGNED AS", body)
+        # wl-149: the classic ticket page renders the alias the same way
+        t = self.beta.create_task(title="alias render", description="x")
+        self.beta.add_comment(
+            t.id, "Intake: filed by founder-terminal", author="founder-terminal")
+        page = self.client.get(f"/admin/tasks/beta-{t.id}").text
+        self.assertIn("The Mayor", page)
+        self.assertIn("(founder-terminal)", page)
 
     def test_api_scene_shape(self) -> None:
         j = self.client.get("/api/scene").json()

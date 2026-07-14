@@ -177,12 +177,17 @@ _BRAND_MODE = os.environ.get("WL_BRAND", "city")
 _BRAND_NAME = (
     "ProtocolCity — Ticket Desk · Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
 )
-# wl-130: WorkLane's ratified city-institution epithet (pc-21) — "the
-# work-order desk: every job filed, claimed, and signed" — doubles as the
-# first-run "what am I looking at" line for a fresh standalone install.
-_WORKLANE_EPITHET = "the work-order desk: every job filed, claimed, and signed"
+# Third naming amendment (pc-39, 2026-07-14): the long epithet sentence
+# retired from headers — the room guide (docs/TICKET_DESK.md) holds the
+# words. Bench chrome mirrors the nameplate: room name leads, suite +
+# engine share one quiet subtitle; standalone keeps the short epithet.
 _BRAND_SUBTITLE = (
-    f"powered by WorkLane — {_WORKLANE_EPITHET}" if _BRAND_MODE == "city" else _WORKLANE_EPITHET
+    "ProtocolCity · powered by WorkLane" if _BRAND_MODE == "city"
+    else "the work-order desk"
+)
+_BRAND_HEADER_HTML = (
+    "<span class='brand-room'>TICKET DESK</span> · TICKETS" if _BRAND_MODE == "city"
+    else "WORKLANE — <span class='brand-room'>TICKETS</span>"
 )
 
 # ── Lightweight page wrapper ────────────────────────────────────────────
@@ -506,7 +511,7 @@ def _task_page(
 <body data-ops-shell="{_esc(shell)}" data-ops-scope="{_esc(page_scope)}">
   <header class="task-server-header task-server-header--stack">
     <div class="task-server-header-primary ops-main-nav" data-ops-region="main-nav">
-      <a href="/admin/desk" class="{_brand_cls}" title="The desk — the room you walk into">{_BRAND_NAME}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
+      <a href="/admin/desk" class="{_brand_cls}" title="The desk — the room you walk into">{_BRAND_HEADER_HTML}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
       <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
         <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
            title="Landing — the store visually interpreted: live metrics + breakdown charts"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
@@ -813,6 +818,10 @@ def _task_page(
     letter-spacing: .14em; text-transform: uppercase;
     border: 1.5px solid var(--fg); border-radius: 2px;
     padding: 3px 10px;
+    white-space: pre;
+  }}
+  .task-server-brand .brand-room {{
+    color: var(--stamp, #c0392b);
   }}
   .task-server-brand.active {{
     border-color: var(--neon);
@@ -4249,10 +4258,41 @@ def admin_settings() -> str:
     Rename/set-prefix and add-product (wl-17) post to
     ``/api/admin/products[/{slug}]`` and reload on success.
     """
-    from worklane.products import products_config_path, wl_data_dir
+    from worklane.products import (
+        prefix_collisions,
+        products_config_path,
+        wl_data_dir,
+    )
 
     cfg_path = products_config_path()
     cfg_exists = cfg_path.exists()
+
+    # wl-151: overlay-declared prefix collisions — discovery resolves them
+    # (slug-as-prefix fallback), but the operator must SEE the bad overlay.
+    collision_html = ""
+    collisions = prefix_collisions()
+    if collisions:
+        bits = []
+        for c in collisions:
+            owners = ", ".join(f"<code>{_esc(s)}</code>" for s in c["slugs"])
+            legacy = (
+                f" (also the retired alias of <code>{_esc(c['legacy_owner'])}</code>)"
+                if c["legacy_owner"] else ""
+            )
+            resolved = ", ".join(
+                f"<code>{_esc(s)}</code> now renders <code>{_esc(p)}-…</code>"
+                for s, p in c["resolved"].items()
+            )
+            bits.append(
+                f"prefix <code>{_esc(c['prefix'])}</code> is declared by {owners}{legacy}"
+                f" — {resolved}"
+            )
+        collision_html = (
+            "<p style='color:#c0392b;'><strong>Prefix collision in the overlay:</strong> "
+            + "; ".join(bits)
+            + f". Fix <code>{_esc(str(cfg_path))}</code> — until then discovery "
+            "falls back to slug-as-prefix so nothing mis-routes (wl-151/wl-152).</p>"
+        )
 
     rows = []
     for spec, tracker in product_trackers():
@@ -4270,7 +4310,7 @@ def admin_settings() -> str:
             f"maxlength='80' /></td>"
             f"<td><input class='ts-settings-input ts-settings-input--narrow' "
             f"type='text' id='ts-prod-prefix-{slug_attr}' value='{_esc(spec.prefix)}' "
-            f"maxlength='8' /></td>"
+            f"minlength='2' maxlength='8' /></td>"
             f"<td class='dim'>{_esc(str(db))}</td>"
             f"<td><code>{_esc(spec.prefix)}-{_esc(_product_next_id(spec, tracker))}</code></td>"
             f"<td>{open_n} open · {len(tasks)} total</td>"
@@ -4288,13 +4328,15 @@ def admin_settings() -> str:
         "<input class='ts-settings-input' type='text' id='ts-new-prod-display' "
         "placeholder='Display name (optional)' maxlength='80' />"
         "<input class='ts-settings-input ts-settings-input--narrow' type='text' "
-        "id='ts-new-prod-prefix' placeholder='prefix (optional)' maxlength='8' />"
+        "id='ts-new-prod-prefix' placeholder='prefix (optional, 2-8 chars)' "
+        "minlength='2' maxlength='8' />"
         "<button class='btn btn-sm go' type='button' "
         "onclick='tsSettingsAddProject()'>Add project</button>"
         "</div>"
     )
     products_html = (
-        "<table class='tos-table'>"
+        collision_html
+        + "<table class='tos-table'>"
         "<thead><tr><th>Slug</th><th>Display</th><th>Id prefix</th>"
         "<th>Store</th><th>Next id</th><th>Tickets</th><th></th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"
@@ -4444,8 +4486,9 @@ def admin_settings() -> str:
       });
       var j = await resp.json();
       if (!j.ok) { showToast('Add failed: ' + (j.error || resp.status), 'error'); return; }
-      showToast('Added ' + slug, 'success');
-      setTimeout(function() { window.location.reload(); }, 600);
+      if (j.warning) { showToast(j.warning, 'error'); }
+      else { showToast('Added ' + slug, 'success'); }
+      setTimeout(function() { window.location.reload(); }, j.warning ? 2600 : 600);
     } catch (e) {
       showToast('Network error', 'error');
     }
@@ -4922,6 +4965,7 @@ def task_detail(task_id: str) -> str:
             "if(v&&el&&!el.value)el.value=v;}catch(e){}})();</script>"
         )
 
+    _ident = _identity_config()
     body = (
         _render_tickets_context_strip()
         + f"<p class='dim' style='margin-bottom:8px;'>"
@@ -4933,7 +4977,11 @@ def task_detail(task_id: str) -> str:
         + _task_card("Description", desc_html)
         + _task_card(
             f"Comments · {len(comments)}",
-            _render_comments(comments) + comment_form,
+            _render_comments(
+                comments,
+                founder_id=_ident["founder_id"],
+                founder_alias=_ident["founder_alias"],
+            ) + comment_form,
         )
         + _client_js()
         + _task_server_extra_js()
@@ -4958,6 +5006,40 @@ def task_detail(task_id: str) -> str:
 
 
 # ── JSON API ────��───────────────────────────────────────────────────────
+
+def _city_neighborhood_slugs() -> Optional[set]:
+    """Neighborhood folder names (lowercased) at the city root, or None when
+    no city is detectable (wl-155). WL stays host-neutral: WL_CITY_ROOT env
+    wins; otherwise walk up from this repo to the topmost dir carrying an
+    AGENTS.md (the city-root convention). A standalone checkout that is its
+    own topmost AGENTS.md dir counts as no city — the check silently skips.
+    """
+    root = (os.environ.get("WL_CITY_ROOT") or "").strip()
+    if not root:
+        d = os.path.abspath(_ROOT)
+        top = ""
+        while True:
+            if os.path.isfile(os.path.join(d, "AGENTS.md")):
+                top = d
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+        if not top or top == os.path.abspath(_ROOT):
+            return None
+        root = top
+    if not os.path.isdir(root):
+        return None
+    try:
+        return {
+            name.lower()
+            for name in os.listdir(root)
+            if os.path.isdir(os.path.join(root, name))
+            and os.path.isfile(os.path.join(root, name, "AGENTS.md"))
+        }
+    except OSError:
+        return None
+
 
 @router.post("/api/admin/products")
 async def api_create_product(request: Request) -> JSONResponse:
@@ -5002,11 +5084,11 @@ async def api_create_product(request: Request) -> JSONResponse:
     display = str(payload.get("display") or "").strip() or None
     prefix = str(payload.get("prefix") or "").strip().lower() or None
     if prefix is not None:
-        if not re.match(r"^[a-z][a-z0-9]{0,7}$", prefix):
+        if not re.match(r"^[a-z][a-z0-9]{1,7}$", prefix):
             return JSONResponse(
                 {
                     "ok": False,
-                    "error": "prefix must be 1-8 lowercase letters/digits, starting with a letter",
+                    "error": "prefix must be 2-8 lowercase letters/digits, starting with a letter",
                 },
                 status_code=400,
             )
@@ -5030,9 +5112,21 @@ async def api_create_product(request: Request) -> JSONResponse:
             {"ok": False, "error": "project store created but not discoverable — check runtime dir"},
             status_code=500,
         )
+    # wl-155: soft founding-path guardrail — the city joins store to
+    # neighborhood by slug == dirname.lower(); warn (never refuse) when no
+    # such folder exists. Skips silently outside a city (host-neutral).
+    warning = None
+    hoods = _city_neighborhood_slugs()
+    if hoods is not None and slug not in hoods:
+        warning = (
+            f"store created, but no neighborhood folder named {slug!r} exists "
+            "at the city root — city hall won't show a building until one "
+            "does (the slug must equal the folder name, lowercased)"
+        )
     return JSONResponse(
         {
             "ok": True,
+            "warning": warning,
             "product": {
                 "slug": spec.slug,
                 "display": spec.display,
@@ -5075,11 +5169,11 @@ async def api_update_product(slug: str, request: Request) -> JSONResponse:
     if display is not None and not display:
         return JSONResponse({"ok": False, "error": "display cannot be blank"}, status_code=400)
     if prefix is not None:
-        if not re.match(r"^[a-z][a-z0-9]{0,7}$", prefix):
+        if not re.match(r"^[a-z][a-z0-9]{1,7}$", prefix):
             return JSONResponse(
                 {
                     "ok": False,
-                    "error": "prefix must be 1-8 lowercase letters/digits, starting with a letter",
+                    "error": "prefix must be 2-8 lowercase letters/digits, starting with a letter",
                 },
                 status_code=400,
             )
@@ -6552,6 +6646,33 @@ def api_dev_board_summary_all_scopes():
     return JSONResponse({"scopes": scopes, "stale_minutes": _claim_stale_minutes()})
 
 
+@router.get("/api/dev/allocation")
+def api_dev_allocation(window_days: int = 7, scope: str = "all"):
+    """wl-160: filed-vs-closed tallies per lane:* label and per signed author
+    — the wl-106 derivation, retired from the desk Overview by wl-156, exposed
+    as a JSON seam for the dispatch report (oc-22). Reporting doctrine
+    (wl-139): the desk computes its comment-derived facts; the board joins
+    them to shift data over HTTP, never recomputing them.
+    """
+    window_days = max(1, min(int(window_days), 90))
+    prod = "" if scope.strip().lower() in ("", "all") else scope.strip().lower()
+    if prod and get_product(prod) is None:
+        return JSONResponse({"ok": False, "error": "Unknown scope"}, status_code=404)
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=window_days)
+    all_tasks = _merged_scope_tasks_for_filters(prod)
+    resp = JSONResponse({
+        "ok": True,
+        "generated_at": now.isoformat(),
+        "window_days": window_days,
+        "since": since.isoformat(),
+        "lanes": _allocation_lane_rows(all_tasks, since),
+        "authors": _allocation_author_rows(prod, since),
+    })
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
 @router.get("/api/dev/attention")
 def api_dev_attention():
     """wl-135: the founder-attention feed — everything blocked on the
@@ -7456,6 +7577,35 @@ _CITYHALL_URL = os.environ.get("WL_CITYHALL_URL", "http://127.0.0.1:8796")
 _WORKFORCE_URL = os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")
 
 
+def _closeout_authors(slug: str) -> Dict[str, str]:
+    """task_id -> author of the latest 'Completed:' close-out comment, for
+    one store (wl-165 sprite chips). Same signed-comment derivation as the
+    Allocation view; keyed by both the raw and prefixed id so the scene's
+    composite ids always match."""
+    out: Dict[str, str] = {}
+    for spec, tracker in _scoped_product_trackers(slug):
+        db_path = _tracker_db_path(tracker)
+        if db_path is None or not Path(db_path).exists():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            try:
+                rows = conn.execute(
+                    "SELECT task_id, author FROM task_comments "
+                    "WHERE body LIKE 'Completed:%' AND author != '' "
+                    "ORDER BY created_at",
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception:
+            continue
+        for tid, author in rows:
+            tid = str(tid)
+            out[tid] = str(author)          # later rows win: latest close-out
+            out[f"{spec.prefix}-{tid}"] = str(author)
+    return out
+
+
 @router.get("/api/scene")
 def api_desk_scene() -> JSONResponse:
     """The desk scene's facts in one call (wl-132): per-store ledger counts,
@@ -7468,6 +7618,7 @@ def api_desk_scene() -> JSONResponse:
     filed: List[Dict[str, Any]] = []
     for spec in discover_products():
         tasks = _merged_scope_tasks_for_filters(spec.slug)
+        closers = _closeout_authors(spec.slug)
         counts = {
             TaskStatus.BACKLOG: 0,
             TaskStatus.IN_PROGRESS: 0,
@@ -7483,6 +7634,7 @@ def api_desk_scene() -> JSONResponse:
                     filed.append({
                         "id": t.id, "store": spec.slug, "title": t.title,
                         "closed_at": t.updated_at,
+                        "author": closers.get(str(t.id), ""),
                     })
             elif st in counts:
                 counts[st] += 1
@@ -7532,6 +7684,10 @@ body { background:var(--desk); color:var(--ink);
   display:flex; flex-direction:column; }
 a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
 .dim { color:var(--dim); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+/* wl-165 city DNA: the plat's kiosk is this room's own sign, and papers
+   wear their worker's citizen sprite (CITY_DNA.md — paper re-skin). */
+.nameplate .kiosk { height:40px; width:auto; align-self:center; flex:none; }
+.clip-item svg.citizen { height:15px; width:auto; vertical-align:-3px; margin-right:3px; }
 header.nameplate { background:var(--paper); border-bottom:1px solid var(--line);
   border-top:6px solid var(--stamp); box-shadow:0 2px 8px #0002;
   padding:14px 22px 12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
@@ -7575,6 +7731,21 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .tag { border:1px solid var(--line); border-radius:3px; padding:0 6px; font-size:11px;
   color:var(--dim); background:#fff; }
 .empty-note { color:var(--dim); font-size:12px; font-style:italic; padding:6px 0; }
+/* wl-157/wl-162: the skim filter — narrows both trays to one store. A
+   dropdown in the tray corner, not a chip row: flat rows wrap past ~4
+   stores and shove the whole column below its neighbors (wl-117 redux). */
+.tray-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.tray-head h2 { flex:1; min-width:0; }
+/* wl-164: the closed control dresses as header type — quiet uppercase
+   label + caret, no box; the option list keeps the per-store counts. */
+#trayFilter { appearance:none; -webkit-appearance:none; border:1px solid transparent;
+  background:transparent url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23848a80'/%3E%3C/svg%3E") no-repeat right 4px center;
+  color:var(--dim); font:600 10.5px "IBM Plex Sans",sans-serif;
+  text-transform:uppercase; letter-spacing:.14em; border-radius:3px;
+  padding:2px 17px 2px 5px; cursor:pointer; max-width:50%; }
+#trayFilter:hover { border-color:var(--line); color:var(--blue); }
+#trayFilter:focus { border-color:var(--blue); color:var(--blue); outline:none; }
+#trayFilter.on { color:var(--blue); }
 /* the blotter: one ledger card per store, paper piles with real heights */
 .hood { border:1px solid var(--line); background:var(--paper); box-shadow:0 2px 5px #0002;
   padding:12px 16px 10px; margin-bottom:12px; }
@@ -7709,18 +7880,35 @@ function formHtml(it,slip){
     '<div class="t">'+esc(it.title)+'</div>'+
     '<div class="meta">'+esc(it.note||"")+
       (it.waiting_since?' \\u00b7 sitting '+esc(ago(it.waiting_since)):'')+'</div></div>';}
+/* City DNA (pc-40 / CITY_DNA.md): identity registry shared with the plat
+   and dispatch — same hash, same palette, same little person everywhere.
+   founder-terminal and non-roster authors wear the gold founder chip. */
+var DNA_PALETTE=["#3d7a6a","#a8842c","#4a6fa5","#7d5185","#a35b3a","#5f7d3a"];
+function dnaHash(s){var h=0,i;for(i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return Math.abs(h);}
+function spriteChip(author){
+  var a=String(author||""); if(!a)return "";
+  var roster=/^claude-/.test(a)||/^(grok|codex|cursor)$/.test(a);
+  var col=roster?DNA_PALETTE[dnaHash(a)%DNA_PALETTE.length]:"#e9c46a";
+  return '<svg class="citizen" viewBox="-5 -23 10 24" aria-hidden="true"><title>'+esc(a)+'</title>'+
+    '<line x1="-2" y1="-4" x2="-2" y2="0" stroke="#4a3f2c" stroke-width="2"/>'+
+    '<line x1="2" y1="-4" x2="2" y2="0" stroke="#4a3f2c" stroke-width="2"/>'+
+    '<rect x="-4" y="-14" width="8" height="11" rx="2.5" fill="'+col+'"/>'+
+    '<circle cx="0" cy="-18" r="4.2" fill="#d9b98c" stroke="#4a3f2c" stroke-width=".7"/></svg>';}
 var TRAY_F=localStorage.getItem("wl_desk_tray_filter")||"all";
 function render(){
   var d=SCENE; if(!d)return;
   var att=d.attention||[];
-  /* wl-157: per-store skim chips — one click narrows both trays */
+  /* wl-157/wl-162: per-store skim dropdown — one pick narrows both trays */
   var counts={}; att.forEach(function(it){counts[it.product]=(counts[it.product]||0)+1;});
   if(TRAY_F!=="all"&&!counts[TRAY_F])TRAY_F="all";
-  var fz='<button class="chip'+(TRAY_F==="all"?" on":"")+'" data-f="all">all \\u00b7 '+att.length+'</button>';
-  Object.keys(counts).sort().forEach(function(s){
-    fz+='<button class="chip'+(TRAY_F===s?" on":"")+'" data-f="'+esc(s)+'">'+
-      esc(s)+' \\u00b7 '+counts[s]+'</button>';});
-  $("trayFilter").innerHTML=fz;
+  var tf=$("trayFilter");
+  if(document.activeElement!==tf){ /* don't rebuild under an open picker */
+    var fz='<option value="all"'+(TRAY_F==="all"?" selected":"")+'>all \\u00b7 '+att.length+'</option>';
+    Object.keys(counts).sort().forEach(function(s){
+      fz+='<option value="'+esc(s)+'"'+(TRAY_F===s?" selected":"")+'>'+
+        esc(s)+' \\u00b7 '+counts[s]+'</option>';});
+    tf.innerHTML=fz;}
+  tf.classList.toggle("on",TRAY_F!=="all");
   var inTray=[], hold=[];
   att.forEach(function(it){
     if(TRAY_F!=="all"&&it.product!==TRAY_F)return;
@@ -7750,7 +7938,7 @@ function render(){
   var filed=d.filed||[], freshCount=0, cz="";
   filed.forEach(function(f){
     var fresh=!firstPoll && !seenFiled[f.id]; if(fresh)freshCount++;
-    cz+='<div class="clip-item'+(fresh?' fresh':'')+'">'+
+    cz+='<div class="clip-item'+(fresh?' fresh':'')+'">'+spriteChip(f.author)+
       '<span class="when">'+esc(ago(f.closed_at))+'</span> '+
       '<a href="/admin/tasks/'+esc(f.id)+'">'+esc(f.id)+'</a> '+
       '<span class="dim">['+esc(f.store)+']</span> '+esc(String(f.title).slice(0,64))+'</div>';});
@@ -7791,7 +7979,7 @@ function closeBtnHtml(){return '<button class="wo-close" onclick="closeWO()" tit
 function closeWO(){WO_ID=null;$("wo").classList.remove("open");$("scrim").classList.remove("open");}
 function openWO(id){
   WO_ID=id; $("scrim").classList.add("open"); $("wo").classList.add("open");
-  $("woHead").innerHTML='<div class="no">WO '+esc(String(id).toUpperCase())+'</div>'+
+  $("woHead").innerHTML='<div class="no">'+esc(id)+'</div>'+
     '<div class="t">pulling the carbon\\u2026</div>'+closeBtnHtml();
   $("woBody").innerHTML='<div class="empty-note">pulling the record\\u2026</div>';
   $("woFoot").innerHTML="";
@@ -7807,7 +7995,7 @@ function fetchWO(id){
 function renderWO(t){
   var st=stampForStatus(t.status);
   $("woHead").innerHTML='<div class="stamp '+st.cls+'">'+esc(st.txt)+'</div>'+
-    '<div class="no">WO '+esc(String(t.id).toUpperCase())+'</div>'+
+    '<div class="no">'+esc(t.id)+'</div>'+
     '<div class="t">'+esc(t.title||"")+'</div>'+closeBtnHtml();
   var labels=(t.labels||[]).map(function(l){return '<span class="tag">'+esc(l)+'</span>';}).join(" ");
   var h='<table class="wo-meta">'+
@@ -7860,6 +8048,11 @@ document.addEventListener("click",function(e){
   if(!id)return;
   e.preventDefault(); openWO(decodeURIComponent(id));});
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeWO();});
+$("trayFilter").addEventListener("change",function(){
+  TRAY_F=this.value||"all";
+  localStorage.setItem("wl_desk_tray_filter",TRAY_F);
+  this.blur(); /* release focus so the next poll may rebuild the options */
+  render();});
 </script>
 """
 
@@ -7890,13 +8083,30 @@ def admin_desk() -> str:
 <title>{_esc(_BRAND_NAME)}</title>
 <style>{_DESK_SCENE_CSS}</style></head><body>
 <header class="nameplate">
+  <svg class="kiosk" viewBox="-38 -60 76 62" aria-hidden="true">
+    <!-- wl-165 city DNA: the plat's kiosk (CITY_DNA sec.3), ink line-art;
+         the awning keeps civic green as the desk's one accent. On the plat,
+         papers fly INTO this kiosk — this room is its interior. -->
+    <rect x="-30" y="-24" width="60" height="24" fill="none" stroke="var(--ink)"/>
+    <rect x="-34" y="-29" width="68" height="5" fill="none" stroke="var(--ink)" stroke-width=".8"/>
+    <line x1="-30" y1="-56" x2="-30" y2="-29" stroke="var(--ink)" stroke-width="2"/>
+    <line x1="30" y1="-56" x2="30" y2="-29" stroke="var(--ink)" stroke-width="2"/>
+    <path d="M-36 -56 h72 l-5 11 h-62 z" fill="#3d7a6a" stroke="var(--ink)" stroke-width=".8"/>
+    <line x1="-16" y1="-56" x2="-17.5" y2="-45" stroke="var(--paper)" stroke-width="4"/>
+    <line x1="0" y1="-56" x2="0" y2="-45" stroke="var(--paper)" stroke-width="4"/>
+    <line x1="16" y1="-56" x2="17.5" y2="-45" stroke="var(--paper)" stroke-width="4"/>
+    <rect x="-20" y="-33" width="13" height="4" fill="var(--paper)" stroke="var(--ink)" stroke-width=".5"/>
+    <circle cx="14" cy="-32" r="3" fill="#e9c46a"/>
+  </svg>
   <h1>{h1}</h1>
   <span class="epithet">{_esc(epithet)}</span>
   <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
 </header>
 <main class="surface">
   <div>
-    <div class="tray"><h2>In-tray · needs you (<span id="inCount">0</span>)</h2>
+    <div class="tray"><div class="tray-head">
+      <h2>In-tray · needs you (<span id="inCount">0</span>)</h2>
+      <select id="trayFilter" title="Narrow both trays to one store"></select></div>
       <div id="decisionsStack"><div class="empty-note">Waiting for the morning filing…</div></div>
     </div>
     <div class="tray"><h2>Hold bin · quiet claims (<span id="holdCount">0</span>)</h2>
@@ -8091,6 +8301,9 @@ h1 .fn { color:var(--stamp); }
   font-weight:700; font-size:10px; letter-spacing:.16em; padding:2px 8px;
   text-transform:uppercase; }
 #liveChip.hold { border-color:var(--warn); color:var(--warn); }
+.room-back { font-size:12px; color:var(--blue); border:1px solid var(--line);
+  border-radius:3px; padding:3px 10px; white-space:nowrap; background:var(--paper); }
+.room-back:hover { border-color:var(--blue); text-decoration:none; }
 main.sheet { flex:1; overflow:auto; padding:20px 22px 26px; max-width:1180px;
   width:100%; margin:0 auto; }
 h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;
@@ -8116,9 +8329,10 @@ h2:first-child { margin-top:0; }
   gap:6px 12px; align-items:center; font-size:13px; }
 .rows .lbl { color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rows .num { color:var(--dim); text-align:right; font-variant-numeric:tabular-nums; }
-.bar { display:block; height:9px; border-radius:2px; background:var(--rule); }
-.bar.g { background:#bfd8c4; }
-.bar + .bar { margin-top:2px; }
+/* chart bars are .meter, never .bar — footer.bar wears that class (wl-163) */
+.meter { display:block; height:9px; border-radius:2px; background:var(--rule); }
+.meter.g { background:#bfd8c4; }
+.meter + .meter { margin-top:2px; }
 .split { display:flex; height:22px; border-radius:3px; overflow:hidden;
   border:1px solid var(--line); }
 .split .you { background:var(--stamp); } .split .rdy { background:#bfd8c4; }
@@ -8170,8 +8384,8 @@ function render(){
   var fz="";
   (d.stores||[]).forEach(function(s){
     fz+='<span class="lbl">'+esc(s.display||s.slug)+'</span>'+
-      '<span><span class="bar" style="width:'+pct(s.filed,maxF)+'%"></span>'+
-      '<span class="bar g" style="width:'+pct(s.signed,maxF)+'%"></span></span>'+
+      '<span><span class="meter" style="width:'+pct(s.filed,maxF)+'%"></span>'+
+      '<span class="meter g" style="width:'+pct(s.signed,maxF)+'%"></span></span>'+
       '<span class="num">'+esc(s.filed)+' / '+esc(s.signed)+'</span>';});
   $("flowRows").innerHTML=fz;
 
@@ -8191,7 +8405,7 @@ function render(){
   var az="";
   ab.forEach(function(n,i){
     az+='<span class="lbl">'+lbls[i]+'</span>'+
-      '<span><span class="bar'+(i<2?" g":"")+'" style="width:'+pct(n,maxA)+
+      '<span><span class="meter'+(i<2?" g":"")+'" style="width:'+pct(n,maxA)+
       '%'+(i===3&&n?';background:var(--pinkline)':'')+'"></span></span>'+
       '<span class="num">'+esc(n)+'</span>';});
   $("agingRows").innerHTML=az;
@@ -8246,6 +8460,7 @@ def _render_report_page() -> str:
 <title>Overview · {_esc(_BRAND_NAME)}</title>
 <style>{_REPORT_CSS}</style></head><body>
 <header class="nameplate">
+  <a class="room-back" href="/admin/desk">← Ticket Desk</a>
   <h1>{h1}</h1>
   <span class="epithet">{_esc(epithet)}</span>
   <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
