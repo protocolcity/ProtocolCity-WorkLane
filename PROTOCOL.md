@@ -208,10 +208,10 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `claude-worklane` | Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11) |
 | `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane) |
 | `codex` | Codex CLI lane (§6.3; added 2026-07-11) — visuals/content production. Lane-labeled tickets only |
-| `claude-socials` | Claude CLI lane, socials drafting desk — dispatched by WorkForce (added 2026-07-14). Lane-labeled tickets only; drafts-only law (posting is founder-only); contract at socials/workers/claude-socials/CONTRACT.md |
+| `claude-socials` | Claude CLI lane, socials drafting desk — dispatched by WorkForce (added 2026-07-14). Lane-labeled tickets only; drafts-only rule (posting is founder-only); contract at socials/workers/claude-socials/CONTRACT.md |
 | `claude-orchestrator` | Claude CLI lane, orchestrator/WorkForce backlog — dispatched by WorkForce, working on WorkForce itself (added 2026-07-14, oc-12). Lane-labeled tickets only; never touches `local/` state, the daemon service, or live dispatches; contract at orchestrator/workers/claude-orchestrator/CONTRACT.md |
 
-Fire schedules are WORKER-noun data, not desk law — this table stays identity
+Fire schedules are WORKER-noun data, not desk rules — this table stays identity
 + who. Cadence truth (cron expressions, next-fire) lives in WorkForce's
 roster, rendered live on its board (`:8797`); look there, not here.
 
@@ -243,7 +243,7 @@ safety rules. All four items land **before the lane's first ticket**:
 2. **Entry file in every workdir** — the tool's *native auto-loaded
    instruction file* must exist at the root of every repo the lane operates
    in, per the **vendor-pointer rule** (ProtocolCity Charter §3, adopted
-   2026-07-13): `AGENTS.md` is the single canonical law file (auto-loaded
+   2026-07-13): `AGENTS.md` is the single canonical instruction file (auto-loaded
    by Codex CLI and Cursor — the cross-tool standard) and carries identity
    lookup, the pointer to the §6 profile, and that repo's safety rules —
    never duplicated normative content; PROTOCOL.md stays the single source.
@@ -345,7 +345,7 @@ items) once the project gets its own dispatched agent lane.
    establishes.
 5. **AGENTS.md section** — add a short "Ticketing" section (template in
    [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)) to the project's
-   own `AGENTS.md` (the canonical law file — vendor files like `CLAUDE.md`
+   own `AGENTS.md` (the canonical instruction file — vendor files like `CLAUDE.md`
    point to it) naming the slug and reminding agents to pass
    `project=<slug>` explicitly on every WL call — required, not optional,
    once more than one project store exists (no single call may rely on
