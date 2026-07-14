@@ -421,6 +421,12 @@ def _task_page(
     # subnav band is gone; one row of chrome instead of two.
     _subnav_html = ""
     _port = os.environ.get("TASK_PORT", "8799")
+    # wl-128: reciprocal of WorkForce's Workplaces join — link out to the
+    # machine's worker/shift/law board. Config-driven only: unset means no
+    # orchestrator is installed on this machine, which is lawful
+    # (RUNNER_SPEC §9), so no link renders. When a host does run one
+    # co-located, point this at it (typically http://127.0.0.1:8797).
+    _workforce_url = os.environ.get("WL_WORKFORCE_URL", "").strip()
     # wl-90: Board and Table are sibling primary views. From a tickets page
     # the links keep the current scope path and filters; elsewhere they lead
     # to the scope's default view.
@@ -502,7 +508,10 @@ def _task_page(
 {_product_scope}
       <div class="task-server-header-end">
 {_ticket_header_widgets}
-        <span class="task-server-hint dim">port {_esc(_port)}</span>
+        <span class="task-server-hint dim">port {_esc(_port)}</span>{f'''
+        <a href="{_esc(_workforce_url)}" target="_blank" rel="noopener"
+           title="WorkForce — the machine's worker/shift/law board (separate port)"
+           style="text-decoration:none; color:var(--dim); font-size:12px; padding:4px 6px;">WorkForce</a>''' if _workforce_url else ''}
         <a href="/admin/docs" title="Docs — PROCESS/TRUTH/README + per-agent instruction files rendered in-app"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'docs' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#128220;</a>
         <a href="/admin/settings" title="Settings — projects, prefixes, numbering, service"
