@@ -262,7 +262,18 @@ class SQLiteTracker(ProjectTracker):
                 # until tickets-install migrates into worklane/local.
                 db_path = LEGACY_DB_PATH
             else:
-                db_path = DEFAULT_DB_PATH
+                # Truly fresh install — nothing on disk anywhere. Route the
+                # filename through the configured default product (wl-124)
+                # instead of the tradeos.db literal, so a fresh WorkLane
+                # install doesn't create a database named after tradeOS.
+                # Existing hosts never reach this branch: DEFAULT_DB_PATH
+                # already exists for them, handled above.
+                from worklane.products import default_product_slug, wl_data_dir
+
+                slug = default_product_slug() or "tradeos"
+                db_path = (
+                    DEFAULT_DB_PATH if slug == "tradeos" else wl_data_dir() / f"{slug}.db"
+                )
         self._db_path = Path(db_path)
         self._product_default = product_default
 

@@ -71,12 +71,28 @@ class ProductSpec:
     db_path: Path    # SQLite store for this product
 
 
+def _is_source_checkout() -> bool:
+    """True when this package is running from a git checkout (repo root has
+    a ``.git``) rather than an installed package (e.g. site-packages after
+    ``pip install``)."""
+    return (Path(__file__).resolve().parents[1] / ".git").exists()
+
+
 def wl_data_dir() -> Path:
-    """Runtime data dir (honors WORKLANE_RUNTIME_DIR)."""
+    """Runtime data dir (honors WORKLANE_RUNTIME_DIR).
+
+    Source checkouts keep the existing in-repo default so hosts already
+    running from a checkout see no change. An installed package (wl-124:
+    no ``.git`` at the repo root, e.g. a ``pip install`` of the exported
+    package) falls back to a user-level directory instead of writing
+    inside site-packages, where it would be wiped on reinstall/upgrade.
+    """
     override = (os.environ.get("WORKLANE_RUNTIME_DIR") or "").strip()
     if override:
         return Path(override) / "data"
-    return Path(__file__).parent / "local" / "data"
+    if _is_source_checkout():
+        return Path(__file__).parent / "local" / "data"
+    return Path.home() / ".worklane" / "data"
 
 
 def products_config_path() -> Path:
