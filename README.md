@@ -88,6 +88,7 @@ wl list --project worklane --status backlog
 wl show wl-1
 wl status wl-1 in_progress
 wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
+wl doctor  # optional Charter compliance check — reports, never blocks
 ```
 
 ## The protocol in 60 seconds

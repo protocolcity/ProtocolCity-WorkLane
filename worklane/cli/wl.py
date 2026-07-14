@@ -23,6 +23,7 @@ Usage:
     wl demo [--force] [--project SLUG]
     wl export --project <slug> [--out FILE]
     wl import <FILE> --project <slug>
+    wl doctor [--path PATH] [--project SLUG] [--json]
 
 Base URL:  WL_BASE_URL env var, default http://127.0.0.1:8799
 Project:   --project flag, default WL_PRODUCT env var, else server default
@@ -35,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -289,6 +291,86 @@ def cmd_demo(args: argparse.Namespace) -> None:
             "Claim the backlog ticket labeled 'Claim me' via MCP wl_claim "
             "or `wl status` + Owner comment."
         )
+        print("Optional: check Charter compliance with `wl doctor`.")
+
+
+_BLUEPRINT_BASE = "https://github.com/protocolcity/ProtocolCity-BluePrint/blob/main"
+
+
+def _slugify_dirname(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return slug or "project"
+
+
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """Charter three-question compliance check (wl-119) — informational only.
+
+    Never blocks and never touches internal docs; a project failing every
+    check still works exactly as before. Checks the working tree, not the
+    live server, so it also works against a fresh clone with nothing
+    running yet.
+    """
+    from worklane import products as products_mod
+
+    path = Path(args.path or ".").resolve()
+    project = (_resolve_project_flag(args) or _slugify_dirname(path.name)).strip().lower()
+
+    agents_md = path / "AGENTS.md"
+    law_ok = agents_md.is_file()
+
+    try:
+        known_slugs = set(products_mod.product_slugs())
+    except Exception:
+        known_slugs = set()
+    store_ok = project in known_slugs
+
+    worker_contracts = sorted(path.glob("workers/*/CONTRACT.md"))
+    workers_ok = bool(worker_contracts)
+
+    checks = [
+        {
+            "name": "Law is written",
+            "pass": law_ok,
+            "detail": f"AGENTS.md found at {agents_md}" if law_ok
+                else f"no AGENTS.md at {path}",
+            "template": f"{_BLUEPRINT_BASE}/templates/neighborhood-AGENTS.md",
+        },
+        {
+            "name": "Work is ticketed",
+            "pass": store_ok,
+            "detail": f"store '{project}' registered" if store_ok
+                else f"no store named '{project}' — pass --project or run "
+                     f"`wl demo --project {project}`",
+            "template": f"{_BLUEPRINT_BASE}/CHARTER.md#5-the-desk",
+        },
+        {
+            "name": "Workers sign",
+            "pass": workers_ok,
+            "detail": f"{len(worker_contracts)} worker CONTRACT.md found" if workers_ok
+                else "no workers/<id>/CONTRACT.md found",
+            "template": f"{_BLUEPRINT_BASE}/templates/worker-CONTRACT.md",
+        },
+    ]
+    passed = sum(1 for c in checks if c["pass"])
+
+    if args.json:
+        print(json.dumps(
+            {"path": str(path), "project": project, "passed": passed,
+             "total": len(checks), "checks": checks},
+            indent=2,
+        ))
+        return
+
+    print(
+        f"wl doctor — Charter compliance check for {path} "
+        "(informational only; WL works either way)\n"
+    )
+    for c in checks:
+        mark = "[x]" if c["pass"] else "[ ]"
+        print(f"{mark} {c['name']} — {c['detail']}")
+        if not c["pass"]:
+            print(f"      template: {c['template']}")
+    print(f"\n{passed}/{len(checks)} compliant. Full Charter: {_BLUEPRINT_BASE}/CHARTER.md")
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -443,6 +525,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print machine-readable report",
     )
 
+    p_doctor = sub.add_parser(
+        "doctor",
+        help="Charter compliance check (informational only, never blocks)",
+    )
+    p_doctor.add_argument(
+        "--path",
+        default=".",
+        help="Directory to check (default: current directory)",
+    )
+    p_doctor.add_argument(
+        "--project",
+        default=None,
+        help="Project slug to check for a registered store (default: guessed from --path)",
+    )
+    p_doctor.add_argument(
+        "--product",
+        default=os.environ.get("WL_PRODUCT", ""),
+        help="Back-compat alias for --project",
+    )
+    p_doctor.add_argument("--json", action="store_true")
+
     p_export = sub.add_parser(
         "export",
         help="Export a product store to JSONL (local SQLite; read-only)",
@@ -486,6 +589,7 @@ _COMMANDS = {
     "status": cmd_status,
     "label": cmd_label,
     "demo": cmd_demo,
+    "doctor": cmd_doctor,
     "export": cmd_export,
     "import": cmd_import,
 }
