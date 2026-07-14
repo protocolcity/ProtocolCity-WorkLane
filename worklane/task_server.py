@@ -161,6 +161,17 @@ def _render_tickets_context_strip() -> str:
 
 # UI region vocabulary: docs/operations/ui-chrome.md (data-ops-region in HTML).
 
+# ── Dashboard branding (pc-24 / wl-134, 2026-07-14) ─────────────────────
+# In a founded city the Tickets dashboard fronts the suite brand
+# ("ProtocolCity — Tickets", engine attributed as a subtitle); a standalone
+# WorkLane install fronts the engine brand ("WorkLane — Tickets").
+# WL_BRAND=city|standalone selects the mode. This internal checkout IS the
+# city instance, so the default here is "city"; the WorkLane public export
+# must default to "standalone" (wl-134 — flip the default in the export).
+_BRAND_MODE = os.environ.get("WL_BRAND", "city")
+_BRAND_NAME = "ProtocolCity — Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
+_BRAND_SUBTITLE = "powered by WorkLane" if _BRAND_MODE == "city" else ""
+
 # ── Lightweight page wrapper ────────────────────────────────────────────
 # Mirrors the design tokens and card/badge CSS from the main app but skips
 # the nav bar, SSE bus, CSRF middleware, setup banner, and everything else
@@ -392,6 +403,8 @@ def _task_page(
               title="Tickets actively in progress or in review."></span>
         <span id="ts-stalled-badge" class="ts-stalled-badge" hidden
               title="In-progress/in-review tickets with no update in over 90 minutes (PROTOCOL.md §4)."></span>
+        <span id="ts-attention-badge" class="ts-attention-badge" hidden
+              title="Everything waiting on the founder, across every store: in review, founder-decision, human-gated, stalled, embargoed."></span>
         <span id="ts-last-updated" class="ts-last-updated dim"></span>
 """
         )
@@ -426,7 +439,7 @@ def _task_page(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WorkLane — {_esc(title)}</title>
+  <title>{_esc(title)} · {_BRAND_NAME}</title>
   <style>{_css()}</style>
   <script>
   /* Theme init (before paint) — Dispatch paper is the default (wl-37); dark
@@ -468,7 +481,7 @@ def _task_page(
 <body data-ops-shell="{_esc(shell)}" data-ops-scope="{_esc(page_scope)}">
   <header class="task-server-header task-server-header--stack">
     <div class="task-server-header-primary ops-main-nav" data-ops-region="main-nav">
-      <a href="/admin/overview" class="{_brand_cls}">WorkLane</a>
+      <a href="/admin/overview" class="{_brand_cls}">{_BRAND_NAME}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
       <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
         <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
            title="Landing — the store visually interpreted: live metrics + breakdown charts"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
@@ -480,7 +493,7 @@ def _task_page(
 {_product_scope}
       <div class="task-server-header-end">
 {_ticket_header_widgets}
-        <span class="task-server-hint dim">WL · port {_esc(_port)}</span>
+        <span class="task-server-hint dim">port {_esc(_port)}</span>
         <a href="/admin/docs" title="Docs — PROCESS/TRUTH/README + per-agent instruction files rendered in-app"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'docs' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#128220;</a>
         <a href="/admin/settings" title="Settings — projects, prefixes, numbering, service"
@@ -1154,6 +1167,10 @@ def _task_page(
   .ts-stalled-badge {{
     background: rgba(255,59,59,.15); color: var(--red, #ff3b3b);
     border: 1px solid rgba(255,59,59,.3);
+  }}
+  .ts-attention-badge {{
+    background: rgba(245,158,11,.15); color: #f59e0b;
+    border: 1px solid rgba(245,158,11,.3);
   }}
   /* Slide-down create panel (full form — same as former workspace card) */
   /* Filter form — consistent with main app */
@@ -2934,6 +2951,132 @@ def _render_attention_panel(
     return f"<div class='pulse-side-rows'>{rows}</div>", len(items)
 
 
+# wl-135: founder-attention feed — everything waiting on the founder,
+# aggregated across every registered product store, always (not scoped to
+# the page's current store, unlike the panels above). Distinct from
+# _render_attention_panel (wl-86, scope-local generic staleness): this is
+# specifically the founder's five gates — review, decision label, human
+# gate, stalled in-flight, date-gated embargo.
+_ATTENTION_KIND_META = {
+    "in_review": ("in review", "#38bdf8"),
+    "founder_decision": ("decision", "#a855f7"),
+    "human_gate": ("gated", "#ef4444"),
+    "stalled": ("stalled", "#f59e0b"),
+    "embargo": ("embargo", "#64748b"),
+}
+_FOUNDER_DECISION_LABELS = {"needs:founder-decision", "founder-decision"}
+
+
+def _attention_item(
+    t: Task, product: str, kind: str, note: str,
+    since: Optional[datetime], now: datetime,
+) -> Dict[str, Any]:
+    return {
+        "id": t.id,
+        "product": product,
+        "title": t.title,
+        "priority": int(t.priority or 3),
+        "kind": kind,
+        "note": note,
+        "waiting_since": since.isoformat() if since else None,
+        "age_minutes": int((now - since).total_seconds() // 60) if since else None,
+        "gate_until": None,
+        "url": f"/admin/tasks/{t.id}",
+    }
+
+
+def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
+    """Everything blocked on the founder, all stores (wl-135): in_review
+    (review IS the founder gate), needs:founder-decision/founder-decision
+    labels, gate_type=human, stalled in-flight (§4, >90m — reuses
+    _STALE_INFLIGHT), and gate_type=timer embargoes with a machine-readable
+    gate_until. Sorted oldest-first — age is how long the founder has been
+    the blocker. Each open task counts once, first match wins in the order
+    above (an in_review ticket that's also labeled founder-decision shows
+    once, as in_review).
+    """
+    items: List[Dict[str, Any]] = []
+    counted: set = set()
+
+    for t in _merged_in_flight_tasks(""):
+        prod_slug, _ = split_task_id(t.id)
+        if t.status == TaskStatus.IN_REVIEW:
+            since = _parse_task_date_utc(t.updated_at) or _parse_task_date_utc(t.created_at)
+            items.append(_attention_item(t, prod_slug, "in_review", "awaiting review", since, now))
+            counted.add(t.id)
+        else:
+            since = _parse_task_date_utc(t.updated_at)
+            if since is not None and (now - since) >= _STALE_INFLIGHT:
+                items.append(_attention_item(
+                    t, prod_slug, "stalled",
+                    f"no update {_pulse_relative_time(t.updated_at, now=now)}", since, now,
+                ))
+                counted.add(t.id)
+
+    for t in _merged_scope_tasks_for_filters(""):
+        if t.id in counted or t.status in (TaskStatus.DONE, TaskStatus.CANCELED):
+            continue
+        prod_slug, _ = split_task_id(t.id)
+        since = _parse_task_date_utc(t.updated_at) or _parse_task_date_utc(t.created_at)
+        labels = set(t.labels or [])
+        if labels & _FOUNDER_DECISION_LABELS:
+            items.append(_attention_item(t, prod_slug, "founder_decision", "founder decision needed", since, now))
+            counted.add(t.id)
+        elif t.gate_type == "human":
+            items.append(_attention_item(t, prod_slug, "human_gate", t.gate_note or "human gate", since, now))
+            counted.add(t.id)
+        elif t.gate_type == "timer" and t.gate_until:
+            note = f"gated until {t.gate_until[:10]}" if t.gate_until else (t.gate_note or "embargoed")
+            item = _attention_item(t, prod_slug, "embargo", note, since, now)
+            item["gate_until"] = t.gate_until
+            items.append(item)
+            counted.add(t.id)
+
+    items.sort(key=lambda it: it["waiting_since"] or "")
+    return items
+
+
+def _render_founder_attention_rows(items: List[Dict[str, Any]], *, limit: Optional[int] = None) -> str:
+    if not items:
+        return "<div class='pulse-empty'>&#10003; Nothing waiting on you.</div>"
+    rows = ""
+    for it in (items[:limit] if limit else items):
+        tag, color = _ATTENTION_KIND_META.get(it["kind"], (it["kind"], "#64748b"))
+        title = _esc(it["title"])[:70] + ("…" if len(it["title"]) > 70 else "")
+        age = _fmt_minutes(it["age_minutes"]) if it["age_minutes"] is not None else "—"
+        rows += (
+            f"<a href='{_esc(it['url'])}' class='pulse-side-row' title='{_esc(it['note'])}'>"
+            f"<span class='pulse-attn-tag' style='color:{color};border-color:{color};'>{_esc(tag)}</span>"
+            f"<span class='pulse-side-id'>#{_esc(it['id'])}</span>"
+            f"<span class='pulse-side-title'>{title}</span>"
+            f"<span class='pulse-side-age'>{age}</span>"
+            f"</a>"
+        )
+    return f"<div class='pulse-side-rows'>{rows}</div>"
+
+
+def _render_attention_page_body(items: List[Dict[str, Any]]) -> str:
+    """wl-135: full-page render behind /admin/attention — same rows as the
+    Overview panel, unlimited, plus a per-kind breakdown line."""
+    if not items:
+        return _task_card(
+            "Waiting on founder",
+            "<div class='pulse-empty'>&#10003; Nothing waiting on you across any store.</div>",
+        )
+    by_kind: Dict[str, int] = {}
+    for it in items:
+        by_kind[it["kind"]] = by_kind.get(it["kind"], 0) + 1
+    summary = " &middot; ".join(
+        f"{by_kind[k]} {_ATTENTION_KIND_META.get(k, (k, ''))[0]}"
+        for k in by_kind
+    )
+    rows_html = _render_founder_attention_rows(items)
+    return _task_card(
+        f"Waiting on founder — {len(items)}",
+        f"<div class='dim' style='margin-bottom:10px; font-size:12px;'>{summary}</div>{rows_html}",
+    )
+
+
 def _render_flow_panel(
     all_tasks: List[Task],
     *,
@@ -3223,6 +3366,11 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
     attention_html, attention_count = _render_attention_panel(
         inflight_tasks, blocked_entries, backlog, now=now, parse_ts=_parse_ts,
     )
+    # wl-135: founder-attention feed is always all-store — a store-scoped
+    # Pulse page still shows the full "waiting on you" picture, matching the
+    # header chip and /admin/attention.
+    founder_attention_items = _collect_founder_attention_items(now=now)
+    founder_attention_html = _render_founder_attention_rows(founder_attention_items, limit=8)
     # wl-89: former cockpit analytics, re-homed as themed panels.
     breakdown_html, breakdown_meta, activity14_html = _render_breakdown_panels(
         scope, all_tasks,
@@ -3471,6 +3619,16 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
               {_PANEL_CONTROLS}
             </div>
             {focus_html}
+          </div>
+
+          <div class='pulse-panel' data-panel-id='founder_attention' data-default-col='side'>
+            <div class='pulse-panel-head'>
+              {_PANEL_DRAG_HANDLE}
+              <span class='pulse-panel-title'>Waiting on founder</span>
+              <span class='pulse-panel-meta'><a href='/admin/attention' class='dim'>{len(founder_attention_items) or 'clear'} &rarr;</a></span>
+              {_PANEL_CONTROLS}
+            </div>
+            {founder_attention_html}
           </div>
 
           <div class='pulse-panel' data-panel-id='attention' data-default-col='side'>
@@ -6260,6 +6418,41 @@ def api_dev_board_summary(scope: str = ""):
     })
 
 
+@router.get("/api/dev/attention")
+def api_dev_attention():
+    """wl-135: the founder-attention feed — everything blocked on the
+    founder, always all stores (like board-summary's scope=all; there is no
+    ``scope`` param here, this view has no per-store variant). Same shape
+    convention as /api/dev/board-summary so other dashboards (Workers,
+    Projects) and reporting sessions can consume it directly.
+    """
+    now = datetime.now(timezone.utc)
+    items = _collect_founder_attention_items(now=now)
+    resp = JSONResponse({
+        "ok": True,
+        "count": len(items),
+        "items": items,
+        "stale_minutes": int(_STALE_INFLIGHT.total_seconds() // 60),
+        "updated_at": now.isoformat(),
+    })
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+@router.get("/admin/attention", response_class=HTMLResponse)
+def admin_attention() -> Any:
+    """wl-135: the full "waiting on founder" list — the standalone page
+    behind the header chip and the Overview panel's "view all". Always all
+    stores; this view has no scope concept (PROTOCOL.md §5 review gate,
+    needs:founder-decision/founder-decision labels, gate_type=human,
+    stalled in-flight, date-gated embargoes).
+    """
+    now = datetime.now(timezone.utc)
+    items = _collect_founder_attention_items(now=now)
+    body = _render_attention_page_body(items) + _task_server_extra_css()
+    return _task_page("Waiting on founder", body, nav_active="attention")
+
+
 @router.get("/api/admin/overview/summary")
 def api_admin_overview_summary(scope: str = "") -> JSONResponse:
     """Live status/priority counts for the Overview cards. ``scope`` narrows
@@ -6478,6 +6671,7 @@ def _task_server_extra_js() -> str:
       }
     }
     tsFetchBoardSummary();
+    tsFetchAttentionSummary();
   };
 
   /* Tick elapsed timers every 30s */
@@ -6541,11 +6735,31 @@ def _task_server_extra_js() -> str:
     } catch (e) { /* silent */ }
   }
 
+  /* wl-135: founder-attention chip — always all-store, unlike the
+     scope-aware pills above (no ?scope= — same "all stores" convention as
+     board-summary's scope=all). */
+  async function tsFetchAttentionSummary() {
+    try {
+      var resp = await fetch('/api/dev/attention', { headers: { 'Accept': 'application/json' } });
+      var j = await resp.json();
+      var el = document.getElementById('ts-attention-badge');
+      if (!el) return;
+      if ((j.count || 0) > 0) {
+        el.textContent = 'waiting on founder: ' + j.count;
+        el.hidden = false;
+        el.onclick = function() { window.location.href = '/admin/attention'; };
+      } else {
+        el.hidden = true;
+      }
+    } catch (e) { /* silent */ }
+  }
+
   /* ── Init: load everything on page ready ─────────────────────────── */
   function tsInit() {
     _tsLastPollAt = Date.now();
     tsUpdateLastUpdated();
     tsFetchBoardSummary();
+    tsFetchAttentionSummary();
     /* Snapshot initial statuses from server-rendered cards */
     var cards = document.querySelectorAll('.tb-card[data-task-id]');
     for (var i = 0; i < cards.length; i++) {
