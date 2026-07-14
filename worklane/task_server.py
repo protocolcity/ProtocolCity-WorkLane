@@ -66,6 +66,7 @@ from worklane.trackers import (
 from worklane import archival
 from worklane.products import (
     ProductSpec,
+    all_taken_prefixes,
     default_product_slug,
     discover_products,
     get_product,
@@ -170,7 +171,12 @@ def _render_tickets_context_strip() -> str:
 # city instance, so the default here is "city"; the WorkLane public export
 # must default to "standalone" (wl-134 — flip the default in the export).
 _BRAND_MODE = os.environ.get("WL_BRAND", "city")
-_BRAND_NAME = "ProtocolCity — Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
+# Second naming amendment (founder, 2026-07-14, theme adoption): with the
+# living-scene themes the ROOM NAME leads in-city — "Ticket Desk" is the
+# room, "Tickets" the one-word function. Standalone stays engine-branded.
+_BRAND_NAME = (
+    "ProtocolCity — Ticket Desk · Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
+)
 # wl-130: WorkLane's ratified city-institution epithet (pc-21) — "the
 # work-order desk: every job filed, claimed, and signed" — doubles as the
 # first-run "what am I looking at" line for a fresh standalone install.
@@ -500,7 +506,7 @@ def _task_page(
 <body data-ops-shell="{_esc(shell)}" data-ops-scope="{_esc(page_scope)}">
   <header class="task-server-header task-server-header--stack">
     <div class="task-server-header-primary ops-main-nav" data-ops-region="main-nav">
-      <a href="/admin/overview" class="{_brand_cls}">{_BRAND_NAME}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
+      <a href="/admin/desk" class="{_brand_cls}" title="The desk — the room you walk into">{_BRAND_NAME}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
       <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
         <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
            title="Landing — the store visually interpreted: live metrics + breakdown charts"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
@@ -1509,9 +1515,14 @@ def _merged_in_flight_tasks(scope: str = "") -> List[Task]:
     _merged_ready_count for the local-SQLite-only scope note.
     """
     out: List[Task] = []
-    for _spec, tracker in _scoped_product_trackers(scope):
+    for spec, tracker in _scoped_product_trackers(scope):
         out.extend(
-            t for t in WorkQueue(tracker).all_tasks
+            # Composite ids, same convention as list_tasks_for_scope_multi
+            # (wl-144): bare store-local ids fall back to the DEFAULT store
+            # in split_task_id, mis-attributing every non-default store's
+            # in-flight work downstream (attention feed, in-flight API).
+            replace(t, id=f"{spec.prefix}-{t.id}")
+            for t in WorkQueue(tracker).all_tasks
             if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)
         )
     out.sort(key=lambda t: t.updated_at or "", reverse=True)
@@ -4176,30 +4187,28 @@ DEFAULT_AGENT_ID = "founder-terminal"
 
 @router.get("/", response_class=HTMLResponse)
 def index():
-    return RedirectResponse("/admin/overview", status_code=302)
+    # wl-132 cutover: the living desk scene is the room you walk into.
+    # Overview keeps the analytics one click away.
+    return RedirectResponse("/admin/desk", status_code=302)
 
 
 @router.get("/admin/overview", response_class=HTMLResponse)
 @router.get("/admin/overview/{scope}", response_class=HTMLResponse)
 def ops_overview(scope: str = "all", days: int = 14) -> Any:
-    """WorkLane landing — the store visually interpreted (wl-85):
-    live metrics on top, breakdown charts below, everything filtered to the
-    chosen scope (All or one project store, same tabs as Board/Table).
+    """The desk's report (wl-156) — the strategic view over the entire
+    backlog, in the paper voice. Supersedes the wl-85/89 pulse landing;
+    that renderer and the allocation helpers stay dormant below for the
+    dispatch-report seam (oc-22).
 
-    wl-106: ``days`` selects the Allocation panel's window (7/14/30); any
-    other value falls back to the 14d default rather than erroring.
+    The report is deliberately city-wide (the verdict strip carries the
+    per-store split); ``scope`` is still validated so old per-store links
+    404 on typos rather than silently widening, and ``days`` is accepted
+    as a legacy no-op.
     """
     scope = (scope or "all").strip().lower()
     if scope != "all" and get_product(scope) is None:
         raise HTTPException(status_code=404, detail="Unknown overview scope")
-    prod = "" if scope == "all" else scope
-    window_days = days if days in _ALLOCATION_WINDOWS else 14
-    # wl-89: one themed surface — the analytics cards live inside the Pulse
-    # grid now; no separate cockpit section below.
-    body = _render_pulse_page(prod, window_days) + _task_server_extra_css()
-    return _task_page(
-        "Overview", body, nav_active="overview", page_scope=prod
-    )
+    return _render_report_page()
 
 
 @router.get("/admin/cockpit")
@@ -4334,8 +4343,26 @@ def admin_settings() -> str:
         "automation against live stores without an operator click.</p>"
     )
 
+    ident = _identity_config()
+    founder_identity_html = (
+        "<table class='tos-table'><thead><tr><th>Founder id (§5.2, signs everything)</th>"
+        "<th>Alias (presentation only)</th><th></th></tr></thead><tbody>"
+        "<tr>"
+        f"<td><code>{_esc(ident['founder_id'])}</code></td>"
+        f"<td><input class='ts-settings-input' type='text' id='ts-founder-alias' "
+        f"value='{_esc(ident['founder_alias'])}' maxlength='60' "
+        f"placeholder='e.g. your name — shown wherever this id signed' /></td>"
+        "<td><button class='btn btn-sm go' type='button' "
+        "onclick='tsSettingsSaveIdentity()'>Save</button></td>"
+        "</tr></tbody></table>"
+        "<p class='dim' style='margin-top:8px;'>Aliases are paint, ids are identity "
+        "(wl-148): comments stay signed with the canonical id forever — the alias only "
+        "changes how founder-signed entries render, and the desk pre-fills the author "
+        "box with this id. Stored in <code>identity.json</code> in the data dir.</p>"
+    )
     identity_html = (
-        "<p>Agent ids are stable identities the host deployment defines "
+        founder_identity_html
+        + "<p>Agent ids are stable identities the host deployment defines "
         "(PROTOCOL.md §5.2 holds the roster) — any signed id is rendered as-is. "
         "Reserved system authors: <code>cli-label</code>, <code>cli-update</code>, "
         "<code>dependency-guard</code>.</p>"
@@ -4363,6 +4390,22 @@ def admin_settings() -> str:
 
     settings_js = """
 <script>
+  async function tsSettingsSaveIdentity() {
+    var aEl = document.getElementById('ts-founder-alias');
+    try {
+      var resp = await fetch('/api/admin/identity', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ founder_alias: aEl ? aEl.value : '' })
+      });
+      var j = await resp.json();
+      if (!j.ok) { showToast('Save failed: ' + (j.error || resp.status), 'error'); return; }
+      showToast('Alias saved', 'success');
+    } catch (e) {
+      showToast('Network error', 'error');
+    }
+  }
+
   async function tsSettingsSaveProject(slug) {
     var dEl = document.getElementById('ts-prod-display-' + slug);
     var pEl = document.getElementById('ts-prod-prefix-' + slug);
@@ -4458,6 +4501,8 @@ _DOCS: List[Tuple[str, str, str]] = [
 
 _OPTIONAL_DOCS: List[Tuple[str, str, str]] = [
     ("truth", "ARCHITECTURE.md", os.path.join(_ROOT, "worklane", "ARCHITECTURE.md")),
+    # The desk room guide (wl-146) — stamps, sorting, acknowledge doctrine.
+    ("desk", "TICKET_DESK.md", os.path.join(_ROOT, "docs", "TICKET_DESK.md")),
 ]
 
 # Per-agent instruction files. Lane operating rules are normative in
@@ -4965,7 +5010,7 @@ async def api_create_product(request: Request) -> JSONResponse:
                 },
                 status_code=400,
             )
-        taken = {spec.prefix for spec in discover_products()}
+        taken = all_taken_prefixes()
         if prefix in taken:
             return JSONResponse(
                 {"ok": False, "error": f"prefix {prefix!r} is already used by another project"},
@@ -5043,14 +5088,21 @@ async def api_update_product(slug: str, request: Request) -> JSONResponse:
                 {"ok": False, "error": "prefix 'o' is reserved (legacy ops store)"},
                 status_code=400,
             )
-        taken = {s.prefix for s in discover_products() if s.slug != slug}
+        taken = all_taken_prefixes(exclude_slug=slug)
         if prefix in taken:
             return JSONResponse(
                 {"ok": False, "error": f"prefix {prefix!r} is already used by another project"},
                 status_code=400,
             )
 
-    register_product_meta(slug, display=display, prefix=prefix)
+    # A real prefix rename retires the old prefix into legacy_prefixes (wl-152)
+    # so every composite id already written under it — comments, close-out
+    # Links:, commit messages, bookmarks — keeps resolving forever.
+    old_prefix = spec.prefix
+    retiring_prefix = old_prefix if (prefix is not None and prefix != old_prefix) else None
+    register_product_meta(
+        slug, display=display, prefix=prefix, add_legacy_prefix=retiring_prefix
+    )
     updated = get_product(slug)
     if updated is None:
         return JSONResponse(
@@ -7326,6 +7378,909 @@ def _task_server_extra_css() -> str:
   }
 </style>
 """
+
+
+# ── The living desk (wl-132): the PAPER room ─────────────────────────────
+# Ratified spec (founder verdicts on wl-132): grok's structure — nameplate,
+# IN-TRAY of decision slips, hold bin of quiet claims, neighborhood-ledger
+# blotter, stamp pad + FILED outbox rail — with claude's liveness (stamp
+# thunk on fresh receipts, real per-item paper stack heights). Modern paper,
+# not sepia. The desk keeps the ticket verbs on Board/Table/ticket pages;
+# the scene renders around them, never replaces them. Engineering constraint
+# proven live on the sibling rooms: setInterval, never requestAnimationFrame.
+
+_SCENE_WINDOW_HOURS = 24
+
+# ── Founder identity (wl-148) ─────────────────────────────────────────────
+# The canonical §5.2 id signed at the controls plus a presentation-only
+# alias. Aliases are paint, ids are identity: the SIGNED author never
+# changes, the alias only changes how founder-signed entries render.
+# Overlay file in the data dir, same pattern as the products overlay.
+
+_FOUNDER_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+
+
+def _identity_config_path() -> Path:
+    return wl_data_dir() / "identity.json"
+
+
+def _identity_config() -> Dict[str, str]:
+    cfg = {"founder_id": "founder-terminal", "founder_alias": ""}
+    try:
+        raw = json.loads(_identity_config_path().read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            for k in cfg:
+                if isinstance(raw.get(k), str):
+                    cfg[k] = raw[k]
+    except (OSError, ValueError):
+        pass
+    return cfg
+
+
+@router.get("/api/admin/identity")
+def api_get_identity() -> JSONResponse:
+    return JSONResponse({"ok": True, **_identity_config()})
+
+
+@router.patch("/api/admin/identity")
+async def api_patch_identity(request: Request) -> JSONResponse:
+    try:
+        payload: Dict[str, Any] = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body"}, status_code=400)
+    cfg = _identity_config()
+    if "founder_alias" in payload:
+        alias = str(payload["founder_alias"] or "").strip()
+        if len(alias) > 60:
+            return JSONResponse(
+                {"ok": False, "error": "alias too long (max 60)"}, status_code=400)
+        cfg["founder_alias"] = alias
+    if "founder_id" in payload:
+        fid = str(payload["founder_id"] or "").strip()
+        if not _FOUNDER_ID_RE.match(fid):
+            return JSONResponse(
+                {"ok": False, "error": "founder_id must be a kebab-case §5.2 id"},
+                status_code=400)
+        cfg["founder_id"] = fid
+    path = _identity_config_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+    except OSError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+    return JSONResponse({"ok": True, **cfg})
+
+# Directory-board doors (pc-37 case #4): mode-aware — a standalone WorkLane
+# install is ONE room and shows no doors to uninstalled rooms.
+_CITYHALL_URL = os.environ.get("WL_CITYHALL_URL", "http://127.0.0.1:8796")
+_WORKFORCE_URL = os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")
+
+
+@router.get("/api/scene")
+def api_desk_scene() -> JSONResponse:
+    """The desk scene's facts in one call (wl-132): per-store ledger counts,
+    the founder-attention tray (wl-135 collector, unchanged), and the window
+    of FILED receipts. Computed from THIS engine's own stores — the scene
+    never reads the city lens (engines compute their own facts)."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=_SCENE_WINDOW_HOURS)
+    stores: List[Dict[str, Any]] = []
+    filed: List[Dict[str, Any]] = []
+    for spec in discover_products():
+        tasks = _merged_scope_tasks_for_filters(spec.slug)
+        counts = {
+            TaskStatus.BACKLOG: 0,
+            TaskStatus.IN_PROGRESS: 0,
+            TaskStatus.IN_REVIEW: 0,
+        }
+        done_total = 0
+        for t in tasks:
+            st = (t.status or "").strip()
+            if st == TaskStatus.DONE:
+                done_total += 1
+                dt = _parse_task_date_utc(t.updated_at)
+                if dt is not None and dt >= cutoff:
+                    filed.append({
+                        "id": t.id, "store": spec.slug, "title": t.title,
+                        "closed_at": t.updated_at,
+                    })
+            elif st in counts:
+                counts[st] += 1
+        stores.append({
+            "slug": spec.slug, "display": spec.display, "prefix": spec.prefix,
+            "backlog": counts[TaskStatus.BACKLOG],
+            "in_progress": counts[TaskStatus.IN_PROGRESS],
+            "in_review": counts[TaskStatus.IN_REVIEW],
+            "done_total": done_total,
+            "ready": _merged_ready_count(spec.slug),
+        })
+    filed.sort(key=lambda f: _activity_ts_sort_key(f.get("closed_at")), reverse=True)
+    payload = {
+        "ok": True,
+        "generated_at": now.isoformat(),
+        "window_hours": _SCENE_WINDOW_HOURS,
+        "stale_minutes": _claim_stale_minutes(),
+        "stores": stores,
+        "attention": _collect_founder_attention_items(now=now),
+        "filed": filed[:60],
+    }
+    resp = JSONResponse(payload)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+_DESK_SCENE_CSS = """
+/* Self-hosted IBM Plex (wl-37 pattern) — vendored under /static/fonts/, OFL. */
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:400;
+  font-display:swap; src:url("/static/fonts/ibm-plex-sans-400.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:600;
+  font-display:swap; src:url("/static/fonts/ibm-plex-sans-600.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:700;
+  font-display:swap; src:url("/static/fonts/ibm-plex-sans-700.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400;
+  font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
+:root {
+  --desk:#e9e7e2; --paper:#fdfdfb; --line:#d7d5cf; --rule:#9fb6d9;
+  --ink:#1f2328; --dim:#6d7480; --blue:#1c4f9c; --stamp:#c0392b;
+  --ok:#1e7a45; --warn:#a8681e; --pink:#fbe9ea; --pinkline:#e2b6ba;
+}
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; }
+body { background:var(--desk); color:var(--ink);
+  font:14px/1.5 "IBM Plex Sans",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  background-image:linear-gradient(180deg,#dedcd6 0,var(--desk) 220px);
+  display:flex; flex-direction:column; }
+a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
+.dim { color:var(--dim); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+header.nameplate { background:var(--paper); border-bottom:1px solid var(--line);
+  border-top:6px solid var(--stamp); box-shadow:0 2px 8px #0002;
+  padding:14px 22px 12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+h1 { font-size:19px; letter-spacing:.14em; font-weight:700; }
+h1 .fn { color:var(--stamp); }
+.epithet { color:var(--dim); font-size:13px; }
+.badges { margin-left:auto; display:flex; gap:12px; align-items:baseline; font-size:12px;
+  color:var(--dim); }
+#liveChip { border:1.5px solid var(--ok); color:var(--ok); border-radius:3px;
+  font-weight:700; font-size:10px; letter-spacing:.16em; padding:2px 8px;
+  text-transform:uppercase; }
+#liveChip.hold { border-color:var(--warn); color:var(--warn); }
+#clock { font-variant-numeric:tabular-nums; }
+main.surface { flex:1; overflow:auto; padding:20px 22px 26px; max-width:1420px;
+  width:100%; margin:0 auto; display:grid; gap:22px;
+  grid-template-columns:minmax(280px,.9fr) minmax(380px,1.35fr) minmax(280px,.9fr); }
+@media (max-width:1080px){ main.surface { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px){ main.surface { grid-template-columns:1fr; } }
+h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;
+  margin:0 0 10px; font-weight:600; }
+.tray, .blotter, .pad, .clip { background:var(--paper); border:1px solid var(--line);
+  box-shadow:0 2px 6px #0002; padding:14px 16px; margin-bottom:18px; }
+.form { background:var(--paper); border:1px solid var(--line); box-shadow:0 2px 5px #0002;
+  padding:12px 14px 10px; margin-bottom:12px; position:relative; overflow:hidden; }
+.form::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+  background:var(--blue); }
+.form .no { font:600 12px "IBM Plex Mono",ui-monospace,Menlo,monospace; color:var(--blue); }
+.form .t { margin:3px 0 4px; font-weight:600; font-size:13px; }
+.form .meta { font-size:12px; color:var(--dim); }
+.form.fresh { animation:inkin 2.4s ease-out; }
+@keyframes inkin { from { background:#fff3c8; } }
+.stamp { position:absolute; right:10px; top:8px; transform:rotate(6deg);
+  border:2.5px solid var(--stamp); color:var(--stamp); border-radius:4px;
+  font:800 10px/1 "IBM Plex Sans",sans-serif; letter-spacing:.18em;
+  padding:4px 7px; text-transform:uppercase; opacity:.85;
+  mask-image:radial-gradient(circle at 30% 40%, #000 92%, #0008 100%); }
+.stamp.green { border-color:var(--ok); color:var(--ok); }
+.stamp.amber { border-color:var(--warn); color:var(--warn); }
+.slip { background:var(--pink); border-color:var(--pinkline); }
+.slip::before { background:var(--stamp); }
+.tag { border:1px solid var(--line); border-radius:3px; padding:0 6px; font-size:11px;
+  color:var(--dim); background:#fff; }
+.empty-note { color:var(--dim); font-size:12px; font-style:italic; padding:6px 0; }
+/* the blotter: one ledger card per store, paper piles with real heights */
+.hood { border:1px solid var(--line); background:var(--paper); box-shadow:0 2px 5px #0002;
+  padding:12px 16px 10px; margin-bottom:12px; }
+.hood-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.hood-head .nm { font-weight:700; letter-spacing:.03em; }
+.hood-head .nm a { color:var(--ink); } .hood-head .nm a:hover { color:var(--blue); }
+.ready-chip { font-size:11px; color:var(--warn); border:1px solid var(--warn);
+  border-radius:3px; padding:0 7px; white-space:nowrap; }
+.ready-chip.zero { color:var(--dim); border-color:var(--line); }
+.piles { display:flex; gap:18px; margin-top:10px; align-items:flex-end; }
+.pile { flex:1; text-align:center; }
+.pile .sheets { position:relative; height:56px; }
+.pile .sheet { position:absolute; left:12%; right:12%; height:4px; border-radius:1px;
+  background:#fff; border:1px solid #cfd1cb; box-shadow:0 1px 1px #0001; }
+.pile.doing .sheet { background:#fef7e0; border-color:#e3d9ae; }
+.pile.review .sheet { background:#e8effa; border-color:#b9cdec; }
+.pile .n { font:600 15px "IBM Plex Mono",ui-monospace,monospace; margin-top:2px; }
+.pile .l { font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--dim); }
+/* stamp pad + outbox */
+.pad { text-align:center; position:relative; }
+.rubber { display:inline-block; margin:10px auto 4px; border:3px solid var(--stamp);
+  color:var(--stamp); border-radius:6px; font-weight:800; font-size:15px;
+  letter-spacing:.24em; padding:10px 18px; text-transform:uppercase;
+  transform:rotate(-4deg); transition:transform .08s;
+  mask-image:radial-gradient(circle at 35% 45%, #000 90%, #0007 100%); }
+.rubber.thunk { animation:thunk .5s ease-in; }
+@keyframes thunk { 30% { transform:rotate(-4deg) translateY(10px) scale(.97); }
+  45% { transform:rotate(-4deg) translateY(10px) scaleY(.9); }
+  75% { transform:rotate(-4deg); } }
+.inkring { position:absolute; left:50%; top:58px; width:30px; height:30px; margin-left:-15px;
+  border:2.5px dashed var(--stamp); border-radius:50%; opacity:0; pointer-events:none; }
+.inkring.show { animation:inkfade 2.2s ease-out; }
+@keyframes inkfade { 10% { opacity:.7; } 100% { opacity:0; } }
+.pad-stats { font-size:12px; color:var(--dim); margin-top:6px; }
+.pad-stats .n { font:700 20px "IBM Plex Mono",ui-monospace,monospace; color:var(--ink);
+  display:block; }
+.clip-list { max-height:430px; overflow-y:auto; }
+.clip-item { padding:6px 2px; border-bottom:1px dashed var(--line); font-size:12px; }
+.clip-item:last-child { border-bottom:0; }
+.clip-item .when { color:var(--dim); font-variant-numeric:tabular-nums;
+  font:11px "IBM Plex Mono",ui-monospace,monospace; }
+.clip-item.fresh { animation:inkin 2.4s ease-out; }
+footer.bar { border-top:1px solid var(--line); background:var(--paper);
+  padding:8px 22px; display:flex; justify-content:space-between; gap:14px;
+  flex-wrap:wrap; font-size:12px; color:var(--dim); }
+footer.bar a { margin-right:14px; }
+/* the work-order drawer (wl-145): the ticket pulled out ON the desk,
+   never a page exit */
+#scrim { position:fixed; inset:0; background:#2b2d3140; opacity:0;
+  pointer-events:none; transition:opacity .18s; z-index:40; }
+#scrim.open { opacity:1; pointer-events:auto; }
+#wo { position:fixed; top:0; right:0; bottom:0; width:min(580px,94vw);
+  background:var(--paper); border-left:1px solid var(--line);
+  box-shadow:-8px 0 28px #0003; transform:translateX(102%);
+  transition:transform .22s ease-out; z-index:41; display:flex;
+  flex-direction:column; }
+#wo.open { transform:translateX(0); }
+.wo-head { padding:16px 20px 12px; border-bottom:2px solid var(--rule);
+  position:relative; background:linear-gradient(180deg,#fbfbf8,var(--paper)); }
+.wo-head .no { font:600 13px "IBM Plex Mono",ui-monospace,monospace; color:var(--blue); }
+.wo-head .t { font-weight:700; font-size:15px; margin:4px 90px 2px 0; }
+.wo-head .stamp { top:14px; right:44px; font-size:11px; padding:5px 9px; }
+.wo-close { position:absolute; top:10px; right:10px; border:1px solid var(--line);
+  background:var(--paper); color:var(--dim); width:26px; height:26px; border-radius:3px;
+  font-size:14px; cursor:pointer; line-height:1; }
+.wo-close:hover { color:var(--ink); border-color:var(--dim); }
+.wo-body { flex:1; overflow-y:auto; padding:14px 20px 20px; }
+.wo-meta { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px; }
+.wo-meta td { padding:4px 0; border-bottom:1px dotted var(--line); vertical-align:top; }
+.wo-meta td:first-child { color:var(--dim); width:86px; text-transform:uppercase;
+  letter-spacing:.14em; font-size:10px; padding-top:6px; }
+.wo-desc { font-size:13px; white-space:pre-wrap; background:#fbfbf8;
+  border:1px solid var(--line); border-left:4px solid var(--rule);
+  padding:10px 12px; margin-bottom:16px; overflow-wrap:break-word; }
+.wo-entry { border:1px solid var(--line); border-left:3px solid var(--rule);
+  background:#fdfdfb; padding:8px 12px; margin-bottom:10px; font-size:12.5px; }
+.wo-entry .who { font:600 11px "IBM Plex Mono",ui-monospace,monospace;
+  color:var(--blue); }
+.wo-entry .body { white-space:pre-wrap; margin-top:4px; overflow-wrap:break-word; }
+.wo-sign { border-top:1px solid var(--line); padding:10px 20px 14px;
+  background:#fbfbf8; }
+.wo-sign .sign-as { font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--dim); margin-bottom:6px; }
+.wo-sign .sign-as .dim { text-transform:none; letter-spacing:0; }
+.wo-sign textarea { width:100%; border:1px solid var(--line);
+  background:var(--paper); color:var(--ink); font:12.5px "IBM Plex Sans",sans-serif;
+  padding:6px 8px; margin-bottom:6px; box-sizing:border-box; }
+.wo-sign textarea { min-height:58px; resize:vertical; }
+.wo-sign button { border:1.5px solid var(--blue); color:var(--blue);
+  background:var(--paper); font:600 11px "IBM Plex Sans",sans-serif;
+  letter-spacing:.14em; text-transform:uppercase; padding:6px 14px;
+  border-radius:3px; cursor:pointer; }
+.wo-sign button:hover { background:#eef3fb; }
+.wo-sign button:disabled { color:var(--dim); border-color:var(--line); cursor:default; }
+.wo-sign .err-note { color:var(--stamp); font-size:11.5px; margin-top:4px; }
+.wo-foot { font-size:11.5px; color:var(--dim); padding:0 20px 12px; }
+"""
+
+# setInterval only — requestAnimationFrame suspends in background panes (the
+# constraint proven live on the city-hall and dispatch scenes).
+_DESK_SCENE_JS = """
+<script>
+"use strict";
+var SCENE=null, seenFiled={}, firstPoll=true;
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function $(id){return document.getElementById(id);}
+function ago(iso){if(!iso)return "";var t=Date.parse(iso);if(isNaN(t))return "";
+  var s=Math.max(0,(Date.now()-t)/1000|0);
+  if(s>=86400)return (s/86400|0)+"d ago"; if(s>=3600)return (s/3600|0)+"h ago";
+  if(s>=60)return (s/60|0)+"m ago"; return s+"s ago";}
+function sheets(n,cap){var out="",m=Math.min(n,cap||12);
+  for(var i=0;i<m;i++){var rot=((i*37)%7)-3;
+    out+='<div class="sheet" style="bottom:'+(i*4)+'px;transform:rotate('+(rot/3)+'deg)"></div>';}
+  return out;}
+function pile(cls,label,n){
+  return '<div class="pile '+cls+'"><div class="sheets">'+sheets(n)+'</div>'+
+    '<div class="n">'+esc(n)+'</div><div class="l">'+esc(label)+'</div></div>';}
+function stampFor(kind){
+  if(kind==="in_review")return {txt:"SIGN-OFF DUE",cls:""};
+  if(kind==="founder_decision")return {txt:"AWAITING SIGNATURE",cls:""};
+  if(kind==="human_gate")return {txt:"AT THE WINDOW",cls:"amber"};
+  if(kind==="timer")return {txt:"EMBARGO",cls:"amber"};
+  return {txt:"GONE QUIET",cls:""};}
+function formHtml(it,slip){
+  var st=stampFor(it.kind);
+  return '<div class="form'+(slip?' slip':'')+'">'+
+    '<div class="stamp '+st.cls+'">'+esc(st.txt)+'</div>'+
+    '<div class="no"><a href="'+esc(it.url||("/admin/tasks/"+it.id))+'">'+
+      esc(it.id)+'</a> \\u00b7 P'+esc(it.priority)+
+      ' \\u00b7 <span class="tag">'+esc(it.product)+'</span></div>'+
+    '<div class="t">'+esc(it.title)+'</div>'+
+    '<div class="meta">'+esc(it.note||"")+
+      (it.waiting_since?' \\u00b7 sitting '+esc(ago(it.waiting_since)):'')+'</div></div>';}
+var TRAY_F=localStorage.getItem("wl_desk_tray_filter")||"all";
+function render(){
+  var d=SCENE; if(!d)return;
+  var att=d.attention||[];
+  /* wl-157: per-store skim chips — one click narrows both trays */
+  var counts={}; att.forEach(function(it){counts[it.product]=(counts[it.product]||0)+1;});
+  if(TRAY_F!=="all"&&!counts[TRAY_F])TRAY_F="all";
+  var fz='<button class="chip'+(TRAY_F==="all"?" on":"")+'" data-f="all">all \\u00b7 '+att.length+'</button>';
+  Object.keys(counts).sort().forEach(function(s){
+    fz+='<button class="chip'+(TRAY_F===s?" on":"")+'" data-f="'+esc(s)+'">'+
+      esc(s)+' \\u00b7 '+counts[s]+'</button>';});
+  $("trayFilter").innerHTML=fz;
+  var inTray=[], hold=[];
+  att.forEach(function(it){
+    if(TRAY_F!=="all"&&it.product!==TRAY_F)return;
+    (it.kind==="stalled"?hold:inTray).push(it); });
+  $("decisionsStack").innerHTML = inTray.length
+    ? inTray.map(function(it){return formHtml(it,false);}).join("")
+    : '<div class="empty-note">Tray empty \\u2014 nothing to sign</div>';
+  $("staleStack").innerHTML = hold.length
+    ? hold.map(function(it){return formHtml(it,true);}).join("")
+    : '<div class="empty-note">Nothing gone quiet</div>';
+  $("inCount").textContent=inTray.length; $("holdCount").textContent=hold.length;
+
+  var hz="";
+  (d.stores||[]).forEach(function(s){
+    var open=s.backlog+s.in_progress+s.in_review;
+    hz+='<div class="hood"><div class="hood-head">'+
+      '<span class="nm"><a href="/admin/tickets/'+esc(s.slug)+'">'+esc(s.display||s.slug)+'</a>'+
+      ' <span class="tag">'+esc(s.prefix)+'-</span></span>'+
+      '<span class="ready-chip'+(s.ready?'':' zero')+'">'+esc(s.ready)+' ready</span></div>'+
+      '<div class="piles">'+pile("backlog","filed",s.backlog)+
+      pile("doing","claimed",s.in_progress)+pile("review","sign-off",s.in_review)+
+      '</div>'+
+      '<div class="empty-note" style="margin-top:6px">'+esc(open)+' open work orders \\u00b7 '+
+      esc(s.done_total)+' signed off, ever</div></div>';});
+  $("hoodList").innerHTML = hz || '<div class="empty-note">No ledgers yet \\u2014 no stores discovered</div>';
+
+  var filed=d.filed||[], freshCount=0, cz="";
+  filed.forEach(function(f){
+    var fresh=!firstPoll && !seenFiled[f.id]; if(fresh)freshCount++;
+    cz+='<div class="clip-item'+(fresh?' fresh':'')+'">'+
+      '<span class="when">'+esc(ago(f.closed_at))+'</span> '+
+      '<a href="/admin/tasks/'+esc(f.id)+'">'+esc(f.id)+'</a> '+
+      '<span class="dim">['+esc(f.store)+']</span> '+esc(String(f.title).slice(0,64))+'</div>';});
+  $("shippedClip").innerHTML = cz || '<div class="clip-item empty-note">No carbon copies in the window</div>';
+  filed.forEach(function(f){seenFiled[f.id]=1;});
+  $("padCount").textContent=filed.length;
+  $("padWindow").textContent="filed \\u00b7 last "+(d.window_hours||24)+"h";
+  if(freshCount>0)thunk();
+  firstPoll=false;}
+function thunk(){
+  var r=$("rubberStamp"), ink=$("inkRing"); if(!r)return;
+  r.classList.remove("thunk"); ink.classList.remove("show");
+  void r.getBoundingClientRect();
+  r.classList.add("thunk"); ink.classList.add("show");}
+function poll(){
+  fetch("/api/scene",{cache:"no-store"}).then(function(r){
+    if(!r.ok)throw 0; return r.json();
+  }).then(function(d){SCENE=d; render();
+    $("liveChip").className=""; $("liveChip").textContent="LIVE";
+  }).catch(function(){
+    $("liveChip").className="hold"; $("liveChip").textContent=SCENE?"HOLDING":"NO SIGNAL";});}
+poll(); setInterval(poll,15000);
+setInterval(function(){
+  var n=new Date();
+  $("clock").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+},1000);
+
+/* ── the work-order drawer (wl-145): tickets open ON the desk ── */
+var WO_ID=null;
+function stampForStatus(st){
+  if(st==="backlog")return {txt:"FILED",cls:""};
+  if(st==="in_progress")return {txt:"CLAIMED",cls:"amber"};
+  if(st==="in_review")return {txt:"SIGN-OFF DUE",cls:""};
+  if(st==="done")return {txt:"SIGNED OFF",cls:"green"};
+  if(st==="canceled")return {txt:"CANCELED",cls:"amber"};
+  return {txt:String(st||"?").toUpperCase(),cls:""};}
+function closeBtnHtml(){return '<button class="wo-close" onclick="closeWO()" title="close (esc)">\\u00d7</button>';}
+function closeWO(){WO_ID=null;$("wo").classList.remove("open");$("scrim").classList.remove("open");}
+function openWO(id){
+  WO_ID=id; $("scrim").classList.add("open"); $("wo").classList.add("open");
+  $("woHead").innerHTML='<div class="no">WO '+esc(String(id).toUpperCase())+'</div>'+
+    '<div class="t">pulling the carbon\\u2026</div>'+closeBtnHtml();
+  $("woBody").innerHTML='<div class="empty-note">pulling the record\\u2026</div>';
+  $("woFoot").innerHTML="";
+  fetchWO(id);}
+function fetchWO(id){
+  fetch("/api/admin/tasks/"+encodeURIComponent(id),{cache:"no-store"})
+  .then(function(r){return r.json();}).then(function(d){
+    if(WO_ID!==id)return;
+    if(!d.ok){$("woBody").innerHTML='<div class="empty-note">no such record</div>';return;}
+    renderWO(d.task);})
+  .catch(function(){if(WO_ID===id)
+    $("woBody").innerHTML='<div class="empty-note">record unreachable \\u2014 try the full page</div>';});}
+function renderWO(t){
+  var st=stampForStatus(t.status);
+  $("woHead").innerHTML='<div class="stamp '+st.cls+'">'+esc(st.txt)+'</div>'+
+    '<div class="no">WO '+esc(String(t.id).toUpperCase())+'</div>'+
+    '<div class="t">'+esc(t.title||"")+'</div>'+closeBtnHtml();
+  var labels=(t.labels||[]).map(function(l){return '<span class="tag">'+esc(l)+'</span>';}).join(" ");
+  var h='<table class="wo-meta">'+
+    '<tr><td>priority</td><td>P'+esc(t.priority!=null?t.priority:"3")+'</td></tr>'+
+    '<tr><td>routing</td><td>'+(labels||'<span class="dim">none</span>')+'</td></tr>'+
+    '<tr><td>filed</td><td>'+esc(t.created_at||"\\u2014")+'</td></tr>'+
+    '<tr><td>last touch</td><td>'+esc(ago(t.updated_at)||t.updated_at||"\\u2014")+'</td></tr>'+
+    '</table>';
+  if(t.description)h+='<div class="wo-desc">'+esc(t.description)+'</div>';
+  var cs=(t.comments||[]).slice().reverse();
+  h+='<h2>Day book \\u00b7 '+cs.length+'</h2>';
+  if(!cs.length)h+='<div class="empty-note">no entries yet</div>';
+  cs.forEach(function(c){h+='<div class="wo-entry"><span class="who">'+signer(c.author)+
+    '</span> <span class="dim">\\u00b7 '+esc(ago(c.created_at)||c.created_at||"")+'</span>'+
+    '<div class="body">'+esc(c.body||"")+'</div></div>';});
+  $("woBody").innerHTML=h;
+  $("woFoot").innerHTML='verbs beyond a signed note live on <a href="/admin/tasks/'+
+    esc(t.id)+'">the full record \\u2197</a>';
+  $("woSignAs").innerHTML='SIGNED AS '+signer(window.FOUNDER&&FOUNDER.founder_id||"founder-terminal");
+  $("woErr").textContent="";}
+function signer(a){
+  /* wl-148: aliases are paint, ids are identity — the alias renders,
+     the canonical signed id stays visible */
+  if(window.FOUNDER&&a===FOUNDER.founder_id&&FOUNDER.founder_alias)
+    return esc(FOUNDER.founder_alias)+' <span class="dim">('+esc(a)+')</span>';
+  return esc(a||"unsigned");}
+function signWO(){
+  if(!WO_ID)return;
+  /* wl-150: the desk signs for the founder — whoever clicked IS the founder;
+     other identities sign via MCP/CLI, never this chair */
+  var author=(window.FOUNDER&&FOUNDER.founder_id)||"founder-terminal";
+  var body=$("woNote").value.trim(), b=$("woSignBtn");
+  if(!body){$("woErr").textContent="nothing to file \\u2014 write the note first";return;}
+  b.disabled=true; $("woErr").textContent="";
+  fetch("/api/admin/tasks/"+encodeURIComponent(WO_ID)+"/comments",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({body:body,author:author})})
+  .then(function(r){return r.json();})
+  .then(function(j){b.disabled=false;
+    if(!j.ok){$("woErr").textContent=j.error||"the desk refused the note";return;}
+    $("woNote").value=""; fetchWO(WO_ID); poll();})
+  .catch(function(){b.disabled=false;
+    $("woErr").textContent="desk unreachable \\u2014 note not filed";});}
+document.addEventListener("click",function(e){
+  if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+  var a=e.target&&e.target.closest?e.target.closest('a[href^="/admin/tasks/"]'):null;
+  if(!a)return;
+  if(a.closest("#wo"))return; /* the full-record link is the escape hatch */
+  var id=a.getAttribute("href").slice("/admin/tasks/".length).split("?")[0];
+  if(!id)return;
+  e.preventDefault(); openWO(decodeURIComponent(id));});
+document.addEventListener("keydown",function(e){if(e.key==="Escape")closeWO();});
+</script>
+"""
+
+
+@router.get("/admin/desk", response_class=HTMLResponse)
+def admin_desk() -> str:
+    """The work-order desk as a live model (wl-132): the room you walk into.
+    Self-contained page polling /api/scene; the ticket verbs stay on the
+    Board/Table/ticket pages, one click away. Mode-aware branding (wl-134)
+    and mode-aware directory doors (pc-37 case #4)."""
+    # Third naming amendment (pc-39, ratified 2026-07-14): the room name
+    # leads alone; suite + engine share one quiet subtitle; the epithet
+    # sentence retired to the room guide. Standalone keeps the engine brand,
+    # no suite line.
+    if _BRAND_MODE == "city":
+        h1 = "<span class='fn'>TICKET DESK</span> · TICKETS"
+        epithet = "ProtocolCity · powered by WorkLane"
+        doors = (
+            f"<a href='{_esc(_CITYHALL_URL)}'>City Hall — Projects</a>"
+            f"<a href='{_esc(_WORKFORCE_URL)}'>Dispatch — Workers</a>"
+        )
+    else:
+        h1 = "WORKLANE — <span class='fn'>TICKETS</span>"
+        epithet = "the work-order desk"
+        doors = ""  # standalone: one room, no doors
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{_esc(_BRAND_NAME)}</title>
+<style>{_DESK_SCENE_CSS}</style></head><body>
+<header class="nameplate">
+  <h1>{h1}</h1>
+  <span class="epithet">{_esc(epithet)}</span>
+  <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
+</header>
+<main class="surface">
+  <div>
+    <div class="tray"><h2>In-tray · needs you (<span id="inCount">0</span>)</h2>
+      <div id="decisionsStack"><div class="empty-note">Waiting for the morning filing…</div></div>
+    </div>
+    <div class="tray"><h2>Hold bin · quiet claims (<span id="holdCount">0</span>)</h2>
+      <div id="staleStack"><div class="empty-note">Waiting for the morning filing…</div></div>
+    </div>
+  </div>
+  <div>
+    <div class="blotter"><h2>Neighborhood ledgers · open work</h2>
+      <div id="hoodList"><div class="empty-note">Waiting for the morning filing…</div></div>
+    </div>
+  </div>
+  <div>
+    <div class="pad"><h2>Stamp pad</h2>
+      <div class="rubber idle" id="rubberStamp">FILED</div>
+      <div class="inkring" id="inkRing"></div>
+      <div class="pad-stats"><span class="n" id="padCount">0</span><span id="padWindow">filed · last 24h</span></div>
+    </div>
+    <div class="clip"><h2>Outbox · signed &amp; filed</h2>
+      <div class="clip-list" id="shippedClip"><div class="clip-item empty-note">Waiting for the morning filing…</div></div>
+    </div>
+  </div>
+</main>
+<footer class="bar">
+  <div>The desk owns the ticket verbs — <a href="/admin/tickets/all">Board</a>
+    <a href="/admin/overview">Overview</a>
+    <a href="/admin/settings">Settings</a> <a href="/admin/docs/desk">How to read this room</a></div>
+  <div>{doors}</div>
+</footer>
+<div id="scrim" onclick="closeWO()"></div>
+<aside id="wo" aria-label="work order">
+  <div class="wo-head" id="woHead"></div>
+  <div class="wo-body" id="woBody"></div>
+  <div class="wo-foot" id="woFoot"></div>
+  <div class="wo-sign">
+    <div class="sign-as" id="woSignAs"></div>
+    <textarea id="woNote" placeholder="sign a note into the day book…"></textarea>
+    <button id="woSignBtn" onclick="signWO()">Sign &amp; file</button>
+    <div class="err-note" id="woErr"></div>
+  </div>
+</aside>
+<script>var FOUNDER={json.dumps(_identity_config())};</script>
+{_DESK_SCENE_JS}</body></html>"""
+
+
+# ── The report (wl-156): the desk's strategic view ────────────────────────
+# Founder rulings (2026-07-14, all four on the ticket): six widgets approved
+# (verdict strip / flow / blocker split / aging rack / priority integrity /
+# prune list); epics alarm like everything else (thresholds are env knobs,
+# per-store overrides deferred); the allocation panel is RETIRED to the
+# dispatch side (oc-22 — its helpers stay below, dormant, for that seam);
+# paper voice immediately. One /api/report seam feeds three consumers:
+# this page, oc-15's daily founder brief, and city hall (reporting
+# doctrine, wl-139: engines compute facts, dashboards render).
+
+_REPORT_WINDOW_DAYS = int(os.environ.get("WL_REPORT_WINDOW_DAYS", "7"))
+_REPORT_AGING_DAYS = int(os.environ.get("WL_REPORT_AGING_DAYS", "7"))
+_REPORT_PRUNE_QUIET_HOURS = int(os.environ.get("WL_REPORT_PRUNE_QUIET_HOURS", "72"))
+
+
+def _report_verdict(filed: int, signed: int, backlog: int, over_aging: int) -> str:
+    """One deterministic word per ledger. Order matters: rot beats flow."""
+    if backlog and over_aging >= max(5, (backlog + 4) // 5):
+        return "aging"
+    if filed >= 5 and filed >= 2 * signed:
+        return "growing"
+    if signed >= 0.8 * filed:
+        return "keeping up"
+    return "steady"
+
+
+@router.get("/api/report")
+def api_report() -> JSONResponse:
+    """The strategic report over the entire backlog, computed once (wl-156):
+    per-store flow + verdicts, city-wide aging, urgent-but-unclaimed,
+    the founder/worker blocker split, and prune candidates."""
+    now = datetime.now(timezone.utc)
+    win = now - timedelta(days=_REPORT_WINDOW_DAYS)
+    aging_cut = now - timedelta(days=_REPORT_AGING_DAYS)
+    prune_cut = now - timedelta(hours=_REPORT_PRUNE_QUIET_HOURS)
+
+    stores: List[Dict[str, Any]] = []
+    aging_buckets = [0, 0, 0, 0]  # <1d · 1-3d · 3-<aging> · >=aging
+    oldest: List[Dict[str, Any]] = []
+    urgent: List[Dict[str, Any]] = []
+    prune: List[Dict[str, Any]] = []
+    total_open = 0
+
+    for spec in discover_products():
+        tasks = _merged_scope_tasks_for_filters(spec.slug)
+        filed = signed = open_n = backlog_n = over_aging = 0
+        for t in tasks:
+            st = (t.status or "").strip()
+            c = _parse_task_date_utc(t.created_at)
+            u = _parse_task_date_utc(t.updated_at)
+            if c is not None and c >= win:
+                filed += 1
+            if st == TaskStatus.DONE:
+                if u is not None and u >= win:
+                    signed += 1
+                continue
+            if st == TaskStatus.CANCELED:
+                continue
+            open_n += 1
+            if st != TaskStatus.BACKLOG:
+                continue
+            backlog_n += 1
+            age_days = (now - c).total_seconds() / 86400 if c else 0.0
+            aging_buckets[0 if age_days < 1 else 1 if age_days < 3 else
+                          2 if age_days < _REPORT_AGING_DAYS else 3] += 1
+            if c is not None and c < aging_cut:
+                over_aging += 1
+            entry = {"id": t.id, "store": spec.slug, "title": t.title,
+                     "priority": int(t.priority or 3),
+                     "age_days": round(age_days, 1)}
+            oldest.append(entry)
+            if entry["priority"] <= 2:
+                urgent.append(entry)
+            elif u is not None and u < prune_cut:
+                prune.append(dict(entry, quiet_days=round(
+                    (now - u).total_seconds() / 86400, 1)))
+        total_open += open_n
+        if open_n or filed or signed:
+            stores.append({
+                "slug": spec.slug, "display": spec.display,
+                "prefix": spec.prefix, "filed": filed, "signed": signed,
+                "net": filed - signed, "open": open_n, "backlog": backlog_n,
+                "over_aging": over_aging,
+                "ready": _merged_ready_count(spec.slug),
+                "verdict": _report_verdict(filed, signed, backlog_n, over_aging),
+            })
+
+    oldest.sort(key=lambda e: -e["age_days"])
+    urgent.sort(key=lambda e: -e["age_days"])
+    prune.sort(key=lambda e: -e["quiet_days"])
+    waiting_on_you = len(_collect_founder_attention_items(now=now))
+    ready_total = sum(s["ready"] for s in stores)
+    payload = {
+        "ok": True,
+        "generated_at": now.isoformat(),
+        "window_days": _REPORT_WINDOW_DAYS,
+        "aging_days": _REPORT_AGING_DAYS,
+        "prune_quiet_hours": _REPORT_PRUNE_QUIET_HOURS,
+        "stores": stores,
+        "open_total": total_open,
+        "blocker": {
+            "waiting_on_you": waiting_on_you,
+            "worker_ready": ready_total,
+            "other": max(0, total_open - waiting_on_you - ready_total),
+        },
+        "aging_buckets": aging_buckets,
+        "oldest": oldest[:6],
+        "urgent_unclaimed": urgent[:8],
+        "prune": {"count": len(prune), "items": prune[:10]},
+    }
+    resp = JSONResponse(payload)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
+
+
+_REPORT_CSS = """
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:400;
+  font-display:swap; src:url("/static/fonts/ibm-plex-sans-400.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:600;
+  font-display:swap; src:url("/static/fonts/ibm-plex-sans-600.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:700;
+  font-display:swap; src:url("/static/fonts/ibm-plex-sans-700.woff2") format("woff2"); }
+@font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400;
+  font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
+:root {
+  --desk:#e9e7e2; --paper:#fdfdfb; --line:#d7d5cf; --rule:#9fb6d9;
+  --ink:#1f2328; --dim:#6d7480; --blue:#1c4f9c; --stamp:#c0392b;
+  --ok:#1e7a45; --warn:#a8681e; --pink:#fbe9ea; --pinkline:#e2b6ba;
+}
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; }
+body { background:var(--desk); color:var(--ink);
+  font:14px/1.5 "IBM Plex Sans",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  background-image:linear-gradient(180deg,#dedcd6 0,var(--desk) 220px);
+  display:flex; flex-direction:column; }
+a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
+.dim { color:var(--dim); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+.mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+header.nameplate { background:var(--paper); border-bottom:1px solid var(--line);
+  border-top:6px solid var(--stamp); box-shadow:0 2px 8px #0002;
+  padding:14px 22px 12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+h1 { font-size:19px; letter-spacing:.14em; font-weight:700; }
+h1 .fn { color:var(--stamp); }
+.epithet { color:var(--dim); font-size:13px; }
+.badges { margin-left:auto; display:flex; gap:12px; align-items:baseline; font-size:12px;
+  color:var(--dim); }
+#liveChip { border:1.5px solid var(--ok); color:var(--ok); border-radius:3px;
+  font-weight:700; font-size:10px; letter-spacing:.16em; padding:2px 8px;
+  text-transform:uppercase; }
+#liveChip.hold { border-color:var(--warn); color:var(--warn); }
+main.sheet { flex:1; overflow:auto; padding:20px 22px 26px; max-width:1180px;
+  width:100%; margin:0 auto; }
+h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;
+  margin:22px 0 10px; font-weight:600; }
+h2:first-child { margin-top:0; }
+.card { background:var(--paper); border:1px solid var(--line);
+  box-shadow:0 2px 6px #0002; padding:14px 16px; }
+.verdicts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:12px; }
+.verdict { background:var(--paper); border:1px solid var(--line);
+  box-shadow:0 2px 5px #0002; padding:10px 14px; position:relative; overflow:hidden; }
+.verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+  background:var(--rule); }
+.verdict.aging::before { background:var(--stamp); }
+.verdict.growing::before { background:var(--warn); }
+.verdict .nm { font-weight:700; font-size:13px; }
+.verdict .nm a { color:var(--ink); } .verdict .nm a:hover { color:var(--blue); }
+.verdict .vw { font-size:16px; font-weight:700; margin-top:2px; }
+.verdict.aging .vw { color:var(--stamp); } .verdict.growing .vw { color:var(--warn); }
+.verdict.keeping .vw, .verdict.steady .vw { color:var(--ok); }
+.verdict .meta { font-size:11.5px; color:var(--dim); margin-top:2px; }
+.rows { display:grid; grid-template-columns:130px minmax(0,1fr) 90px;
+  gap:6px 12px; align-items:center; font-size:13px; }
+.rows .lbl { color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rows .num { color:var(--dim); text-align:right; font-variant-numeric:tabular-nums; }
+.bar { display:block; height:9px; border-radius:2px; background:var(--rule); }
+.bar.g { background:#bfd8c4; }
+.bar + .bar { margin-top:2px; }
+.split { display:flex; height:22px; border-radius:3px; overflow:hidden;
+  border:1px solid var(--line); }
+.split .you { background:var(--stamp); } .split .rdy { background:#bfd8c4; }
+.split .oth { background:var(--rule); }
+.legend { display:flex; gap:18px; font-size:12.5px; margin-top:8px; flex-wrap:wrap; }
+.li { display:flex; justify-content:space-between; gap:10px; padding:6px 2px;
+  border-bottom:1px dotted var(--line); font-size:13px; }
+.li:last-child { border-bottom:0; }
+.li .age { color:var(--warn); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.tag { border:1px solid var(--line); border-radius:3px; padding:0 6px; font-size:11px;
+  color:var(--dim); background:#fff; }
+.note { font-size:12px; color:var(--dim); margin-top:8px; }
+.stamp-count { display:inline-block; border:2.5px solid var(--stamp); color:var(--stamp);
+  border-radius:4px; font-weight:800; padding:6px 12px; transform:rotate(-3deg);
+  font-size:15px; letter-spacing:.06em;
+  mask-image:radial-gradient(circle at 35% 45%, #000 90%, #0007 100%); }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+@media (max-width:900px){ .grid2 { grid-template-columns:1fr; } }
+footer.bar { border-top:1px solid var(--line); background:var(--paper);
+  padding:8px 22px; display:flex; justify-content:space-between; gap:14px;
+  flex-wrap:wrap; font-size:12px; color:var(--dim); }
+footer.bar a { margin-right:14px; }
+"""
+
+# setInterval only — never requestAnimationFrame (city constraint).
+_REPORT_JS = """
+<script>
+"use strict";
+var R=null;
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function $(id){return document.getElementById(id);}
+function pct(n,d){return d>0?Math.max(n>0?2:0,Math.round(n/d*100)):0;}
+function render(){
+  var d=R; if(!d)return;
+  var vz="";
+  (d.stores||[]).forEach(function(s){
+    var cls=s.verdict==="keeping up"?"keeping":esc(s.verdict);
+    var extra=s.verdict==="aging"
+      ? esc(s.over_aging)+" orders past "+esc(d.aging_days)+"d"
+      : "filed "+esc(s.filed)+" \\u00b7 signed "+esc(s.signed);
+    vz+='<div class="verdict '+cls+'"><div class="nm"><a href="/admin/tickets/'+
+      esc(s.slug)+'">'+esc(s.display||s.slug)+'</a></div>'+
+      '<div class="vw">'+esc(s.verdict)+'</div>'+
+      '<div class="meta">'+extra+' \\u00b7 net '+(s.net>=0?"+":"")+esc(s.net)+'</div></div>';});
+  $("verdictStrip").innerHTML=vz||'<div class="note">no ledgers with activity</div>';
+
+  var maxF=1; (d.stores||[]).forEach(function(s){maxF=Math.max(maxF,s.filed,s.signed);});
+  var fz="";
+  (d.stores||[]).forEach(function(s){
+    fz+='<span class="lbl">'+esc(s.display||s.slug)+'</span>'+
+      '<span><span class="bar" style="width:'+pct(s.filed,maxF)+'%"></span>'+
+      '<span class="bar g" style="width:'+pct(s.signed,maxF)+'%"></span></span>'+
+      '<span class="num">'+esc(s.filed)+' / '+esc(s.signed)+'</span>';});
+  $("flowRows").innerHTML=fz;
+
+  var b=d.blocker||{}, tot=Math.max(1,d.open_total||0);
+  $("splitBar").innerHTML=
+    '<div class="you" style="width:'+pct(b.waiting_on_you,tot)+'%"></div>'+
+    '<div class="rdy" style="width:'+pct(b.worker_ready,tot)+'%"></div>'+
+    '<div class="oth" style="flex:1"></div>';
+  $("splitLegend").innerHTML=
+    '<span><b style="color:var(--stamp)">'+esc(b.waiting_on_you)+' waiting on you</b></span>'+
+    '<span><b style="color:var(--ok)">'+esc(b.worker_ready)+' worker-ready</b></span>'+
+    '<span class="dim">'+esc(b.other)+' in flight / gated</span>'+
+    '<span class="dim">'+esc(d.open_total)+' open in all</span>';
+
+  var ab=d.aging_buckets||[0,0,0,0], maxA=Math.max.apply(null,ab.concat([1]));
+  var lbls=["&lt; 1 day","1\\u20133 days","3\\u2013"+esc(d.aging_days)+" days","&gt; "+esc(d.aging_days)+" days"];
+  var az="";
+  ab.forEach(function(n,i){
+    az+='<span class="lbl">'+lbls[i]+'</span>'+
+      '<span><span class="bar'+(i<2?" g":"")+'" style="width:'+pct(n,maxA)+
+      '%'+(i===3&&n?';background:var(--pinkline)':'')+'"></span></span>'+
+      '<span class="num">'+esc(n)+'</span>';});
+  $("agingRows").innerHTML=az;
+  var oz=(d.oldest||[]).map(function(e){
+    return '<a href="/admin/tasks/'+esc(e.id)+'" class="mono">'+esc(e.id)+'</a> ('+
+      esc(Math.round(e.age_days))+'d)';}).join(" \\u00b7 ");
+  $("agingNote").innerHTML=oz?("oldest on the rack: "+oz):"the rack is fresh";
+
+  var uz="";
+  (d.urgent_unclaimed||[]).forEach(function(e){
+    uz+='<div class="li"><span><a href="/admin/tasks/'+esc(e.id)+'" class="mono">'+
+      esc(e.id)+'</a> <span class="tag">'+esc(e.store)+'</span> '+
+      esc(String(e.title).slice(0,64))+'</span>'+
+      '<span class="age">P'+esc(e.priority)+' \\u00b7 '+esc(Math.round(e.age_days))+'d</span></div>';});
+  $("urgentList").innerHTML=uz||'<div class="note">nothing urgent sits unclaimed \\u2014 priority holds</div>';
+
+  var p=d.prune||{count:0,items:[]};
+  $("pruneStamp").textContent=p.count+" TO PRUNE";
+  var pz=(p.items||[]).slice(0,5).map(function(e){
+    return '<a href="/admin/tasks/'+esc(e.id)+'" class="mono">'+esc(e.id)+'</a> ('+
+      esc(Math.round(e.quiet_days))+'d quiet)';}).join(" \\u00b7 ");
+  $("pruneNote").innerHTML=p.count
+    ? "quiet past "+esc(Math.round(d.prune_quiet_hours/24))+"d: "+pz+
+      ' \\u2014 cancel, demote, or re-label for a lane'
+    : "nothing is being carried silently";}
+function poll(){
+  fetch("/api/report",{cache:"no-store"}).then(function(r){
+    if(!r.ok)throw 0; return r.json();
+  }).then(function(d){R=d; render();
+    $("liveChip").className=""; $("liveChip").textContent="LIVE";
+  }).catch(function(){
+    $("liveChip").className="hold"; $("liveChip").textContent=R?"HOLDING":"NO SIGNAL";});}
+poll(); setInterval(poll,30000);
+setInterval(function(){var n=new Date();
+  $("clock").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+},1000);
+</script>
+"""
+
+
+def _render_report_page() -> str:
+    """The desk's report in the paper voice (wl-156 ruling 4): a bench of the
+    Ticket Desk, so the desk palette, one sheet, no scene furniture."""
+    if _BRAND_MODE == "city":
+        h1 = "<span class='fn'>THE REPORT</span> · OVERVIEW"
+        epithet = "ProtocolCity · the desk's strategic view"
+    else:
+        h1 = "WORKLANE — <span class='fn'>THE REPORT</span>"
+        epithet = "the strategic view"
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview · {_esc(_BRAND_NAME)}</title>
+<style>{_REPORT_CSS}</style></head><body>
+<header class="nameplate">
+  <h1>{h1}</h1>
+  <span class="epithet">{_esc(epithet)}</span>
+  <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
+</header>
+<main class="sheet">
+  <h2>Verdicts · one word per ledger</h2>
+  <div class="verdicts" id="verdictStrip"><div class="note">pulling the morning figures…</div></div>
+  <div class="grid2" style="margin-top:6px">
+    <div>
+      <h2>Flow · filed vs signed off, last <span id="w1">7</span> days</h2>
+      <div class="card"><div class="rows" id="flowRows"></div>
+        <div class="note">blue = filed in · green = signed off · the gap is backlog growth</div></div>
+      <h2>Who's the blocker</h2>
+      <div class="card"><div class="split" id="splitBar"></div>
+        <div class="legend" id="splitLegend"></div></div>
+      <h2>Aging rack · filed work orders by age</h2>
+      <div class="card"><div class="rows" id="agingRows"></div>
+        <div class="note" id="agingNote"></div></div>
+    </div>
+    <div>
+      <h2>Priority integrity · urgent, filed, unclaimed</h2>
+      <div class="card" id="urgentList"></div>
+      <h2>Prune list · carried but untouched</h2>
+      <div class="card"><span class="stamp-count" id="pruneStamp">—</span>
+        <div class="note" id="pruneNote"></div></div>
+    </div>
+  </div>
+</main>
+<footer class="bar">
+  <div>A bench of the Ticket Desk — <a href="/admin/desk">back to the room</a>
+    <a href="/admin/tickets/all">Board</a> <a href="/admin/settings">Settings</a>
+    <a href="/admin/docs/desk">How to read this room</a></div>
+  <div><span class="dim">records request: <a href="/api/report">/api/report</a></span></div>
+</footer>
+{_REPORT_JS}</body></html>"""
 
 
 # ── App factory ────────────────────────────────────────────────────────

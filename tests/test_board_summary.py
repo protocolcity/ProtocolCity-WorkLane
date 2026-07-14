@@ -108,7 +108,9 @@ class BoardSummaryTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         j = r.json()
         ids = {t["id"] for t in j["in_flight"]}
-        self.assertEqual(ids, {ip.id, rev.id})
+        # wl-144: merged in-flight ids are composite (store prefix included) —
+        # bare ids are ambiguous across stores and mis-resolve to the default.
+        self.assertEqual(ids, {f"t-{ip.id}", f"t-{rev.id}"})
 
     def test_orphans_route_removed(self) -> None:
         r = self.client.get("/api/dev/queue/orphans")

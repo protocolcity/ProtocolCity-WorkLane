@@ -174,6 +174,68 @@ class ProductRegistryTest(unittest.TestCase):
         # unknown prefix falls back to tradeos, id untouched
         self.assertEqual(products.split_task_id("zz-9"), ("tradeos", "zz-9"))
 
+    # ── legacy prefixes (wl-152) ────────────────────────────────────
+
+    def test_split_task_id_resolves_config_declared_legacy_prefix(self) -> None:
+        self._seed("myapp", "hello")
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(
+            '{"myapp": {"prefix": "ma", "legacy_prefixes": ["oldma"]}}'
+        )
+        spec = products.get_product("myapp")
+        assert spec is not None
+        self.assertEqual(spec.legacy_prefixes, ("oldma",))
+        self.assertEqual(products.split_task_id("ma-7"), ("myapp", "7"))
+        self.assertEqual(products.split_task_id("oldma-7"), ("myapp", "7"))
+
+    def test_discovery_self_heals_live_prefix_colliding_with_others_legacy(
+        self,
+    ) -> None:
+        # A hand-edited overlay claims "x" live for "one" while "two" already
+        # owns it as a legacy alias — the normal API guards this out (see
+        # test_update_product_rejects_prefix_colliding_with_other_stores_legacy),
+        # but a bad overlay must still self-heal at discovery time rather than
+        # let "x-N" resolve ambiguously, same as the live/live collision case.
+        self._seed("one", "hello")
+        self._seed("two", "hello")
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(
+            '{"one": {"prefix": "x"}, "two": {"prefix": "y", "legacy_prefixes": ["x"]}}'
+        )
+        one = products.get_product("one")
+        assert one is not None
+        self.assertEqual(one.prefix, "one")  # fell back to its own slug
+        self.assertEqual(products.split_task_id("x-1"), ("two", "1"))
+
+    def test_register_product_meta_add_legacy_prefix_appends_and_dedups(
+        self,
+    ) -> None:
+        self._seed("myapp", "hello")
+        products.register_product_meta("myapp", add_legacy_prefix="old1")
+        products.register_product_meta("myapp", add_legacy_prefix="old2")
+        products.register_product_meta("myapp", add_legacy_prefix="old1")
+        spec = products.get_product("myapp")
+        assert spec is not None
+        self.assertEqual(spec.legacy_prefixes, ("old1", "old2"))
+
+    def test_all_taken_prefixes_includes_live_and_legacy(self) -> None:
+        self._seed("myapp", "hello")
+        cfg = self.root / "config" / "products.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(
+            '{"myapp": {"prefix": "ma", "legacy_prefixes": ["oldma"]}}'
+        )
+        taken = products.all_taken_prefixes()
+        self.assertIn("ma", taken)
+        self.assertIn("oldma", taken)
+        self.assertIn("o", taken)  # shipped ops default
+        # excluding myapp drops both its live and legacy prefixes
+        taken_excl = products.all_taken_prefixes(exclude_slug="myapp")
+        self.assertNotIn("ma", taken_excl)
+        self.assertNotIn("oldma", taken_excl)
+
     # ── default product resolution (wl-43) ──────────────────────────
 
     def test_default_product_slug_env_wins_over_config(self) -> None:
@@ -518,6 +580,57 @@ class SurfaceRoutingTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["product"]["prefix"], "x")
+        # a no-op rename does not retire "x" into legacy_prefixes
+        self.assertEqual(products.get_product("one").legacy_prefixes, ())
+
+    # ── legacy-prefix rename roundtrip + collision guard (wl-152) ────
+
+    def test_update_product_rename_retires_old_prefix_as_legacy(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "myapp", "prefix": "ma"})
+        r = self.client.post(
+            "/api/admin/tasks",
+            json={"title": "old", "author": "work-pool", "description": "d", "surface": "myapp"},
+        )
+        old_id = r.json()["task"]["id"]
+        self.assertTrue(old_id.startswith("ma-"))
+
+        r = self.client.patch("/api/admin/products/myapp", json={"prefix": "mb"})
+        self.assertEqual(r.status_code, 200, msg=r.text)
+        self.assertEqual(r.json()["product"]["prefix"], "mb")
+
+        spec = products.get_product("myapp")
+        assert spec is not None
+        self.assertEqual(spec.legacy_prefixes, ("ma",))
+
+        # the old composite id still resolves and 200s under the new prefix
+        got = self.client.get(f"/api/admin/tasks/{old_id}")
+        self.assertEqual(got.status_code, 200, msg=got.text)
+        self.assertEqual(got.json()["task"]["title"], "old")
+
+        # new tickets render under the new prefix
+        r = self.client.post(
+            "/api/admin/tasks",
+            json={"title": "new", "author": "work-pool", "description": "d", "surface": "myapp"},
+        )
+        self.assertTrue(r.json()["task"]["id"].startswith("mb-"))
+
+    def test_update_product_rejects_prefix_colliding_with_other_stores_legacy(
+        self,
+    ) -> None:
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
+        self.client.patch("/api/admin/products/one", json={"prefix": "y"})
+        # "x" is now a legacy alias of "one" — "two" may not claim it live.
+        self.client.post("/api/admin/products", json={"slug": "two"})
+        r = self.client.patch("/api/admin/products/two", json={"prefix": "x"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_product_rejects_prefix_colliding_with_legacy_alias(self) -> None:
+        self.client.post("/api/admin/products", json={"slug": "one", "prefix": "x"})
+        self.client.patch("/api/admin/products/one", json={"prefix": "y"})
+        r = self.client.post(
+            "/api/admin/products", json={"slug": "two", "prefix": "x"}
+        )
+        self.assertEqual(r.status_code, 400)
 
     def test_board_page_per_surface(self) -> None:
         SQLiteTracker(

@@ -71,28 +71,121 @@ class OverviewScopeTest(unittest.TestCase):
     # ── Page routes ──────────────────────────────────────────────────────
 
     def test_overview_scopes_render(self) -> None:
-        for path, scope_attr in (
-            ("/admin/overview", ""),
-            ("/admin/overview/all", ""),
-            ("/admin/overview/beta", "beta"),
-        ):
+        # wl-156: the report — city-wide, paper voice; scope paths stay
+        # valid (404 on typos is the next test) but render the same report.
+        for path in ("/admin/overview", "/admin/overview/all", "/admin/overview/beta"):
             r = self.client.get(path)
             self.assertEqual(r.status_code, 200, path)
-            # wl-89: analytics live inside the Pulse grid — one themed surface.
-            self.assertIn("Breakdown", r.text)
-            self.assertIn("Service health", r.text)
-            self.assertIn(f'data-ops-scope="{scope_attr}"', r.text)
-            # Scope tabs present on the landing (wl-91: unified vocabulary)
-            self.assertIn('aria-label="Project scopes"', r.text)
+            for marker in ("verdictStrip", "flowRows", "splitBar",
+                           "agingRows", "urgentList", "pruneStamp",
+                           "/api/report"):
+                self.assertIn(marker, r.text, path)
+            self.assertIn("setInterval", r.text)
+            self.assertNotIn("requestAnimationFrame", r.text)
+
+    def test_api_report_shape(self) -> None:
+        j = self.client.get("/api/report").json()
+        self.assertTrue(j["ok"])
+        self.assertEqual(len(j["aging_buckets"]), 4)
+        self.assertIsInstance(j["open_total"], int)
+        b = j["blocker"]
+        for k in ("waiting_on_you", "worker_ready", "other"):
+            self.assertGreaterEqual(b[k], 0, k)
+        slugs = {s["slug"] for s in j["stores"]}
+        self.assertIn("beta", slugs)  # beta has open work from the seed
+        for s in j["stores"]:
+            self.assertIn(s["verdict"],
+                          ("aging", "growing", "keeping up", "steady"))
+            self.assertEqual(s["net"], s["filed"] - s["signed"])
 
     def test_unknown_scope_404s(self) -> None:
         self.assertEqual(self.client.get("/admin/overview/nope").status_code, 404)
 
     def test_legacy_routes_redirect(self) -> None:
-        for legacy in ("/", "/admin/cockpit", "/admin/pulse"):
+        for legacy in ("/admin/cockpit", "/admin/pulse"):
             r = self.client.get(legacy, follow_redirects=False)
             self.assertEqual(r.status_code, 302, legacy)
             self.assertEqual(r.headers["location"], "/admin/overview", legacy)
+
+    def test_root_lands_on_the_desk(self) -> None:
+        # wl-132 cutover: the living desk scene is the room you walk into.
+        r = self.client.get("/", follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.headers["location"], "/admin/desk")
+
+    def test_desk_scene_is_self_contained_and_live(self) -> None:
+        # The scene polls the desk's OWN facts and animates on setInterval
+        # (never requestAnimationFrame — suspends in background panes).
+        r = self.client.get("/admin/desk")
+        self.assertEqual(r.status_code, 200)
+        body = r.text
+        self.assertIn("/api/scene", body)
+        self.assertIn("setInterval", body)
+        self.assertNotIn("requestAnimationFrame", body)
+        for marker in ("decisionsStack", "staleStack", "hoodList",
+                       "rubberStamp", "shippedClip"):
+            self.assertIn(marker, body)
+        # wl-145: the work-order drawer — tickets open on the same screen,
+        # wired to the existing task + comments APIs
+        for marker in ('id="wo"', 'id="scrim"', "openWO", "signWO",
+                       "/api/admin/tasks/", "woSignBtn"):
+            self.assertIn(marker, body)
+
+    def test_attention_attributes_non_default_store(self) -> None:
+        # wl-144: in-flight work in a non-default store must surface with its
+        # own store's composite id — _merged_in_flight_tasks used to return
+        # bare ids, which split_task_id attributes to the DEFAULT store,
+        # mislabeling the item and linking /admin/tasks/<n> to the wrong
+        # ticket entirely.
+        t = self.beta.create_task(title="beta review", description="x")
+        self.beta.update_status(t.id, TaskStatus.IN_PROGRESS)
+        self.beta.update_status(t.id, TaskStatus.IN_REVIEW)
+        j = self.client.get("/api/dev/attention").json()
+        match = [i for i in j["items"]
+                 if i["kind"] == "in_review" and i["title"] == "beta review"]
+        self.assertEqual(len(match), 1, j["items"])
+        it = match[0]
+        self.assertEqual(it["product"], "beta")
+        self.assertNotEqual(str(it["id"]), str(t.id))  # composite, never bare
+        self.assertTrue(str(it["id"]).endswith(f"-{t.id}"), it["id"])
+        self.assertEqual(it["url"], f"/admin/tasks/{it['id']}")
+
+    def test_founder_identity_roundtrip_and_desk_prefill(self) -> None:
+        # wl-148: default identity, alias PATCH roundtrip, desk injection
+        j = self.client.get("/api/admin/identity").json()
+        self.assertTrue(j["ok"])
+        self.assertEqual(j["founder_id"], "founder-terminal")
+        self.assertEqual(j["founder_alias"], "")
+        r = self.client.patch("/api/admin/identity",
+                              json={"founder_alias": "The Mayor"})
+        self.assertTrue(r.json()["ok"])
+        j2 = self.client.get("/api/admin/identity").json()
+        self.assertEqual(j2["founder_alias"], "The Mayor")
+        # invalid founder_id is refused (ids are identity, kebab-case only)
+        r = self.client.patch("/api/admin/identity",
+                              json={"founder_id": "Not A Slug!"})
+        self.assertEqual(r.status_code, 400)
+        # the desk page carries the identity for signing + alias rendering
+        body = self.client.get("/admin/desk").text
+        self.assertIn("var FOUNDER=", body)
+        self.assertIn("The Mayor", body)
+        self.assertIn("founder-terminal", body)
+        # wl-150: the desk signs for the founder — no author box, ever
+        self.assertNotIn('id="woAuthor"', body)
+        self.assertIn('id="woSignAs"', body)
+        self.assertIn("SIGNED AS", body)
+
+    def test_api_scene_shape(self) -> None:
+        j = self.client.get("/api/scene").json()
+        self.assertTrue(j["ok"])
+        self.assertIn("stores", j)
+        self.assertIn("attention", j)
+        self.assertIn("filed", j)
+        slugs = {s["slug"] for s in j["stores"]}
+        self.assertIn("tradeos", slugs)
+        for s in j["stores"]:
+            for k in ("backlog", "in_progress", "in_review", "done_total", "ready"):
+                self.assertIsInstance(s[k], int, k)
 
     # ── Summary APIs ─────────────────────────────────────────────────────
 
@@ -151,7 +244,8 @@ class OverviewScopeTest(unittest.TestCase):
             SQLiteTracker(db_path=self.root / "data" / f"synth{i:02d}.db").create_task(
                 title=f"synth {i}"
             )
-        r = self.client.get("/admin/overview/all")
+        # wl-156: the scope nav's home is the Board (the report is city-wide).
+        r = self.client.get("/admin/tickets/all")
         self.assertEqual(r.status_code, 200)
         self.assertIn("<details class='ts-seg-more-wrap'", r.text)
         self.assertIn("ts-seg-more-menu", r.text)

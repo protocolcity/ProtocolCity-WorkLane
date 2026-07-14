@@ -75,29 +75,46 @@ class AllocationViewTest(unittest.TestCase):
         t3 = self.alpha.create_task(title="no lane", description="x")
         self.alpha.add_comment(t3.id, "Intake: filed by agent-a", author="agent-a")
 
-    def test_allocation_panel_renders_with_default_window(self) -> None:
+    # wl-156: the allocation PANEL is retired from /admin/overview (founder
+    # ruling — it answers a workers question; successor view is oc-22 on the
+    # dispatch side). The derivations below stay covered as unit tests
+    # because the dispatch report will consume them through a seam.
+
+    def test_allocation_lane_rows_filed_vs_closed(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from worklane.task_server import (
+            _allocation_lane_rows,
+            _merged_scope_tasks_for_filters,
+        )
+
+        since = datetime.now(timezone.utc) - timedelta(days=14)
+        rows = _allocation_lane_rows(
+            _merged_scope_tasks_for_filters("tradeos"), since)
+        by_lane = {r["lane"]: r for r in rows}
+        self.assertEqual(by_lane["build"]["filed"], 2)
+        self.assertEqual(by_lane["build"]["closed"], 1)
+        self.assertEqual(by_lane["unlabeled"]["filed"], 1)
+        self.assertEqual(by_lane["unlabeled"]["closed"], 0)
+
+    def test_allocation_author_rows_from_signed_comments(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from worklane.task_server import _allocation_author_rows
+
+        since = datetime.now(timezone.utc) - timedelta(days=14)
+        rows = _allocation_author_rows("tradeos", since)
+        by_author = {r["author"]: r for r in rows}
+        self.assertEqual(by_author["agent-a"]["filed"], 2)
+        self.assertEqual(by_author["agent-a"]["closed"], 1)
+        self.assertEqual(by_author["agent-b"]["filed"], 1)
+        self.assertEqual(by_author["agent-b"]["closed"], 0)
+
+    def test_overview_no_longer_serves_the_allocation_panel(self) -> None:
         r = self.client.get("/admin/overview")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("Allocation", r.text)
-        self.assertIn("By lane", r.text)
-        self.assertIn("By author", r.text)
-        self.assertIn("build", r.text)
-        self.assertIn("unlabeled", r.text)
-        self.assertIn("agent-a", r.text)
-        self.assertIn("agent-b", r.text)
-        # Default window is 14d.
-        self.assertIn("Allocation · 14d", r.text)
-
-    def test_window_selector_accepts_7_14_30(self) -> None:
-        for days in (7, 14, 30):
-            r = self.client.get(f"/admin/overview?days={days}")
-            self.assertEqual(r.status_code, 200, days)
-            self.assertIn(f"Allocation · {days}d", r.text)
-
-    def test_invalid_window_falls_back_to_14(self) -> None:
-        r = self.client.get("/admin/overview?days=999")
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("Allocation · 14d", r.text)
+        self.assertNotIn("Allocation ·", r.text)
+        self.assertIn("verdictStrip", r.text)
 
     def test_totals_reconcile_with_tp_counts(self) -> None:
         from worklane.mcp.handlers import TPHandlers

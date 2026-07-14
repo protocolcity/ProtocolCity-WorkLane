@@ -81,19 +81,26 @@ class CycleAgeFocusPanelTest(unittest.TestCase):
                     (old, old, int(t2.id)),
                 )
 
-    def test_cycle_age_panel_renders_lane_and_priority_tables(self) -> None:
-        r = self.client.get("/admin/overview")
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("Cycle &amp; age", r.text)
-        self.assertIn("build", r.text)
-        self.assertIn("cyc.med", r.text)
-        self.assertIn("age.med", r.text)
+    # wl-156: the cycle/age and focus-cut PANELS retired with the pulse page
+    # (the report's aging rack + priority-integrity widgets carry the
+    # decisions; the row-builder derivations stay unit-covered below for a
+    # future dispatch-report revival).
 
-    def test_focus_cut_surfaces_stale_p1_lane(self) -> None:
+    def test_report_page_carries_aging_and_priority_widgets(self) -> None:
         r = self.client.get("/admin/overview")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("Focus cut", r.text)
-        self.assertIn("build", r.text)
+        self.assertIn("agingRows", r.text)
+        self.assertIn("urgentList", r.text)
+        self.assertNotIn("Cycle &amp; age", r.text)
+        self.assertNotIn("Focus cut", r.text)
+
+    def test_api_report_flags_the_stale_p1(self) -> None:
+        j = self.client.get("/api/report").json()
+        self.assertTrue(j["ok"])
+        urgent = {e["id"]: e for e in j["urgent_unclaimed"]}
+        stale = [e for e in urgent.values() if e["age_days"] > 9]
+        self.assertEqual(len(stale), 1)
+        self.assertEqual(stale[0]["priority"], 1)
 
     def test_percentile_helper_matches_known_values(self) -> None:
         from worklane.task_server import _percentile
@@ -116,12 +123,22 @@ class CycleAgeFocusPanelTest(unittest.TestCase):
         self.assertEqual(lanes["build"]["open_p1p2"], 1)
         self.assertGreater(lanes["build"]["staleness_hours"], 24 * 9)
 
-    def test_allocation_lane_table_flags_intake_over_drain(self) -> None:
-        # lane:build has 1 filed-and-open (t2) in the default 14d window and
-        # 1 filed-and-closed (t1) -> filed(2) > closed(1), should be flagged.
-        r = self.client.get("/admin/overview")
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("pulse-alloc-flag", r.text)
+    def test_allocation_lane_rows_show_intake_over_drain(self) -> None:
+        # The panel's intake>drain flag retired with the pulse page; the
+        # underlying signal (filed > closed per lane) stays unit-covered
+        # for the oc-22 dispatch-report seam.
+        from datetime import datetime, timedelta, timezone
+
+        from worklane.task_server import (
+            _allocation_lane_rows,
+            _merged_scope_tasks_for_filters,
+        )
+
+        since = datetime.now(timezone.utc) - timedelta(days=14)
+        rows = _allocation_lane_rows(
+            _merged_scope_tasks_for_filters("tradeos"), since)
+        build = next(r for r in rows if r["lane"] == "build")
+        self.assertGreater(build["filed"], build["closed"])
 
 
 if __name__ == "__main__":

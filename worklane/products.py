@@ -20,7 +20,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 # Slugs with curated display names / short id prefixes. Anything else
@@ -69,6 +69,7 @@ class ProductSpec:
     display: str     # tab label, e.g. "tradeOS"
     prefix: str      # composite task-id prefix, e.g. "t" in "t-1095"
     db_path: Path    # SQLite store for this product
+    legacy_prefixes: Tuple[str, ...] = ()  # retired prefixes that still resolve here (wl-152)
 
 
 def _is_source_checkout() -> bool:
@@ -98,11 +99,14 @@ def wl_data_dir() -> Path:
 def products_config_path() -> Path:
     """Operator overlay for product metadata: ``local/config/products.json``.
 
-    Shape: ``{"<slug>": {"display": "...", "prefix": "..."}, "default": "<slug>"}``.
-    Per-slug entries win over the shipped ``_KNOWN_PRODUCT_META`` defaults;
-    absent keys fall through. The top-level ``"default"`` string key is the
-    host's bootstrap-default product (see :func:`default_product_slug`).
-    Surfaced (and eventually edited) via /admin/settings.
+    Shape: ``{"<slug>": {"display": "...", "prefix": "...", "legacy_prefixes":
+    [...]}, "default": "<slug>"}``. Per-slug entries win over the shipped
+    ``_KNOWN_PRODUCT_META`` defaults; absent keys fall through. ``legacy_prefixes``
+    is a list of retired id prefixes that still resolve to this slug forever
+    (wl-152) — see :func:`_legacy_prefix_map` and :func:`split_task_id`. The
+    top-level ``"default"`` string key is the host's bootstrap-default product
+    (see :func:`default_product_slug`). Surfaced (and eventually edited) via
+    /admin/settings.
     """
     return wl_data_dir().parent / "config" / "products.json"
 
@@ -202,13 +206,19 @@ def live_feed_product_slug() -> str:
 
 
 def register_product_meta(
-    slug: str, display: Optional[str] = None, prefix: Optional[str] = None
+    slug: str,
+    display: Optional[str] = None,
+    prefix: Optional[str] = None,
+    add_legacy_prefix: Optional[str] = None,
 ) -> None:
     """Persist a display/prefix override for ``slug`` into the config overlay.
 
     Merges into the existing ``local/config/products.json`` (creating it if
     absent) rather than replacing it, so unrelated overrides — including the
-    top-level ``"default"`` key — survive.
+    top-level ``"default"`` key — survive. ``add_legacy_prefix``, when given,
+    appends (dedup, sorted) to ``slug``'s ``legacy_prefixes`` list instead of
+    replacing it — the PATCH prefix-rename endpoint uses this to keep a
+    retired prefix resolving forever (wl-152).
     """
     cfg = products_config_path()
     raw = _raw_products_config()
@@ -217,6 +227,13 @@ def register_product_meta(
         entry["display"] = display
     if prefix:
         entry["prefix"] = prefix
+    if add_legacy_prefix:
+        legacy = str(add_legacy_prefix).strip().lower()
+        if legacy:
+            existing = entry.get("legacy_prefixes")
+            current = set(existing) if isinstance(existing, list) else set()
+            current.add(legacy)
+            entry["legacy_prefixes"] = sorted(current)
     if not entry:
         return
     raw[slug] = entry
@@ -231,7 +248,59 @@ def _spec_for_slug(slug: str, db_path: Path) -> ProductSpec:
     over = _config_overrides().get(slug) or {}
     display = str(over.get("display") or display)
     prefix = str(over.get("prefix") or prefix).strip().lower() or prefix
-    return ProductSpec(slug=slug, display=display, prefix=prefix, db_path=db_path)
+    raw_legacy = over.get("legacy_prefixes")
+    legacy_prefixes: Tuple[str, ...] = ()
+    if isinstance(raw_legacy, list):
+        legacy_prefixes = tuple(
+            sorted({str(p).strip().lower() for p in raw_legacy if str(p).strip()})
+        )
+    return ProductSpec(
+        slug=slug,
+        display=display,
+        prefix=prefix,
+        db_path=db_path,
+        legacy_prefixes=legacy_prefixes,
+    )
+
+
+def _legacy_prefix_map() -> Dict[str, str]:
+    """Legacy id prefix -> target slug, live product or not.
+
+    Seeded with the shipped ``"o"`` -> ``"ops"`` default (the retired Ops
+    Cockpit store has no on-disk ``.db`` and so never appears in
+    :func:`discover_products`), then merged with every ``legacy_prefixes``
+    list declared in the config overlay — including overlay entries for
+    slugs with no live store, so a product can carry retired aliases even
+    after its own DB is gone.
+    """
+    mapping: Dict[str, str] = {"o": "ops"}
+    for slug, entry in _config_overrides().items():
+        raw = entry.get("legacy_prefixes")
+        if not isinstance(raw, list):
+            continue
+        for p in raw:
+            p = str(p).strip().lower()
+            if p:
+                mapping[p] = slug
+    return mapping
+
+
+def all_taken_prefixes(exclude_slug: Optional[str] = None) -> Set[str]:
+    """Every prefix — live or legacy — already claimed by a product other
+    than ``exclude_slug``. Used by the product create/rename endpoints so a
+    new live prefix can't shadow another store's retired alias, and a
+    retired alias can't shadow another store's live prefix (wl-151/wl-152
+    collision guard)."""
+    taken: Set[str] = set()
+    for spec in discover_products():
+        if spec.slug == exclude_slug:
+            continue
+        taken.add(spec.prefix)
+        taken.update(spec.legacy_prefixes)
+    for prefix, target_slug in _legacy_prefix_map().items():
+        if target_slug != exclude_slug:
+            taken.add(prefix)
+    return taken
 
 
 def discover_products() -> List[ProductSpec]:
@@ -260,7 +329,7 @@ def discover_products() -> List[ProductSpec]:
         s for s in slugs if s not in always_present
     )
     specs: List[ProductSpec] = []
-    taken_prefixes = {"o"}  # reserved: legacy ops store ids
+    taken_prefixes = set(_legacy_prefix_map().keys())  # reserved: "o" + declared legacy aliases
     for s in ordered:
         spec = _spec_for_slug(s, slugs[s])
         if spec.prefix in taken_prefixes:
@@ -269,6 +338,7 @@ def discover_products() -> List[ProductSpec]:
             spec = ProductSpec(
                 slug=spec.slug, display=spec.display,
                 prefix=spec.slug, db_path=spec.db_path,
+                legacy_prefixes=spec.legacy_prefixes,
             )
         taken_prefixes.add(spec.prefix)
         specs.append(spec)
@@ -330,6 +400,10 @@ def prefixed_task_id(slug: str, raw_id: Any) -> str:
 def split_task_id(task_id: str) -> Tuple[str, str]:
     """``"wl-3"`` → ``("worklane", "3")``; bare ids → the default product.
 
+    Resolves live prefixes first, then legacy aliases (see
+    :func:`_legacy_prefix_map` — includes the shipped ``"o"`` -> ``"ops"``
+    default plus any per-slug ``legacy_prefixes`` from the config overlay,
+    wl-152), so a retired prefix keeps resolving to its store forever.
     Unknown prefixes fall back to the configured default product (see
     :func:`default_product_slug`) with the id untouched, matching the
     legacy behavior of ``parse_surface_task_id``.
@@ -338,9 +412,10 @@ def split_task_id(task_id: str) -> Tuple[str, str]:
     if "-" in s:
         prefix, rest = s.split("-", 1)
         if rest:
-            if prefix == "o":  # legacy retired ops store
-                return "ops", rest
             for spec in discover_products():
                 if spec.prefix == prefix:
                     return spec.slug, rest
+            legacy_slug = _legacy_prefix_map().get(prefix)
+            if legacy_slug:
+                return legacy_slug, rest
     return default_product_slug(), s
