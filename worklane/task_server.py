@@ -81,6 +81,7 @@ from worklane.rendering import _badge, _css, _esc, _label_chip, render_markdown
 from worklane.board import (
     _board_styles,
     _BOARD_COLUMNS,
+    _claim_stale_minutes,
     _client_js,
     _detect_owner,
     _label_tier,
@@ -2904,8 +2905,14 @@ def _render_focus_panel(rows: List[Dict[str, Any]]) -> str:
 
 # wl-86: PROTOCOL.md §4 — in-flight tickets with no update in over 90 minutes
 # count as stalled; the Attention panel surfaces them alongside blocked and
-# aging backlog work.
-_STALE_INFLIGHT = timedelta(minutes=90)
+# aging backlog work. wl-138: reuses board._claim_stale_minutes() (env
+# TICKETING_CLAIM_STALE_MINUTES, wl-104) as the one named knob instead of a
+# second hardcoded constant — same threshold value, still a distinct check
+# (no update at all vs. board.py's no-comment-since-claim).
+def _stale_inflight() -> timedelta:
+    return timedelta(minutes=_claim_stale_minutes())
+
+
 _AGING_BACKLOG = timedelta(days=7)
 
 
@@ -2962,7 +2969,7 @@ def _render_attention_panel(
     seen: set = set()
     for t in inflight_tasks:
         ts = parse_ts(t.updated_at)
-        if ts is not None and (now - ts) >= _STALE_INFLIGHT:
+        if ts is not None and (now - ts) >= _stale_inflight():
             items.append((
                 "stale", "#f59e0b", t,
                 f"no update {_pulse_relative_time(t.updated_at, now=now)}",
@@ -3037,7 +3044,7 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
     """Everything blocked on the founder, all stores (wl-135): in_review
     (review IS the founder gate), needs:founder-decision/founder-decision
     labels, gate_type=human, stalled in-flight (§4, >90m — reuses
-    _STALE_INFLIGHT), and gate_type=timer embargoes with a machine-readable
+    _stale_inflight()), and gate_type=timer embargoes with a machine-readable
     gate_until. Sorted oldest-first — age is how long the founder has been
     the blocker. Each open task counts once, first match wins in the order
     above (an in_review ticket that's also labeled founder-decision shows
@@ -3054,7 +3061,7 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
             counted.add(t.id)
         else:
             since = _parse_task_date_utc(t.updated_at)
-            if since is not None and (now - since) >= _STALE_INFLIGHT:
+            if since is not None and (now - since) >= _stale_inflight():
                 items.append(_attention_item(
                     t, prod_slug, "stalled",
                     f"no update {_pulse_relative_time(t.updated_at, now=now)}", since, now,
@@ -6452,7 +6459,8 @@ def api_dev_board_summary(scope: str = ""):
     ready_count = _merged_ready_count(prod)
     in_flight_tasks = _merged_in_flight_tasks(prod)
     now = datetime.now(timezone.utc)
-    stale_cutoff = now - timedelta(minutes=90)
+    stale_minutes = _claim_stale_minutes()
+    stale_cutoff = now - timedelta(minutes=stale_minutes)
     stalled_count = 0
     for t in in_flight_tasks:
         dt = _parse_task_date_utc(t.updated_at)
@@ -6462,7 +6470,7 @@ def api_dev_board_summary(scope: str = ""):
         "ready_count": ready_count,
         "in_flight_count": len(in_flight_tasks),
         "stalled_count": stalled_count,
-        "stale_minutes": 90,
+        "stale_minutes": stale_minutes,
     })
 
 
@@ -6473,7 +6481,7 @@ def api_dev_board_summary_all_scopes():
     — the scope switcher polls this once instead of one request per pill.
     """
     now = datetime.now(timezone.utc)
-    stale_cutoff = now - timedelta(minutes=90)
+    stale_cutoff = now - timedelta(minutes=_claim_stale_minutes())
 
     def _counts(prod: str) -> Dict[str, int]:
         ready_count = _merged_ready_count(prod)
@@ -6492,7 +6500,7 @@ def api_dev_board_summary_all_scopes():
     scopes: Dict[str, Dict[str, int]] = {"all": _counts("")}
     for spec in discover_products():
         scopes[spec.slug] = _counts(spec.slug)
-    return JSONResponse({"scopes": scopes, "stale_minutes": 90})
+    return JSONResponse({"scopes": scopes, "stale_minutes": _claim_stale_minutes()})
 
 
 @router.get("/api/dev/attention")
@@ -6509,7 +6517,7 @@ def api_dev_attention():
         "ok": True,
         "count": len(items),
         "items": items,
-        "stale_minutes": int(_STALE_INFLIGHT.total_seconds() // 60),
+        "stale_minutes": _claim_stale_minutes(),
         "updated_at": now.isoformat(),
     })
     resp.headers["Cache-Control"] = "no-store, max-age=0"
