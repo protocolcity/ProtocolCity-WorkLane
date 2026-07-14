@@ -4235,13 +4235,19 @@ def admin_settings() -> str:
 
 
 # Docs surface (wl-27): read-only render of the repo's own truth files.
-# PROTOCOL.md/README.md/CLAUDE.md live at the repo root; TRUTH.md lives inside
-# the worklane/ package dir alongside this module.
+# PROTOCOL.md/README.md/CLAUDE.md live at the repo root and ship in every
+# export; TRUTH.md is host-boundary internal content, deliberately excluded
+# from the WorkLane public export (scripts/export_worklane.sh) — it lives in
+# _OPTIONAL_DOCS below so the tab disappears rather than always rendering a
+# "could not read" error on a public install (wl-125).
 _DOCS: List[Tuple[str, str, str]] = [
     ("process", "PROTOCOL.md", os.path.join(_ROOT, "PROTOCOL.md")),
-    ("truth", "TRUTH.md", os.path.join(_ROOT, "worklane", "TRUTH.md")),
     ("readme", "README.md", os.path.join(_ROOT, "README.md")),
     ("claude", "CLAUDE.md", os.path.join(_ROOT, "CLAUDE.md")),
+]
+
+_OPTIONAL_DOCS: List[Tuple[str, str, str]] = [
+    ("truth", "TRUTH.md", os.path.join(_ROOT, "worklane", "TRUTH.md")),
 ]
 
 # Per-agent instruction files. Lane operating rules are normative in
@@ -4259,7 +4265,11 @@ _AGENT_DOCS: List[Tuple[str, str, str]] = [
 
 
 def _docs_entries() -> List[Tuple[str, str, str]]:
-    return list(_DOCS) + [d for d in _AGENT_DOCS if os.path.isfile(d[2])]
+    return (
+        list(_DOCS)
+        + [d for d in _OPTIONAL_DOCS if os.path.isfile(d[2])]
+        + [d for d in _AGENT_DOCS if os.path.isfile(d[2])]
+    )
 
 
 def _docs_nav(active: str) -> str:

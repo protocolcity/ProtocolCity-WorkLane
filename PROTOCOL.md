@@ -277,6 +277,11 @@ real browser for days, because direct-call tests are blind to both:
   dashed ring segment painted as a full circle) means the browser resolves a
   click to a different element than the one the test dispatched on.
 
+## 6) Host Profiles
+
+Every host that adopts WorkLane writes its own profile — the per-agent
+rules (identity, lanes, claim discipline, verification bar) for the agents
+working its queues. Start from [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md).
 ## 7) API and Surface
 
 WL exposes API/UI so other cockpits can read ticket state. Board/table and API reflect the same DB truth. External aggregators should be read-first unless write is explicitly enabled. Host products are WL clients; a host must never depend on WL availability to start.
@@ -349,9 +354,3 @@ items) once the project gets its own dispatched agent lane.
    stores: all three surfaces render correctly with no code
    changes needed.
 
-
-## 6) Host Profiles
-
-Every host that adopts WorkLane writes its own profile — the per-agent
-rules (identity, lanes, claim discipline, verification bar) for the agents
-working its queues. Start from [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md).

@@ -383,11 +383,20 @@ class SurfaceRoutingTest(unittest.TestCase):
         self.assertIn("ts-doc-body", r.text)
 
     def test_docs_page_renders_all_known_docs(self) -> None:
-        # "agents" and "grok" are agent-instruction files discovered at the
-        # repo root (AGENTS.md, GROK.md); the rest are the canonical four.
-        for slug in ("process", "truth", "readme", "claude", "agents", "grok"):
+        # "process"/"readme"/"claude" always ship. "truth" is host-boundary
+        # content excluded from some builds (e.g. the WorkLane public
+        # export, wl-125) and "agents"/"grok" are agent-instruction files
+        # discovered at the repo root -- all three render 200 only when the
+        # backing file actually exists on disk, so this adapts to whichever
+        # build it runs against instead of assuming a fixed file set.
+        from worklane.task_server import _docs_entries
+
+        always = {"process", "readme", "claude"}
+        present = {slug for slug, _label, _path in _docs_entries()}
+        for slug in always | {"truth", "agents", "grok"}:
             r = self.client.get(f"/admin/docs/{slug}")
-            self.assertEqual(r.status_code, 200, msg=slug)
+            expected = 200 if (slug in always or slug in present) else 404
+            self.assertEqual(r.status_code, expected, msg=slug)
 
     def test_docs_nav_hides_missing_agent_docs(self) -> None:
         # GEMINI.md / .cursorrules don't exist in this repo, so their tabs

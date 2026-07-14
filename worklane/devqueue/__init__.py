@@ -2,7 +2,7 @@
 
 Semi-autonomous ticket dispatch, consumed by ``worklane/task_server.py``
 (the ``/api/dev/queue/*`` routes) and ``worklane/mcp/handlers.py``
-(``wl_ready`` blocker filtering) — see this package's TRUTH.md. The queue reads
+(``wl_ready`` blocker filtering). The queue reads
 tasks through the :class:`worklane.trackers.protocol.ProjectTracker`
 abstraction (default: SQLiteTracker), prioritizes them, drops anything
 whose blockers aren't Done, and groups overlapping work into batches the
@@ -24,7 +24,7 @@ Public surface:
 
 Nothing in this module hits Linear directly — the ProjectTracker
 abstraction owns persistence. Linear is retired; legacy SEO-XXX ext_ids
-are preserved for historical reference only (see this package's TRUTH.md).
+are preserved for historical reference only.
 """
 
 from __future__ import annotations
