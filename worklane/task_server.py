@@ -391,11 +391,8 @@ def _task_page(
 ) -> str:
     """Render the Ticketing shell for the Pool (work queue) app."""
     _seg = lambda on: "ts-seg ts-seg--on" if on else "ts-seg"
-    _brand_cls = (
-        "task-server-brand active"
-        if (shell == "overview" and nav_active == "overview")
-        else "task-server-brand"
-    )
+    _is_landing = shell == "overview" and nav_active == "overview"
+    _brand_cls = "task-server-brand active" if _is_landing else "task-server-brand"
     _show_ticket_tools = shell == "tickets"
     _ticket_tools = ""
     _product_scope = ""
@@ -461,7 +458,7 @@ def _task_page(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{_esc(title)} · {_BRAND_NAME}</title>
+  <title>{_BRAND_NAME if _is_landing else f"{_esc(title)} · {_BRAND_NAME}"}</title>
   <style>{_css()}</style>
   <script>
   /* Theme init (before paint) — Dispatch paper is the default (wl-37); dark
