@@ -292,7 +292,13 @@ def list_tasks_for_scope_multi(
 
 # Ownership marker line per PROTOCOL.md §3 — `Owner: <agent-id> (<model>)`.
 # The parenthetical and anything after it is presentation, not identity.
-_OWNER_LINE_RE = re.compile(r"^Owner:\s*([^\n(]+)", re.MULTILINE)
+# The id itself is bounded to PROTOCOL.md §5.2's kebab-case charset (never
+# whitespace/parens/colons) rather than "anything but a real newline" —
+# a comment body with a literal backslash-n (shell-escaping artifact, not
+# an actual line break) has no real newline to stop at, so a looser class
+# used to swallow the whole rest of the marker — Workdir:, Start:, Plan: —
+# into the byline (wl-129).
+_OWNER_LINE_RE = re.compile(r"^Owner:\s*([A-Za-z0-9_.-]+)", re.MULTILINE)
 
 
 def _extract_owner_claim(comments: List[Any]) -> Tuple[str, str]:

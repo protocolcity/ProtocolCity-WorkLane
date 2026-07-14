@@ -40,6 +40,17 @@ class ExtractOwnerTest(unittest.TestCase):
     def test_no_marker(self) -> None:
         self.assertEqual(_extract_owner([_Comment("hi", "2026-07-01")]), "")
 
+    def test_literal_backslash_n_does_not_leak_trailing_body(self) -> None:
+        # wl-129: a shell-escaping artifact can store a literal `\n` (two
+        # chars: backslash + n) instead of a real line break. With no real
+        # newline to stop at, the marker must still bound the id to its
+        # kebab-case charset rather than swallowing Workdir:/Start:/Plan:.
+        body = (
+            "Owner: codex\\nWorkdir: /home/agent/project"
+            "\\nStart: 2026-07-14T04:06:04Z\\nPlan:\\n- x"
+        )
+        self.assertEqual(_extract_owner([_Comment(body, "2026-07-14T04:06:04Z")]), "codex")
+
 
 class DetectOwnerTest(unittest.TestCase):
     """wl-84: every identity renders verbatim from store data — the byline

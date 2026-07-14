@@ -209,6 +209,7 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane) |
 | `codex` | Codex CLI lane (§6.3; added 2026-07-11) — visuals/content production |
 | `claude-socials` | Claude CLI lane, socials drafting desk — dispatched by WorkForce (added 2026-07-14). Lane-labeled tickets only; drafts-only law (posting is founder-only); contract at socials/workers/claude-socials/CONTRACT.md |
+| `claude-orchestrator` | Claude CLI lane, orchestrator/WorkForce backlog — dispatched by WorkForce, working on WorkForce itself (added 2026-07-14, oc-12). Lane-labeled tickets only; never touches `local/` state, the daemon service, or live dispatches; contract at orchestrator/workers/claude-orchestrator/CONTRACT.md |
 
 Fire schedules are WORKER-noun data, not desk law — this table stays identity
 + who. Cadence truth (cron expressions, next-fire) lives in WorkForce's
