@@ -205,9 +205,14 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `cursor` | Cursor editor lane (§6.1) |
 | `grok` | Grok CLI lane (§6.2) |
 | `cowork` | Claude cowork sessions |
-| `claude-worklane` | Claude CLI dispatch, WL's own tickets (§8; launchd :15; fka `wl-pool`, renamed 2026-07-11) |
+| `claude-worklane` | Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11) |
 | `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane) |
 | `codex` | Codex CLI lane (§6.3; added 2026-07-11) — visuals/content production |
+| `claude-socials` | Claude CLI lane, socials drafting desk — dispatched by WorkForce (added 2026-07-14). Lane-labeled tickets only; drafts-only law (posting is founder-only); contract at socials/workers/claude-socials/CONTRACT.md |
+
+Fire schedules are WORKER-noun data, not desk law — this table stays identity
++ who. Cadence truth (cron expressions, next-fire) lives in WorkForce's
+roster, rendered live on its board (`:8797`); look there, not here.
 
 Reserved system authors — written by automation only, never by an agent:
 `cli-label`, `cli-update`, `dependency-guard` (WL internals), and
