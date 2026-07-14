@@ -1,8 +1,9 @@
 # Host profile template
 
 Copy this into your host repo (e.g. as a `PROTOCOL.md` section or standalone
-`TICKETING.md`) and fill in the blanks. It mirrors the host-profile shape described in [PROTOCOL.md](PROTOCOL.md) §6 (Host Profiles). Setup steps live in [INSTALL.md](INSTALL.md); this is the
-*process* doc that goes in your host repo once WL is running.
+`TICKETING.md`) and fill in the blanks. It mirrors the host-profile shape described in [PROTOCOL.md](PROTOCOL.md) §6 (Host Profiles). Setup steps live in
+[INSTALL.md](INSTALL.md); this is the *process* doc that goes in your
+host repo once WL is running.
 
 Why this exists: WL enforces signed writes and status transitions, but it
 has no opinion on *who* your agents are, what working copy they use, or
