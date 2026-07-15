@@ -7501,14 +7501,17 @@ def _task_server_extra_css() -> str:
 """
 
 
-# ── The living desk (wl-132): the PAPER room ─────────────────────────────
+# ── The living desk (wl-132 / wl-167 / wl-170): the kiosk interior ───────
 # Ratified spec (founder verdicts on wl-132): grok's structure — nameplate,
 # IN-TRAY of decision slips, hold bin of quiet claims, neighborhood-ledger
 # blotter, stamp pad + FILED outbox rail — with claude's liveness (stamp
-# thunk on fresh receipts, real per-item paper stack heights). Modern paper,
-# not sepia. The desk keeps the ticket verbs on Board/Table/ticket pages;
-# the scene renders around them, never replaces them. Engineering constraint
-# proven live on the sibling rooms: setInterval, never requestAnimationFrame.
+# thunk on fresh receipts, real per-item paper stack heights). CITY_DNA
+# sec.5 (wl-170 / pc-52): page base is the city `page` token (#faf6ec) —
+# one sheet across the rooms; paper/LAND surfaces keep plaza tones; live
+# sky band unchanged. The desk keeps the ticket verbs on Board/Table/
+# ticket pages; the scene renders around them, never replaces them.
+# Engineering constraint proven live on the sibling rooms: setInterval,
+# never requestAnimationFrame.
 
 _SCENE_WINDOW_HOURS = 24
 
@@ -7606,12 +7609,97 @@ def _closeout_authors(slug: str) -> Dict[str, str]:
     return out
 
 
+# wl-168: recent status transitions for the paper-line flyers. /api/dev/activity
+# only carries new_status (no old→new pair), so the engine computes a small
+# window from task_events and the scene animates it. Engines compute facts;
+# scenes animate them.
+_SCENE_TRANSITION_HOURS = 2
+_SCENE_TRANSITION_LIMIT = 40
+
+
+def _scene_recent_transitions(
+    now: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """status_change events with from_status inferred from the prior event
+    that recorded a status for the same task (created or earlier change)."""
+    now = now or datetime.now(timezone.utc)
+    cutoff_ts = (now - timedelta(hours=_SCENE_TRANSITION_HOURS)).timestamp()
+    out: List[Dict[str, Any]] = []
+    for spec, tracker in _scoped_product_trackers(""):
+        db_path = _tracker_db_path(tracker)
+        if db_path is None or not Path(db_path).exists():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT e.id AS event_id,
+                           COALESCE(t.ext_id, CAST(t.id AS TEXT)) AS task_id,
+                           e.status AS to_status,
+                           e.created_at AS ts,
+                           (SELECT e2.status FROM task_events e2
+                             WHERE e2.task_id = e.task_id
+                               AND e2.id < e.id
+                               AND e2.status IS NOT NULL
+                               AND e2.status != ''
+                             ORDER BY e2.id DESC LIMIT 1) AS from_status,
+                           (SELECT c.author FROM task_comments c
+                             WHERE c.task_id = e.task_id
+                               AND c.author != ''
+                               AND c.created_at <= e.created_at
+                             ORDER BY c.created_at DESC LIMIT 1) AS author
+                      FROM task_events e
+                      JOIN tasks t ON t.id = e.task_id
+                     WHERE e.event_type = 'status_change'
+                       AND e.status IS NOT NULL
+                       AND e.status != ''
+                     ORDER BY e.id DESC
+                     LIMIT 60
+                    """,
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception:
+            continue
+        for r in rows:
+            to_st = str(r["to_status"] or "").strip()
+            from_st = str(r["from_status"] or "").strip()
+            if not to_st or from_st == to_st:
+                continue
+            ts = r["ts"] or ""
+            if _activity_ts_sort_key(ts) < cutoff_ts:
+                continue
+            raw_id = str(r["task_id"])
+            composite = (
+                raw_id if raw_id.startswith(f"{spec.prefix}-")
+                else f"{spec.prefix}-{raw_id}"
+            )
+            out.append({
+                "id": f"{spec.slug}:{r['event_id']}",
+                "task_id": composite,
+                "from_status": from_st,
+                "to_status": to_st,
+                "author": str(r["author"] or ""),
+                "ts": ts,
+                "store": spec.slug,
+            })
+    out.sort(key=lambda x: _activity_ts_sort_key(x.get("ts")), reverse=True)
+    return out[:_SCENE_TRANSITION_LIMIT]
+
+
 @router.get("/api/scene")
 def api_desk_scene() -> JSONResponse:
     """The desk scene's facts in one call (wl-132): per-store ledger counts,
     the founder-attention tray (wl-135 collector, unchanged), and the window
     of FILED receipts. Computed from THIS engine's own stores — the scene
-    never reads the city lens (engines compute their own facts)."""
+    never reads the city lens (engines compute their own facts).
+
+    wl-168: also a recent_transitions[] window (task id, from_status,
+    to_status, author, ts) so the paper line can animate status movement —
+    /api/dev/activity only carries new_status, not old→new pairs.
+    """
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=_SCENE_WINDOW_HOURS)
     stores: List[Dict[str, Any]] = []
@@ -7655,6 +7743,7 @@ def api_desk_scene() -> JSONResponse:
         "stores": stores,
         "attention": _collect_founder_attention_items(now=now),
         "filed": filed[:60],
+        "recent_transitions": _scene_recent_transitions(now=now),
     }
     resp = JSONResponse(payload)
     resp.headers["Cache-Control"] = "no-store, max-age=0"
@@ -7672,23 +7761,67 @@ _DESK_SCENE_CSS = """
 @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400;
   font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
 :root {
-  --desk:#e9e7e2; --paper:#fdfdfb; --line:#d7d5cf; --rule:#9fb6d9;
-  --ink:#1f2328; --dim:#6d7480; --blue:#1c4f9c; --stamp:#c0392b;
+  /* CITY_DNA sec.5 (wl-170 / pc-52) — city page token; paper objects keep plaza */
+  --desk:#faf6ec; --paper:#e2d9c2; --paper-top:#efe8d5; --line:#8c7a54;
+  --rule:#9fb6d9; /* blue rules — paper-object accent, untouched */
+  --ink:#1f2328; --dim:#7a6f5c; --blue:#1c4f9c; --stamp:#c0392b;
   --ok:#1e7a45; --warn:#a8681e; --pink:#fbe9ea; --pinkline:#e2b6ba;
+  --gold:#e9c46a;
 }
 * { box-sizing:border-box; margin:0; }
 html,body { height:100%; }
+/* page is one sheet (wl-170); no plaza ramp on the body */
 body { background:var(--desk); color:var(--ink);
   font:14px/1.5 "IBM Plex Sans",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
-  background-image:linear-gradient(180deg,#dedcd6 0,var(--desk) 220px);
   display:flex; flex-direction:column; }
+/* night: the room darkens with the city (paintSky toggles body.night) */
+body.night { background-image:linear-gradient(180deg,#9a9178 0,#a89f86 220px);
+  background-color:#a89f86; }
 a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
 .dim { color:var(--dim); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+/* live sky band — same skyColors(hourF) as the plat (CITY_DNA sec.5) */
+.sky { position:relative; height:48px; overflow:hidden; flex:none;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#dcebf0,#eef0e2); }
+.celestial { position:absolute; width:16px; height:16px; border-radius:50%;
+  pointer-events:none; transition:left .8s linear, top .8s linear, right .8s linear; }
+.celestial.sun { background:var(--gold); box-shadow:0 0 12px #e9c46a99; opacity:.92; }
+.celestial.moon { background:#e8e4d2; opacity:.88; box-shadow:0 0 10px #e8e4d288; }
 /* wl-165 city DNA: the plat's kiosk is this room's own sign, and papers
    wear their worker's citizen sprite (CITY_DNA.md — paper re-skin). */
 .nameplate .kiosk { height:40px; width:auto; align-self:center; flex:none; }
 .clip-item svg.citizen { height:15px; width:auto; vertical-align:-3px; margin-right:3px; }
-header.nameplate { background:var(--paper); border-bottom:1px solid var(--line);
+/* wl-168: the paper line — desk counter strip between nameplate and columns;
+   four stations left→right mirror the kanban flow, with live counts. */
+.paper-line { position:relative; flex:none;
+  background:linear-gradient(180deg,var(--paper-top),var(--paper));
+  border-bottom:1px solid var(--line); box-shadow:0 2px 6px #0001;
+  padding:10px 22px 12px; }
+.pl-rail { display:flex; align-items:flex-end; justify-content:center; gap:4px;
+  max-width:900px; margin:0 auto; position:relative; z-index:1; }
+.pl-station { flex:1; min-width:0; max-width:200px; background:transparent;
+  border:1px solid transparent; border-radius:4px; cursor:pointer;
+  padding:8px 6px 6px; text-align:center; color:var(--ink); font:inherit; }
+.pl-station:hover { border-color:var(--line); background:#fbf6ea66; }
+.pl-station:focus { outline:none; border-color:var(--blue); }
+.pl-obj { height:36px; display:flex; align-items:flex-end; justify-content:center; }
+.pl-obj svg { height:34px; width:auto; display:block; }
+.pl-label { font:600 10px "IBM Plex Sans",sans-serif; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--dim); margin-top:4px; }
+.pl-count { font:700 16px "IBM Plex Mono",ui-monospace,monospace;
+  color:var(--ink); line-height:1.2; margin-top:1px; }
+.pl-arrow { color:var(--dim); font-size:14px; padding-bottom:28px; opacity:.55;
+  user-select:none; flex:none; }
+.pl-flyers { position:absolute; inset:0; pointer-events:none; overflow:visible; z-index:2; }
+.pl-flyer { position:fixed; z-index:50; pointer-events:none;
+  width:28px; height:34px; margin-left:-14px; margin-top:-17px; }
+.pl-flyer .sheet { width:22px; height:28px; background:#fbf6ea; border:1px solid var(--line);
+  box-shadow:1px 2px 4px #0002; border-radius:1px; position:relative; }
+.pl-flyer .sheet::before { content:""; position:absolute; left:3px; right:3px; top:6px;
+  height:1px; background:var(--rule); box-shadow:0 4px 0 var(--rule),0 8px 0 var(--rule); }
+.pl-flyer svg.citizen { position:absolute; right:-6px; bottom:-2px; height:14px; width:auto; }
+header.nameplate { background:linear-gradient(180deg,var(--paper-top),var(--paper));
+  border-bottom:1px solid var(--line);
   border-top:6px solid var(--stamp); box-shadow:0 2px 8px #0002;
   padding:14px 22px 12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
 h1 { font-size:19px; letter-spacing:.14em; font-weight:700; }
@@ -7708,9 +7841,10 @@ main.surface { flex:1; overflow:auto; padding:20px 22px 26px; max-width:1420px;
 @media (max-width:760px){ main.surface { grid-template-columns:1fr; } }
 h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;
   margin:0 0 10px; font-weight:600; }
-.tray, .blotter, .pad, .clip { background:var(--paper); border:1px solid var(--line);
+.tray, .blotter, .pad, .clip { background:var(--paper-top); border:1px solid var(--line);
   box-shadow:0 2px 6px #0002; padding:14px 16px; margin-bottom:18px; }
-.form { background:var(--paper); border:1px solid var(--line); box-shadow:0 2px 5px #0002;
+/* paper objects: slips stay paper-white (stamp red / blue rules untouched) */
+.form { background:#fbf6ea; border:1px solid var(--line); box-shadow:0 2px 5px #0002;
   padding:12px 14px 10px; margin-bottom:12px; position:relative; overflow:hidden; }
 .form::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
   background:var(--blue); }
@@ -7729,7 +7863,7 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .slip { background:var(--pink); border-color:var(--pinkline); }
 .slip::before { background:var(--stamp); }
 .tag { border:1px solid var(--line); border-radius:3px; padding:0 6px; font-size:11px;
-  color:var(--dim); background:#fff; }
+  color:var(--dim); background:var(--paper-top); }
 .empty-note { color:var(--dim); font-size:12px; font-style:italic; padding:6px 0; }
 /* wl-157/wl-162: the skim filter — narrows both trays to one store. A
    dropdown in the tray corner, not a chip row: flat rows wrap past ~4
@@ -7747,7 +7881,7 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 #trayFilter:focus { border-color:var(--blue); color:var(--blue); outline:none; }
 #trayFilter.on { color:var(--blue); }
 /* the blotter: one ledger card per store, paper piles with real heights */
-.hood { border:1px solid var(--line); background:var(--paper); box-shadow:0 2px 5px #0002;
+.hood { border:1px solid var(--line); background:var(--paper-top); box-shadow:0 2px 5px #0002;
   padding:12px 16px 10px; margin-bottom:12px; }
 .hood-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
 .hood-head .nm { font-weight:700; letter-spacing:.03em; }
@@ -7758,8 +7892,9 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .piles { display:flex; gap:18px; margin-top:10px; align-items:flex-end; }
 .pile { flex:1; text-align:center; }
 .pile .sheets { position:relative; height:56px; }
+/* pile sheets are paper objects — keep the white carbon look */
 .pile .sheet { position:absolute; left:12%; right:12%; height:4px; border-radius:1px;
-  background:#fff; border:1px solid #cfd1cb; box-shadow:0 1px 1px #0001; }
+  background:#fbf6ea; border:1px solid #c9bd9f; box-shadow:0 1px 1px #0001; }
 .pile.doing .sheet { background:#fef7e0; border-color:#e3d9ae; }
 .pile.review .sheet { background:#e8effa; border-color:#b9cdec; }
 .pile .n { font:600 15px "IBM Plex Mono",ui-monospace,monospace; margin-top:2px; }
@@ -7788,28 +7923,28 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .clip-item .when { color:var(--dim); font-variant-numeric:tabular-nums;
   font:11px "IBM Plex Mono",ui-monospace,monospace; }
 .clip-item.fresh { animation:inkin 2.4s ease-out; }
-footer.bar { border-top:1px solid var(--line); background:var(--paper);
+footer.bar { border-top:1px solid var(--line); background:var(--paper-top);
   padding:8px 22px; display:flex; justify-content:space-between; gap:14px;
   flex-wrap:wrap; font-size:12px; color:var(--dim); }
 footer.bar a { margin-right:14px; }
 /* the work-order drawer (wl-145): the ticket pulled out ON the desk,
-   never a page exit */
-#scrim { position:fixed; inset:0; background:#2b2d3140; opacity:0;
+   never a page exit — parchment chrome, paper body */
+#scrim { position:fixed; inset:0; background:#4a3f2c40; opacity:0;
   pointer-events:none; transition:opacity .18s; z-index:40; }
 #scrim.open { opacity:1; pointer-events:auto; }
 #wo { position:fixed; top:0; right:0; bottom:0; width:min(580px,94vw);
-  background:var(--paper); border-left:1px solid var(--line);
+  background:var(--paper-top); border-left:1px solid var(--line);
   box-shadow:-8px 0 28px #0003; transform:translateX(102%);
   transition:transform .22s ease-out; z-index:41; display:flex;
   flex-direction:column; }
 #wo.open { transform:translateX(0); }
 .wo-head { padding:16px 20px 12px; border-bottom:2px solid var(--rule);
-  position:relative; background:linear-gradient(180deg,#fbfbf8,var(--paper)); }
+  position:relative; background:linear-gradient(180deg,var(--paper-top),var(--paper)); }
 .wo-head .no { font:600 13px "IBM Plex Mono",ui-monospace,monospace; color:var(--blue); }
 .wo-head .t { font-weight:700; font-size:15px; margin:4px 90px 2px 0; }
 .wo-head .stamp { top:14px; right:44px; font-size:11px; padding:5px 9px; }
 .wo-close { position:absolute; top:10px; right:10px; border:1px solid var(--line);
-  background:var(--paper); color:var(--dim); width:26px; height:26px; border-radius:3px;
+  background:var(--paper-top); color:var(--dim); width:26px; height:26px; border-radius:3px;
   font-size:14px; cursor:pointer; line-height:1; }
 .wo-close:hover { color:var(--ink); border-color:var(--dim); }
 .wo-body { flex:1; overflow-y:auto; padding:14px 20px 20px; }
@@ -7817,25 +7952,25 @@ footer.bar a { margin-right:14px; }
 .wo-meta td { padding:4px 0; border-bottom:1px dotted var(--line); vertical-align:top; }
 .wo-meta td:first-child { color:var(--dim); width:86px; text-transform:uppercase;
   letter-spacing:.14em; font-size:10px; padding-top:6px; }
-.wo-desc { font-size:13px; white-space:pre-wrap; background:#fbfbf8;
+.wo-desc { font-size:13px; white-space:pre-wrap; background:#fbf6ea;
   border:1px solid var(--line); border-left:4px solid var(--rule);
   padding:10px 12px; margin-bottom:16px; overflow-wrap:break-word; }
 .wo-entry { border:1px solid var(--line); border-left:3px solid var(--rule);
-  background:#fdfdfb; padding:8px 12px; margin-bottom:10px; font-size:12.5px; }
+  background:#fbf6ea; padding:8px 12px; margin-bottom:10px; font-size:12.5px; }
 .wo-entry .who { font:600 11px "IBM Plex Mono",ui-monospace,monospace;
   color:var(--blue); }
 .wo-entry .body { white-space:pre-wrap; margin-top:4px; overflow-wrap:break-word; }
 .wo-sign { border-top:1px solid var(--line); padding:10px 20px 14px;
-  background:#fbfbf8; }
+  background:var(--paper); }
 .wo-sign .sign-as { font-size:10px; letter-spacing:.18em; text-transform:uppercase;
   color:var(--dim); margin-bottom:6px; }
 .wo-sign .sign-as .dim { text-transform:none; letter-spacing:0; }
 .wo-sign textarea { width:100%; border:1px solid var(--line);
-  background:var(--paper); color:var(--ink); font:12.5px "IBM Plex Sans",sans-serif;
+  background:#fbf6ea; color:var(--ink); font:12.5px "IBM Plex Sans",sans-serif;
   padding:6px 8px; margin-bottom:6px; box-sizing:border-box; }
 .wo-sign textarea { min-height:58px; resize:vertical; }
 .wo-sign button { border:1.5px solid var(--blue); color:var(--blue);
-  background:var(--paper); font:600 11px "IBM Plex Sans",sans-serif;
+  background:var(--paper-top); font:600 11px "IBM Plex Sans",sans-serif;
   letter-spacing:.14em; text-transform:uppercase; padding:6px 14px;
   border-radius:3px; cursor:pointer; }
 .wo-sign button:hover { background:#eef3fb; }
@@ -7864,6 +7999,57 @@ function sheets(n,cap){var out="",m=Math.min(n,cap||12);
 function pile(cls,label,n){
   return '<div class="pile '+cls+'"><div class="sheets">'+sheets(n)+'</div>'+
     '<div class="n">'+esc(n)+'</div><div class="l">'+esc(label)+'</div></div>';}
+/* wl-168: paper-line stations — status → station id for counts & flyers */
+var PL_STATUS={backlog:"plFiled",in_progress:"plClaimed",in_review:"plSignoff",done:"plSigned"};
+var PL_SEEN={}, PL_ACTIVE=0, PL_MAX=6, PL_MS=1500, firstPlPoll=true;
+function plCounts(d){
+  var c={filed:0,claimed:0,signoff:0,signed:0};
+  (d.stores||[]).forEach(function(s){
+    if(TRAY_F!=="all"&&s.slug!==TRAY_F)return;
+    c.filed+=s.backlog||0; c.claimed+=s.in_progress||0; c.signoff+=s.in_review||0;});
+  (d.filed||[]).forEach(function(f){
+    if(TRAY_F!=="all"&&f.store!==TRAY_F)return; c.signed++;});
+  return c;}
+function renderPaperLine(d){
+  var c=plCounts(d);
+  var n=$("plFiledN"); if(n)n.textContent=c.filed;
+  n=$("plClaimedN"); if(n)n.textContent=c.claimed;
+  n=$("plSignoffN"); if(n)n.textContent=c.signoff;
+  n=$("plSignedN"); if(n)n.textContent=c.signed;
+  /* first poll seeds seen-set so we only animate transitions after load */
+  var trs=d.recent_transitions||[];
+  if(firstPlPoll){trs.forEach(function(t){if(t.id)PL_SEEN[t.id]=1;}); firstPlPoll=false; return;}
+  trs.slice().reverse().forEach(function(t){ /* oldest first so flyers chain L→R */
+    if(!t||!t.id||PL_SEEN[t.id])return;
+    PL_SEEN[t.id]=1;
+    if(TRAY_F!=="all"&&t.store&&t.store!==TRAY_F)return;
+    flyPaper(t);});}
+function stationCenter(status){
+  var id=PL_STATUS[status]; if(!id)return null;
+  var el=$(id); if(!el)return null;
+  var obj=el.querySelector(".pl-obj")||el;
+  var r=obj.getBoundingClientRect();
+  return {x:r.left+r.width/2, y:r.top+r.height/2};}
+function flyPaper(tr){
+  if(PL_ACTIVE>=PL_MAX)return;
+  var a=stationCenter(tr.from_status), b=stationCenter(tr.to_status);
+  if(!a||!b)return;
+  if(Math.abs(a.x-b.x)<4&&Math.abs(a.y-b.y)<4)return;
+  PL_ACTIVE++;
+  var el=document.createElement("div");
+  el.className="pl-flyer";
+  el.innerHTML='<div class="sheet"></div>'+spriteChip(tr.author||"");
+  el.style.left=a.x+"px"; el.style.top=a.y+"px"; el.style.opacity="1";
+  document.body.appendChild(el);
+  var t0=Date.now();
+  var iv=setInterval(function(){
+    var p=Math.min(1,(Date.now()-t0)/PL_MS);
+    var e=p*p*(3-2*p); /* smoothstep */
+    var x=a.x+(b.x-a.x)*e, y=a.y+(b.y-a.y)*e - Math.sin(p*Math.PI)*18;
+    el.style.left=x+"px"; el.style.top=y+"px";
+    if(p>=0.85)el.style.opacity=String(Math.max(0,(1-p)/0.15));
+    if(p>=1){clearInterval(iv); if(el.parentNode)el.parentNode.removeChild(el); PL_ACTIVE--;}
+  },32);}
 function stampFor(kind){
   if(kind==="in_review")return {txt:"SIGN-OFF DUE",cls:""};
   if(kind==="founder_decision")return {txt:"AWAITING SIGNATURE",cls:""};
@@ -7947,6 +8133,7 @@ function render(){
   $("padCount").textContent=filed.length;
   $("padWindow").textContent="filed \\u00b7 last "+(d.window_hours||24)+"h";
   if(freshCount>0)thunk();
+  renderPaperLine(d);
   firstPoll=false;}
 function thunk(){
   var r=$("rubberStamp"), ink=$("inkRing"); if(!r)return;
@@ -7961,10 +8148,36 @@ function poll(){
   }).catch(function(){
     $("liveChip").className="hold"; $("liveChip").textContent=SCENE?"HOLDING":"NO SIGNAL";});}
 poll(); setInterval(poll,15000);
+/* CITY_DNA sec.5 (wl-167): live sky — same formula as the plat; sun/moon
+   ride the wall clock. Re-derived on setInterval (never rAF). */
+function skyColors(hourF){
+  if(hourF<5.5||hourF>=21)return ["#232c3a","#3a4152"];
+  if(hourF<8)return ["#d9a06a","#e8d3b0"];
+  if(hourF<17)return ["#dcebf0","#eef0e2"];
+  if(hourF<21)return ["#d98a5f","#e3c9a0"];
+  return ["#232c3a","#3a4152"];}
+function paintSky(){
+  var now=new Date(), hourF=now.getHours()+now.getMinutes()/60;
+  var c=skyColors(hourF), night=hourF<5.5||hourF>=21;
+  var sky=$("sky"); if(sky)sky.style.background="linear-gradient(180deg,"+c[0]+","+c[1]+")";
+  document.body.classList.toggle("night", night);
+  var cel=$("celestial"); if(!cel)return;
+  if(night){
+    cel.className="celestial moon";
+    cel.style.left="auto"; cel.style.right="12%"; cel.style.top="22%";
+  }else{
+    var dayF=Math.min(1,Math.max(0,(hourF-6)/15));
+    cel.className="celestial sun";
+    cel.style.right="auto";
+    cel.style.left=(6+dayF*82)+"%";
+    cel.style.top=(58-Math.sin(dayF*Math.PI)*40)+"%";
+  }}
 setInterval(function(){
   var n=new Date();
   $("clock").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  paintSky();
 },1000);
+paintSky();
 
 /* ── the work-order drawer (wl-145): tickets open ON the desk ── */
 var WO_ID=null;
@@ -8053,6 +8266,14 @@ $("trayFilter").addEventListener("change",function(){
   localStorage.setItem("wl_desk_tray_filter",TRAY_F);
   this.blur(); /* release focus so the next poll may rebuild the options */
   render();});
+/* wl-168: station click → classic Board filtered to that status (escape hatch) */
+document.querySelectorAll(".pl-station").forEach(function(btn){
+  btn.addEventListener("click",function(){
+    var st=btn.getAttribute("data-status")||"";
+    if(!st)return;
+    var base=(TRAY_F&&TRAY_F!=="all")?("/admin/tickets/"+encodeURIComponent(TRAY_F)):"/admin/tickets/all";
+    window.location.href=base+"?status="+encodeURIComponent(st);
+  });});
 </script>
 """
 
@@ -8082,6 +8303,9 @@ def admin_desk() -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(_BRAND_NAME)}</title>
 <style>{_DESK_SCENE_CSS}</style></head><body>
+<div class="sky" id="sky" aria-hidden="true">
+  <div class="celestial sun" id="celestial"></div>
+</div>
 <header class="nameplate">
   <svg class="kiosk" viewBox="-38 -60 76 62" aria-hidden="true">
     <!-- wl-165 city DNA: the plat's kiosk (CITY_DNA sec.3), ink line-art;
@@ -8092,16 +8316,89 @@ def admin_desk() -> str:
     <line x1="-30" y1="-56" x2="-30" y2="-29" stroke="var(--ink)" stroke-width="2"/>
     <line x1="30" y1="-56" x2="30" y2="-29" stroke="var(--ink)" stroke-width="2"/>
     <path d="M-36 -56 h72 l-5 11 h-62 z" fill="#3d7a6a" stroke="var(--ink)" stroke-width=".8"/>
-    <line x1="-16" y1="-56" x2="-17.5" y2="-45" stroke="var(--paper)" stroke-width="4"/>
-    <line x1="0" y1="-56" x2="0" y2="-45" stroke="var(--paper)" stroke-width="4"/>
-    <line x1="16" y1="-56" x2="17.5" y2="-45" stroke="var(--paper)" stroke-width="4"/>
-    <rect x="-20" y="-33" width="13" height="4" fill="var(--paper)" stroke="var(--ink)" stroke-width=".5"/>
+    <line x1="-16" y1="-56" x2="-17.5" y2="-45" stroke="#f3ecdd" stroke-width="4"/>
+    <line x1="0" y1="-56" x2="0" y2="-45" stroke="#f3ecdd" stroke-width="4"/>
+    <line x1="16" y1="-56" x2="17.5" y2="-45" stroke="#f3ecdd" stroke-width="4"/>
+    <rect x="-20" y="-33" width="13" height="4" fill="#fbf6ea" stroke="var(--ink)" stroke-width=".5"/>
     <circle cx="14" cy="-32" r="3" fill="#e9c46a"/>
   </svg>
   <h1>{h1}</h1>
   <span class="epithet">{_esc(epithet)}</span>
   <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
 </header>
+<!-- wl-168: the paper line — desk counter between nameplate and the three columns;
+     FILED → CLAIMED → SIGN-OFF DUE → SIGNED, live counts, click opens Board. -->
+<div class="paper-line" id="paperLine" aria-label="the paper line · work-order stations">
+  <div class="pl-rail">
+    <button type="button" class="pl-station" id="plFiled" data-status="backlog"
+      title="open Board · filed (backlog)">
+      <div class="pl-obj" aria-hidden="true">
+        <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
+          <rect x="10" y="18" width="28" height="12" fill="#fbf6ea"/>
+          <rect x="12" y="12" width="28" height="12" fill="#fbf6ea"/>
+          <rect x="14" y="6" width="28" height="12" fill="#fbf6ea"/>
+          <line x1="18" y1="10" x2="36" y2="10" stroke="var(--rule)" stroke-width=".8"/>
+          <line x1="18" y1="13" x2="34" y2="13" stroke="var(--rule)" stroke-width=".8"/>
+        </svg>
+      </div>
+      <div class="pl-label">Filed</div>
+      <div class="pl-count" id="plFiledN">0</div>
+    </button>
+    <div class="pl-arrow" aria-hidden="true">→</div>
+    <button type="button" class="pl-station" id="plClaimed" data-status="in_progress"
+      title="open Board · claimed (in progress)">
+      <div class="pl-obj" aria-hidden="true">
+        <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
+          <rect x="8" y="8" width="22" height="20" fill="#fbf6ea" transform="rotate(-8 19 18)"/>
+          <line x1="12" y1="14" x2="24" y2="12" stroke="var(--rule)" stroke-width=".8"/>
+          <line x1="12" y1="18" x2="23" y2="16" stroke="var(--rule)" stroke-width=".8"/>
+          <!-- small walking worker (ink) -->
+          <circle cx="34" cy="12" r="3" fill="#d9b98c" stroke="var(--ink)" stroke-width=".7"/>
+          <rect x="31" y="15.5" width="6" height="8" rx="1.5" fill="#3d7a6a" stroke="var(--ink)" stroke-width=".6"/>
+          <line x1="32" y1="24" x2="31" y2="30" stroke="var(--ink)" stroke-width="1.2"/>
+          <line x1="36" y1="24" x2="37" y2="30" stroke="var(--ink)" stroke-width="1.2"/>
+        </svg>
+      </div>
+      <div class="pl-label">Claimed</div>
+      <div class="pl-count" id="plClaimedN">0</div>
+    </button>
+    <div class="pl-arrow" aria-hidden="true">→</div>
+    <button type="button" class="pl-station" id="plSignoff" data-status="in_review"
+      title="open Board · sign-off due (in review)">
+      <div class="pl-obj" aria-hidden="true">
+        <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
+          <!-- spike -->
+          <line x1="24" y1="4" x2="24" y2="32" stroke="var(--ink)" stroke-width="1.6"/>
+          <polygon points="24,2 26.5,7 21.5,7" fill="var(--ink)"/>
+          <rect x="14" y="10" width="20" height="5" fill="#fbf6ea" transform="rotate(-12 24 12.5)"/>
+          <rect x="14" y="16" width="20" height="5" fill="#fbf6ea" transform="rotate(8 24 18.5)"/>
+          <rect x="15" y="22" width="18" height="4" fill="#fbf6ea" transform="rotate(-4 24 24)"/>
+        </svg>
+      </div>
+      <div class="pl-label">Sign-off due</div>
+      <div class="pl-count" id="plSignoffN">0</div>
+    </button>
+    <div class="pl-arrow" aria-hidden="true">→</div>
+    <button type="button" class="pl-station" id="plSigned" data-status="done"
+      title="open Board · signed (done)">
+      <div class="pl-obj" aria-hidden="true">
+        <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
+          <rect x="6" y="10" width="20" height="16" fill="#fbf6ea"/>
+          <line x1="10" y1="15" x2="22" y2="15" stroke="var(--rule)" stroke-width=".8"/>
+          <line x1="10" y1="19" x2="20" y2="19" stroke="var(--rule)" stroke-width=".8"/>
+          <!-- stamp pad -->
+          <rect x="28" y="12" width="14" height="12" rx="1.5" fill="none" stroke="var(--stamp)" stroke-width="2"/>
+          <text x="35" y="21" text-anchor="middle" fill="var(--stamp)"
+            font-size="6" font-family="IBM Plex Sans,sans-serif" font-weight="800"
+            letter-spacing=".5">OK</text>
+        </svg>
+      </div>
+      <div class="pl-label">Signed</div>
+      <div class="pl-count" id="plSignedN">0</div>
+    </button>
+  </div>
+  <div class="pl-flyers" id="plFlyers" aria-hidden="true"></div>
+</div>
 <main class="surface">
   <div>
     <div class="tray"><div class="tray-head">

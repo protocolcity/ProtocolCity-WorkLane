@@ -141,6 +141,19 @@ class OverviewScopeTest(unittest.TestCase):
         for marker in ('class="kiosk"', "spriteChip", "DNA_PALETTE",
                        "dnaHash"):
             self.assertIn(marker, body)
+        # wl-170: city page token on the body; paper objects keep plaza;
+        # live sky band (canonical skyColors(hourF); sun/moon via paintSky)
+        for marker in ("skyColors", 'id="sky"', "paintSky", "celestial",
+                       "--desk:#faf6ec", "--paper:#e2d9c2"):
+            self.assertIn(marker, body)
+        # wl-168: the paper line — desk-counter stations FILED→CLAIMED→
+        # SIGN-OFF DUE→SIGNED with live counts; flyers via setInterval
+        for marker in ('id="paperLine"', 'id="plFiled"', 'id="plClaimed"',
+                       'id="plSignoff"', 'id="plSigned"', "renderPaperLine",
+                       "flyPaper", "recent_transitions", "plFiledN"):
+            self.assertIn(marker, body)
+        self.assertIn("PL_MAX", body)
+        self.assertIn("/admin/tickets/", body)
 
     def test_attention_attributes_non_default_store(self) -> None:
         # wl-144: in-flight work in a non-default store must surface with its
@@ -217,11 +230,36 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertIn("stores", j)
         self.assertIn("attention", j)
         self.assertIn("filed", j)
+        # wl-168: paper-line transition window (old→new pairs the activity
+        # feed does not carry — engines compute, scenes animate)
+        self.assertIn("recent_transitions", j)
+        self.assertIsInstance(j["recent_transitions"], list)
         slugs = {s["slug"] for s in j["stores"]}
         self.assertIn("tradeos", slugs)
         for s in j["stores"]:
             for k in ("backlog", "in_progress", "in_review", "done_total", "ready"):
                 self.assertIsInstance(s[k], int, k)
+
+    def test_api_scene_recent_transitions_old_to_new(self) -> None:
+        # A claim (backlog → in_progress) must surface as a recent_transitions
+        # row with both statuses so the paper line can fly the sheet.
+        t = self.beta.create_task(title="paper line flyer", description="x")
+        self.beta.add_comment(t.id, "Owner: grok", author="grok")
+        self.beta.update_status(t.id, TaskStatus.IN_PROGRESS)
+        j = self.client.get("/api/scene").json()
+        match = [
+            tr for tr in j["recent_transitions"]
+            if tr.get("to_status") == TaskStatus.IN_PROGRESS
+            and str(t.id) in str(tr.get("task_id", ""))
+        ]
+        self.assertTrue(match, j["recent_transitions"])
+        tr = match[0]
+        self.assertEqual(tr["from_status"], TaskStatus.BACKLOG)
+        self.assertEqual(tr["to_status"], TaskStatus.IN_PROGRESS)
+        self.assertEqual(tr["store"], "beta")
+        self.assertEqual(tr["author"], "grok")
+        self.assertTrue(tr["id"])
+        self.assertTrue(tr["ts"])
 
     # ── Summary APIs ─────────────────────────────────────────────────────
 

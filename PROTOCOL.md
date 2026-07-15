@@ -39,18 +39,18 @@ Abstract commands — **MCP first** (see §6). CLI remains a legacy shell fallba
 | Release / block | `wl_release` | Blocked: + Next step: comment |
 | Session pulse | `wl_mine` · `wl_counts` | list + counts |
 
-### 2.1) Coordination model: lanes
+### 2.1) Coordination model: workers
 
 Multi-agent routing on WL is a negative-space default, not an explicit gate. This underpins the "Scan" step above and every per-agent profile in §6 — stated here once instead of left implicit across those profiles.
 
-- **Unlabeled = default lane.** Every ticket belongs to the primary/most-capable agent's pool by default, and that pool scans the *full* backlog — not just labeled tickets. A ticket needs no label to be workable; the absence of a `lane:*` label is itself the routing signal.
-- **`lane:*` labels delegate down, they don't gate.** A `lane:cursor` or `lane:grok` label (§6.1, §6.2) narrows a ticket to a specific narrower-scope agent — it signals who should take it first, not who is *allowed* to see it. The default-lane pool still owns the ticket if the narrower lane doesn't act on it.
-- **>24h no-activity demotion.** A `lane:*` label with no activity for more than 24 hours is treated as stale: the default-lane pool may pick the ticket up as if it were unlabeled. Narrower-lane agents don't need to strip the label themselves — the pool's own scan handles the fallback.
-- **Why labels aren't mandatory.** Requiring a lane label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
+- **Unlabeled = default worker.** Every ticket belongs to the primary/most-capable agent's pool by default, and that pool scans the *full* backlog — not just labeled tickets. A ticket needs no label to be workable; the absence of a `worker:*` label is itself the routing signal.
+- **`worker:*` labels delegate down, they don't gate.** A `worker:ellis` or `worker:kai` label (§6.1, §6.2) narrows a ticket to a specific narrower-scope agent — it signals who should take it first, not who is *allowed* to see it. The default-worker pool still owns the ticket if the narrower worker doesn't act on it.
+- **>24h no-activity demotion.** A `worker:*` label with no activity for more than 24 hours is treated as stale: the default-worker pool may pick the ticket up as if it were unlabeled. Narrower-scope agents don't need to strip the label themselves — the pool's own scan handles the fallback.
+- **Why labels aren't mandatory.** Requiring a worker label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
 
-This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Cursor's `--label lane:cursor`, Grok's `--label lane:grok`) are narrowings of the default-lane pool's scan, never replacements for it.
+This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Ellis's `--label worker:ellis`, Kai's `--label worker:kai`) are narrowings of the default-worker pool's scan, never replacements for it.
 
-One addendum (ratified 2026-07-11): a narrower lane whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok) may, when its lane is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-lane pool, and a lane without a self-service clause in its profile (e.g. Cursor, §6.1) has none.
+One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok/Kai) may, when its queue is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-worker pool, and an agent without a self-service clause in its profile (e.g. Cursor/Ellis, §6.1) has none.
 
 ## 3) Rules
 
@@ -201,15 +201,54 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 
 | Agent id | Who |
 | --- | --- |
+| `morgan` | Morgan · Lead Developer. Succeeds the original host-dispatch lane (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Host-repo generalist desk. |
 | `founder-terminal` | Founder-driven Claude terminal sessions |
-| `cursor` | Cursor editor lane (§6.1). Lane-labeled tickets only |
-| `grok` | Grok CLI lane (§6.2). Lane-labeled tickets only (empty-lane self-service permitted) |
+| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis`. Was: Cursor editor lane (§6.1). History retained. |
+| `ellis` | Ellis · Technical Writer. Succeeds `cursor` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Lane-labeled / `worker:ellis` tickets; contract at the host repo (Cursor lane papers until cutover). |
+| `grok` | **RETIRED 2026-07-14** — succeeded by `kai`. Was: Grok CLI lane (§6.2). History retained. |
+| `kai` | Kai · Software Engineer. Succeeds `grok` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Lane-labeled / `worker:kai` tickets; contract at the host repo (Grok lane papers until cutover). |
 | `cowork` | Claude cowork sessions |
-| `claude-worklane` | Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11) |
-| `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane) |
-| `codex` | Codex CLI lane (§6.3; added 2026-07-11) — visuals/content production. Lane-labeled tickets only |
-| `claude-socials` | Claude CLI lane, socials drafting desk — dispatched by WorkForce (added 2026-07-14). Lane-labeled tickets only; drafts-only rule (posting is founder-only); contract at socials/workers/claude-socials/CONTRACT.md |
-| `claude-orchestrator` | Claude CLI lane, orchestrator/WorkForce backlog — dispatched by WorkForce, working on WorkForce itself (added 2026-07-14, oc-12). Lane-labeled tickets only; never touches `local/` state, the daemon service, or live dispatches; contract at orchestrator/workers/claude-orchestrator/CONTRACT.md |
+| `claude-worklane` | **RETIRED 2026-07-14** — succeeded by `tess`. Was: Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11). History retained. |
+| `tess` | Tess · Desk Engineer. Succeeds `claude-worklane` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). WL self-host lane; contract at `workers/tess/CONTRACT.md` (legacy papers remain at `ops/claude-worklane/` until cutover). |
+| `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane). Patrol — function-named; not retired. |
+| `backlog-snapshot` | Night-auditor patrol job — read-only backlog report; never claims. Function-named; not retired. |
+| `visual-sweep` | Night-inspector patrol job — automated visual sweep; never claims. Function-named; not retired. |
+| `codex` | **RETIRED 2026-07-14** — succeeded by `carl`. Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
+| `carl` | Carl · Web Designer. Succeeds `codex` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Visuals/content production; contract at the host repo (Codex lane papers until cutover). |
+| `riley` | Riley · City Hall Desk. Succeeds `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). ProtocolCity docs/planning desk. |
+| `claude-socials` | **RETIRED 2026-07-14** — succeeded by `iris`. Was: Claude CLI lane, socials drafting desk (added 2026-07-14). History retained. |
+| `iris` | Iris · Content Writer. Succeeds `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Socials drafts-only (posting is founder-only). |
+| `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto`. Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
+| `otto` | Otto · Systems Engineer. Succeeds `claude-orchestrator` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Orchestrator engine/board/schedule; never touches `local/` state, the daemon service, or live dispatches. |
+| `neo` | Neo · Market Analyst (new hire 2026-07-14 — no predecessor). Specialist lane; papers when armed. |
+| `wren` | Wren (new hire 2026-07-14 — no predecessor). Specialist / future desk; papers when armed. |
+| `city-steward` | City Steward — cross-store stewardship patrol (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/city-steward/. |
+| `founder-brief` | Founder Brief — daily city reporting job (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/founder-brief/. |
+
+#### SUCCESSION (2026-07-14, wl-169 / STAFFING.md)
+
+Persona ids **succeed** retired vendor-store ids. Succession is not an alias:
+ghost-audits and historical comments stay attributable to the id that signed
+them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
+`scripts/migrate_worker_labels.py` in the cutover window (coordinator-run).
+
+| Persona id | Display | Succeeds |
+| --- | --- | --- |
+| `riley` | Riley · City Hall Desk | `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `morgan` | Morgan · Lead Developer | the original host-dispatch lane (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `kai` | Kai · Software Engineer | `grok` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `ellis` | Ellis · Technical Writer | `cursor` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `carl` | Carl · Web Designer | `codex` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `tess` | Tess · Desk Engineer | `claude-worklane` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `iris` | Iris · Content Writer | `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `otto` | Otto · Systems Engineer | `claude-orchestrator` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `neo` | Neo · Market Analyst | — (new hire, no predecessor) |
+| `wren` | Wren | — (new hire, no predecessor) |
+| `city-steward` | City Steward | — (new hire, no predecessor; patrol job) |
+| `founder-brief` | Founder Brief | — (new hire, no predecessor; report job) |
+
+Patrols unchanged (function-named; not in the succession map): `doc-audit`,
+`backlog-snapshot`, `visual-sweep`.
 
 Fire schedules are WORKER-noun data, not desk rules — this table stays identity
 + who. Cadence truth (cron expressions, next-fire) lives in WorkForce's
