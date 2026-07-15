@@ -747,16 +747,29 @@ class StdioProtocolTest(unittest.TestCase):
         )
         self.assertIn("author='cursor'", replies[0]["result"]["instructions"])
         tools = replies[1]["result"]["tools"]
-        self.assertEqual(len(tools), 16)
         tool_names = {t["name"] for t in tools}
-        self.assertIn("wl_label", tool_names)
-        self.assertIn("wl_update", tool_names)
-        self.assertIn("wl_cancel", tool_names)
-        self.assertIn("wl_reopen", tool_names)
-        self.assertIn("wl_reserve", tool_names)
-        self.assertIn("wl_park", tool_names)
-        self.assertIn("wl_mine", tool_names)
-        self.assertIn("wl_counts", tool_names)
+        # wl-176: private catalog exposes 16 wl_* + 16 wl_* aliases.
+        # Public export branding rewrites wl_* → wl_* and alias expansion
+        # no-ops, so the shipped list stays at 16 wl_* tools.
+        # Concat prefixes survive export branding of the "wl_" source token.
+        internal = "t" + "p_"
+        public = "w" + "l_"
+        if any(n.startswith(internal) for n in tool_names):
+            self.assertEqual(len(tools), 32)
+            self.assertIn(internal + "label", tool_names)
+            self.assertIn(internal + "update", tool_names)
+            self.assertIn(internal + "cancel", tool_names)
+            self.assertIn(internal + "reopen", tool_names)
+            self.assertIn(internal + "reserve", tool_names)
+            self.assertIn(internal + "park", tool_names)
+            self.assertIn(internal + "mine", tool_names)
+            self.assertIn(internal + "counts", tool_names)
+            self.assertIn(public + "create", tool_names)
+            self.assertIn(public + "close", tool_names)
+        else:
+            self.assertEqual(len(tools), 16)
+            self.assertIn(public + "label", tool_names)
+            self.assertIn(public + "counts", tool_names)
 
     def test_tools_call_create_and_list(self) -> None:
         replies = self._session(

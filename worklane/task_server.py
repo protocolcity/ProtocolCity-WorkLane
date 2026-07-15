@@ -514,19 +514,19 @@ def _task_page(
       <a href="/admin/desk" class="{_brand_cls}" title="The desk — the room you walk into">{_BRAND_HEADER_HTML}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
       <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
         <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
-           title="Landing — the store visually interpreted: live metrics + breakdown charts"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
+           title="Report sheet — strategic view of the backlog (bench of the desk room)"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Report</a>
         <a href="{_board_href}" class="{_seg(_board_on)}"
-           title="Ticket board — cards by status column"{_board_cur}>Board</a>
+           title="Power board — cards by status column (bench of the desk room)"{_board_cur}>Board</a>
         <a href="{_table_href}" class="{_seg(_table_on)}"
-           title="Ticket table — dense timetable rows"{_table_cur}>Table</a>
+           title="Power table — dense timetable rows (bench of the desk room)"{_table_cur}>Table</a>
       </nav>
 {_product_scope}
       <div class="task-server-header-end">
 {_ticket_header_widgets}
         <span class="task-server-hint dim">port {_esc(_port)}</span>{f'''
-        <a href="{_esc(_workforce_url)}" target="_blank" rel="noopener"
-           title="WorkForce — the machine's worker/shift/law board (separate port)"
-           style="text-decoration:none; color:var(--dim); font-size:12px; padding:4px 6px;">WorkForce</a>''' if _workforce_url else ''}
+        <a href="{_esc(_workforce_url.rstrip('/') + '/')}" target="_blank" rel="noopener"
+           title="Dispatch — Workers · the employment room (WorkForce engine)"
+           style="text-decoration:none; color:var(--dim); font-size:12px; padding:4px 6px;">Dispatch</a>''' if _workforce_url else ''}
         <a href="/admin/docs" title="Docs — PROCESS/ARCHITECTURE/README + per-agent instruction files rendered in-app"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'docs' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#128220;</a>
         <a href="/admin/settings" title="Settings — projects, prefixes, numbering, service"
@@ -5357,6 +5357,7 @@ async def api_create_task(request: Request) -> JSONResponse:
             priority=priority,
             labels=labels,
             ext_id=ext_id,
+            actor=author,
         )
         _sign_intake(tracker, task.id)
         out = task.to_dict()
@@ -5382,6 +5383,7 @@ async def api_create_task(request: Request) -> JSONResponse:
             priority=priority,
             labels=labels,
             ext_id=ext_id,
+            actor=author,
         )
         _sign_intake(tracker, task.id)
         out = task.to_dict()
@@ -5790,6 +5792,11 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
 
     surf, raw_id, tracker = _resolve_product_tracker(task_id)
 
+    # Scene-feed attribution: optional signer on status writes. Not required
+    # (existing clients PATCH bare {"status": ...}); when present it lands in
+    # task_events.actor so /api/scene attributes the transition accurately.
+    actor = str(payload.get("author") or payload.get("actor") or "").strip()
+
     if "status" in payload:
         new_status = str(payload.get("status") or "")
         if new_status not in TaskStatus.ALL:
@@ -5830,7 +5837,7 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
                         {"ok": False, "error": _DONE_WITHOUT_CLOSEOUT_HINT},
                         status_code=400,
                     )
-        updated = tracker.update_status(raw_id, new_status)
+        updated = tracker.update_status(raw_id, new_status, actor=actor)
         if updated is None:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
         out = updated.to_dict()
@@ -8189,7 +8196,18 @@ function stampForStatus(st){
   if(st==="canceled")return {txt:"CANCELED",cls:"amber"};
   return {txt:String(st||"?").toUpperCase(),cls:""};}
 function closeBtnHtml(){return '<button class="wo-close" onclick="closeWO()" title="close (esc)">\\u00d7</button>';}
-function closeWO(){WO_ID=null;$("wo").classList.remove("open");$("scrim").classList.remove("open");}
+function closeWO(){
+  WO_ID=null;$("wo").classList.remove("open");$("scrim").classList.remove("open");
+  /* HISTORY LAW: clear sticky ?open= so refresh does not reopen the overlay. */
+  try{
+    var u=new URL(location.href);
+    if(u.searchParams.has("open")){
+      u.searchParams.delete("open");
+      var qs=u.searchParams.toString();
+      history.replaceState({},"",u.pathname+(qs?("?"+qs):"")+u.hash);
+    }
+  }catch(err){}
+}
 function openWO(id){
   WO_ID=id; $("scrim").classList.add("open"); $("wo").classList.add("open");
   $("woHead").innerHTML='<div class="no">'+esc(id)+'</div>'+
@@ -8427,9 +8445,11 @@ def admin_desk() -> str:
   </div>
 </main>
 <footer class="bar">
-  <div>The desk owns the ticket verbs — <a href="/admin/tickets/all">Board</a>
-    <a href="/admin/overview">Overview</a>
-    <a href="/admin/settings">Settings</a> <a href="/admin/docs/desk">How to read this room</a></div>
+  <div>The desk owns the ticket verbs —
+    <a href="/admin/tickets/all">board (power)</a>
+    <a href="/admin/overview">report sheet</a>
+    <a href="/admin/settings">Settings</a>
+    <a href="/admin/docs/desk">How to read this room</a></div>
   <div>{doors}</div>
 </footer>
 <div id="scrim" onclick="closeWO()"></div>
@@ -8787,8 +8807,10 @@ def _render_report_page() -> str:
   </div>
 </main>
 <footer class="bar">
-  <div>A bench of the Ticket Desk — <a href="/admin/desk">back to the room</a>
-    <a href="/admin/tickets/all">Board</a> <a href="/admin/settings">Settings</a>
+  <div>A bench of the Ticket Desk —
+    <a href="/admin/desk">back to the room</a>
+    <a href="/admin/tickets/all">board (power)</a>
+    <a href="/admin/settings">Settings</a>
     <a href="/admin/docs/desk">How to read this room</a></div>
   <div><span class="dim">records request: <a href="/api/report">/api/report</a></span></div>
 </footer>

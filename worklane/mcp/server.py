@@ -38,6 +38,10 @@ from worklane.mcp.handlers import (
     build_tool_definitions,
     dispatch_tool,
 )
+from worklane.mcp.tool_aliases import (
+    canonical_tool_name,
+    with_wl_tool_aliases,
+)
 from worklane.products import default_product_slug
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -58,7 +62,15 @@ class MCPServer:
         self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
         self._initialized = False
-        self._tools = build_tool_definitions()
+        # wl-176: expose wl_* public aliases alongside canonical wl_* tools
+        # (no-op once export branding has already rewritten tools to wl_*).
+        core_tools = build_tool_definitions()
+        self._tools = with_wl_tool_aliases(core_tools)
+        # Concat form: export branding rewrites the token "wl_" in sources.
+        _internal = "t" + "p_"
+        self._internal_catalog = any(
+            (t.get("name") or "").startswith(_internal) for t in core_tools
+        )
 
     # ── I/O ──────────────────────────────────────────────────────────
 
@@ -133,7 +145,14 @@ class MCPServer:
             if not isinstance(arguments, dict):
                 arguments = {}
             try:
-                result = dispatch_tool(self.handlers, name, arguments)
+                # wl_* → wl_* before dispatch when still on the internal catalog.
+                result = dispatch_tool(
+                    self.handlers,
+                    canonical_tool_name(
+                        name, internal_catalog=self._internal_catalog
+                    ),
+                    arguments,
+                )
                 payload = json.dumps(result, ensure_ascii=False, indent=2, default=str)
                 if not is_notification:
                     self._reply(

@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 worklane = "worklane.server:main"
 worklane-mcp = "worklane.mcp.server:main"
+tk = "worklane.cli.wl:main"
 wl = "worklane.cli.wl:main"
 
 [tool.setuptools.packages.find]
