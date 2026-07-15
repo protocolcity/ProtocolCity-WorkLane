@@ -16,6 +16,22 @@ Read this file when:
 1. **[PROTOCOL.md](PROTOCOL.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket work.**
 2. **[README.md](README.md)** — product overview, install, launch, host-integration examples.
 
+## Folder map
+
+The law maps the room (pc-111): the ProtocolCity map renders WL's room from
+these rows; entries missing here render unmapped.
+
+| Path | What it is |
+|---|---|
+| `worklane/` | The package — server, board, trackers, MCP, archival; `local/` inside holds runtime state (SQLite stores, config) |
+| `docs/` | The records — design docs, decisions, audits |
+| `scripts/` | Export/release/backup/migration scripts (the WorkLane export seam lives here) |
+| `github.public/` | Public-repo staging material for the WorkLane export |
+| `ops/` | Operational glue — service installs, maintenance |
+| `tests/` | The proving ground — pytest suite |
+| `workers/` | Worker papers — the self-host lane's CONTRACT.md + prompt.md |
+| `worklane.egg-info/` | Build metadata from the editable install (generated) |
+
 ## Boundary rules
 
 - **WL does not render inside host product pages.** UI lives at WL's own port (default 8799).
