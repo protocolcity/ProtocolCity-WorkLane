@@ -76,19 +76,36 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8799/admin/overview   
 
 ## 4. Bootstrap your project
 
-WL is **one SQLite store per project**, auto-discovered — there is no
-separate "create a project" step to run. A project appears the moment
-either of these happens:
+WL is **one SQLite store per project**, auto-discovered — but the store has
+to exist before you can file tickets against it; there is no
+create-on-first-write. A project appears the moment either of these
+happens:
 
-- a ticket is filed with `"surface": "<your-slug>"` (via the API, CLI, or
-  MCP `wl_create`) — WL creates
-  `worklane/local/data/<your-slug>.db` on first write, or
+- you bootstrap it explicitly via `POST /api/admin/products` (wl-12):
+
+  ```bash
+  curl -s -X POST http://localhost:8799/api/admin/products \
+    -H 'Content-Type: application/json' \
+    -d '{"slug":"myproject","display":"My Project","prefix":"mp"}'
+  ```
+
+  `slug` is required (lowercase, starts with a letter, `[a-z0-9_-]`, max 40
+  chars); `display` and `prefix` are optional (`prefix` must be 2-8
+  lowercase alphanumeric characters and not already used by another
+  project). This creates `worklane/local/data/myproject.db` and
+  registers any given metadata in
+  `worklane/local/config/products.json`, or
 - you drop a `<your-slug>.db` SQLite file directly into
   `worklane/local/data/`.
 
+Filing a ticket with `"surface": "<your-slug>"` (via the API, CLI, or MCP
+`wl_create`) against a slug that hasn't been bootstrapped either way rejects
+with an "unknown ticket surface" / "unknown product" error — bootstrap
+first, then file.
+
 Once the store exists, it gets its own scope tab (Board/Table views) at
 `/admin/tickets/<your-slug>` automatically — no code changes. File your
-first ticket to bootstrap it:
+first ticket:
 
 ```bash
 wl comment --help   # confirm the CLI is on PATH first
@@ -98,10 +115,10 @@ curl -s -X POST http://localhost:8799/api/admin/tasks \
   -d '{"title":"First ticket","description":"Bootstrapping myproject.","surface":"myproject","author":"you"}'
 ```
 
-Give the project a friendlier display name / short id prefix (defaults to
-the slug itself) via `/admin/settings`, or by adding an entry to
-`worklane/local/config/products.json` — see
-`worklane/products.py` for the shape.
+You can rename the display name / short id prefix later too, via
+`/admin/settings` or `PATCH /api/admin/products/<slug>` (wl-17) — see
+`worklane/products.py` for the on-disk shape of the
+`products.json` overlay.
 
 ## 5. Pick an interface for agents
 
