@@ -356,6 +356,7 @@ class SQLiteTracker(ProjectTracker):
                         event_type  TEXT    NOT NULL,
                         status      TEXT,
                         labels      TEXT,
+                        actor       TEXT,
                         created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
                     );
                     CREATE INDEX IF NOT EXISTS ix_task_events_task ON task_events(task_id);
@@ -371,6 +372,16 @@ class SQLiteTracker(ProjectTracker):
                 for col in ("gate_type", "gate_until", "gate_note"):
                     if col not in existing_cols:
                         conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
+                # Scene-feed attribution: the actor column didn't exist when
+                # task_events shipped (wl-101), so CREATE TABLE IF NOT EXISTS
+                # above is a no-op against a DB created before it — retrofit
+                # via ALTER TABLE (same pattern as the tasks gate_* columns).
+                event_cols = {
+                    r["name"]
+                    for r in conn.execute("PRAGMA table_info(task_events)").fetchall()
+                }
+                if event_cols and "actor" not in event_cols:
+                    conn.execute("ALTER TABLE task_events ADD COLUMN actor TEXT")
                 _initialized_dbs.add(key)
             yield conn
         finally:
@@ -428,6 +439,7 @@ class SQLiteTracker(ProjectTracker):
         priority: int = 3,
         labels: Optional[List[str]] = None,
         ext_id: Optional[str] = None,
+        actor: str = "",
     ) -> Task:
         now = _now_iso()
         merged = self._merge_default_product_label(labels)
@@ -446,14 +458,17 @@ class SQLiteTracker(ProjectTracker):
                 )
                 task_pk = cur.lastrowid
                 self._insert_event(
-                    conn, task_pk, "created", status=status, labels=merged, now=now
+                    conn, task_pk, "created", status=status, labels=merged,
+                    actor=actor, now=now,
                 )
             row = conn.execute(
                 "SELECT * FROM tasks WHERE id = ?", (task_pk,)
             ).fetchone()
         return _row_to_task(row)
 
-    def update_status(self, task_id: str, status: str) -> Optional[Task]:
+    def update_status(
+        self, task_id: str, status: str, actor: str = ""
+    ) -> Optional[Task]:
         if status not in TaskStatus.ALL:
             raise ValueError(
                 f"unknown status {status!r}; expected one of {TaskStatus.ALL}"
@@ -506,7 +521,8 @@ class SQLiteTracker(ProjectTracker):
                         if target_status != cur_task.status:
                             self._insert_event(
                                 conn, int(cur_row["id"]), "status_change",
-                                status=target_status, now=now,
+                                status=target_status,
+                                actor=actor or "dependency-guard", now=now,
                             )
                         self._thaw_dependency_frozen(conn, now)
                     return self.get_task(task_id)
@@ -522,7 +538,7 @@ class SQLiteTracker(ProjectTracker):
                 if target_status != cur_task.status:
                     self._insert_event(
                         conn, int(cur_row["id"]), "status_change",
-                        status=target_status, now=now,
+                        status=target_status, actor=actor, now=now,
                     )
                 # Entering in_progress freezes backlog dependents.
                 if (
@@ -562,7 +578,9 @@ class SQLiteTracker(ProjectTracker):
                     "UPDATE tasks SET updated_at = ? WHERE id = ?",
                     (now, task_pk),
                 )
-                self._apply_comment_lifecycle(conn, task_pk, current_status, body, now)
+                self._apply_comment_lifecycle(
+                    conn, task_pk, current_status, body, now, actor=author
+                )
                 self._thaw_dependency_frozen(conn, now)
             row = conn.execute(
                 "SELECT * FROM task_comments WHERE id = ?", (comment_pk,)
@@ -714,18 +732,20 @@ class SQLiteTracker(ProjectTracker):
         *,
         status: Optional[str] = None,
         labels: Optional[List[str]] = None,
+        actor: Optional[str] = None,
         now: Optional[str] = None,
     ) -> None:
         conn.execute(
             """
-            INSERT INTO task_events (task_id, event_type, status, labels, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO task_events (task_id, event_type, status, labels, actor, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 task_pk,
                 event_type,
                 status,
                 json.dumps(labels) if labels is not None else None,
+                (actor or "").strip() or None,
                 now or _now_iso(),
             ),
         )
@@ -737,6 +757,7 @@ class SQLiteTracker(ProjectTracker):
         current_status: str,
         body: str,
         now: str,
+        actor: str = "",
     ) -> None:
         text = body or ""
         if current_status == TaskStatus.BACKLOG:
@@ -750,7 +771,8 @@ class SQLiteTracker(ProjectTracker):
                     (TaskStatus.IN_REVIEW, now, task_pk),
                 )
                 self._insert_event(
-                    conn, task_pk, "status_change", status=TaskStatus.IN_REVIEW, now=now
+                    conn, task_pk, "status_change", status=TaskStatus.IN_REVIEW,
+                    actor=actor, now=now,
                 )
                 fresh = conn.execute(
                     "SELECT * FROM tasks WHERE id = ? LIMIT 1",
@@ -773,7 +795,8 @@ class SQLiteTracker(ProjectTracker):
                 (TaskStatus.DONE, now, task_pk),
             )
             self._insert_event(
-                conn, task_pk, "status_change", status=TaskStatus.DONE, now=now
+                conn, task_pk, "status_change", status=TaskStatus.DONE,
+                actor=actor, now=now,
             )
             return
         if has_blocked and has_next_step:
@@ -782,7 +805,8 @@ class SQLiteTracker(ProjectTracker):
                 (TaskStatus.BACKLOG, now, task_pk),
             )
             self._insert_event(
-                conn, task_pk, "status_change", status=TaskStatus.BACKLOG, now=now
+                conn, task_pk, "status_change", status=TaskStatus.BACKLOG,
+                actor=actor, now=now,
             )
 
     def _unresolved_blockers(
@@ -849,7 +873,7 @@ class SQLiteTracker(ProjectTracker):
             if t.status != TaskStatus.IN_REVIEW:
                 self._insert_event(
                     conn, int(row["id"]), "status_change",
-                    status=TaskStatus.IN_REVIEW, now=now,
+                    status=TaskStatus.IN_REVIEW, actor="dependency-guard", now=now,
                 )
 
     def update_task(
@@ -1040,7 +1064,7 @@ class SQLiteTracker(ProjectTracker):
             if t.status != TaskStatus.BACKLOG:
                 self._insert_event(
                     conn, int(row["id"]), "status_change",
-                    status=TaskStatus.BACKLOG, now=now,
+                    status=TaskStatus.BACKLOG, actor="dependency-guard", now=now,
                 )
 
 

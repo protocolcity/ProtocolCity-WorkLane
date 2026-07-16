@@ -199,7 +199,7 @@ def run_shutdown(
                 report.skipped.append(ext)
                 continue
             if new_status != task.status:
-                tracker.update_status(ext, new_status)
+                tracker.update_status(ext, new_status, actor=_CLOSEOUT_AUTHOR)
 
         report.results.append(
             ShutdownTicketResult(

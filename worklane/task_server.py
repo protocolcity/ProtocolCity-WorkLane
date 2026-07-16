@@ -171,11 +171,11 @@ def _render_tickets_context_strip() -> str:
 # city instance, so the default here is "city"; the WorkLane public export
 # must default to "standalone" (wl-134 — flip the default in the export).
 _BRAND_MODE = os.environ.get("WL_BRAND", "city")
-# Second naming amendment (founder, 2026-07-14, theme adoption): with the
-# living-scene themes the ROOM NAME leads in-city — "Ticket Desk" is the
-# room, "Tickets" the one-word function. Standalone stays engine-branded.
+# Sixth naming amendment (founder, 2026-07-15): city D0 mast is
+# "[Folder] Desk" (parity with Office / Roster). Tab <title> keeps the
+# suite · function form. Standalone stays engine-branded.
 _BRAND_NAME = (
-    "ProtocolCity — Ticket Desk · Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
+    "ProtocolCity — Desk · Tickets" if _BRAND_MODE == "city" else "WorkLane — Tickets"
 )
 # Third naming amendment (pc-39, 2026-07-14): the long epithet sentence
 # retired from headers — the room guide (docs/TICKET_DESK.md) holds the
@@ -186,7 +186,7 @@ _BRAND_SUBTITLE = (
     else "the work-order desk"
 )
 _BRAND_HEADER_HTML = (
-    "<span class='brand-room'>TICKET DESK</span> · TICKETS" if _BRAND_MODE == "city"
+    "<span class='brand-room'>DESK</span>" if _BRAND_MODE == "city"
     else "WORKLANE — <span class='brand-room'>TICKETS</span>"
 )
 
@@ -436,15 +436,14 @@ def _task_page(
     # subnav band is gone; one row of chrome instead of two.
     _subnav_html = ""
     _port = os.environ.get("TASK_PORT", "8799")
-    # wl-128: reciprocal of WorkForce's Workplaces join — link out to the
-    # machine's worker/shift/law board. Config-driven only: unset means no
-    # orchestrator is installed on this machine, which is lawful
-    # (RUNNER_SPEC §9), so no link renders. When a host does run one
-    # co-located, point this at it (typically http://127.0.0.1:8797).
-    _workforce_url = os.environ.get("WL_WORKFORCE_URL", "").strip()
-    # wl-90: Board and Table are sibling primary views. From a tickets page
-    # the links keep the current scope path and filters; elsewhere they lead
-    # to the scope's default view.
+    # wl-128 / pc-160: suite peer doors belong on D0 (/admin/desk) only.
+    # Board/ops shell is D1 furniture — never a partial Dispatch link here.
+    _workforce_url = ""
+    # City brand locks paper theme; theme toggle is Settings-only (wl-180).
+    _show_theme_toggle = _BRAND_MODE != "city"
+    # wl-184 / pc-177: port numeral + WL badge are anti-pattern #5 on citizen
+    # chrome — keep them for standalone WorkLane installs only.
+    _show_service_chrome = _BRAND_MODE != "city"
     _view_scope_path = tickets_scope_path or TICKETS_APP_ALL
     if shell == "tickets":
         _board_href = f"{_view_scope_path}?" + _wq_query_for_view(
@@ -462,6 +461,13 @@ def _task_page(
     _board_on = shell == "tickets" and not _table_on
     _board_cur = ' aria-current="page"' if _board_on else ""
     _table_cur = ' aria-current="page"' if _table_on else ""
+    _port_html = (
+        f'<span class="task-server-hint dim">port {_esc(_port)}</span>'
+        if _show_service_chrome else ""
+    )
+    _wl_badge_html = (
+        '<span class="ts-dev-badge">WL</span>' if _show_service_chrome else ""
+    )
     # No app footer: it was fixed-position chrome duplicating the header
     # (brand · Cockpit · port) and overlapped page content (wl-25).
     return f"""<!doctype html>
@@ -472,14 +478,19 @@ def _task_page(
   <title>{_BRAND_NAME if _is_landing else f"{_esc(title)} · {_BRAND_NAME}"}</title>
   <style>{_css()}</style>
   <script>
-  /* Theme init (before paint) — Dispatch paper is the default (wl-37); dark
-     and system remain fully supported via the existing toggle/persistence. */
+  /* Theme init (before paint). City brand (pc-160 / wl-180): lock paper/light —
+     theme toggle is not D1 primary chrome. Standalone keeps dark/system. */
   (function() {{
     /* wl-84: key renamed from 'tradeos-theme' — migrate old prefs once. */
     var legacy = localStorage.getItem('tradeos-theme');
     if (legacy && !localStorage.getItem('wl-theme')) {{
       localStorage.setItem('wl-theme', legacy);
       localStorage.removeItem('tradeos-theme');
+    }}
+    if ({str(_BRAND_MODE == "city").lower()}) {{
+      localStorage.setItem('wl-theme', 'light');
+      document.documentElement.setAttribute('data-theme', 'light');
+      return;
     }}
     var stored = localStorage.getItem('wl-theme') || 'light';
     function resolve(p) {{
@@ -508,13 +519,14 @@ def _task_page(
   }}
   </script>
 </head>
-<body data-ops-shell="{_esc(shell)}" data-ops-scope="{_esc(page_scope)}">
+<body data-ops-shell="{_esc(shell)}" data-ops-scope="{_esc(page_scope)}" data-perimeter="d1">
   <header class="task-server-header task-server-header--stack">
     <div class="task-server-header-primary ops-main-nav" data-ops-region="main-nav">
+      <a href="/admin/desk" class="ts-back-desk" title="← Desk — room home">← Desk</a>
       <a href="/admin/desk" class="{_brand_cls}" title="The desk — the room you walk into">{_BRAND_HEADER_HTML}</a>{f'<span class="task-server-hint dim">{_BRAND_SUBTITLE}</span>' if _BRAND_SUBTITLE else ''}
-      <nav class="ts-primary-shell ts-segmented" aria-label="Primary">
+      <nav class="ts-primary-shell ts-segmented" aria-label="Desk benches">
         <a href="/admin/overview/{_esc(page_scope or 'all')}" class="{_seg(shell == 'overview' and nav_active == 'overview')}"
-           title="Report sheet — strategic view of the backlog (bench of the desk room)"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Report</a>
+           title="Overview — strategic view of the backlog (bench of the desk room)"{' aria-current="page"' if (shell == 'overview' and nav_active == 'overview') else ''}>Overview</a>
         <a href="{_board_href}" class="{_seg(_board_on)}"
            title="Power board — cards by status column (bench of the desk room)"{_board_cur}>Board</a>
         <a href="{_table_href}" class="{_seg(_table_on)}"
@@ -523,17 +535,14 @@ def _task_page(
 {_product_scope}
       <div class="task-server-header-end">
 {_ticket_header_widgets}
-        <span class="task-server-hint dim">port {_esc(_port)}</span>{f'''
-        <a href="{_esc(_workforce_url.rstrip('/') + '/')}" target="_blank" rel="noopener"
-           title="Dispatch — Workers · the employment room (WorkForce engine)"
-           style="text-decoration:none; color:var(--dim); font-size:12px; padding:4px 6px;">Dispatch</a>''' if _workforce_url else ''}
+        {_port_html}
         <a href="/admin/docs" title="Docs — PROCESS/ARCHITECTURE/README + per-agent instruction files rendered in-app"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'docs' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#128220;</a>
         <a href="/admin/settings" title="Settings — projects, prefixes, numbering, service"
            style="text-decoration:none; color:{'var(--text)' if nav_active == 'settings' else 'var(--dim)'}; font-size:16px; padding:4px 6px;">&#9881;</a>
-        <span class="ts-dev-badge">WL</span>
+        {_wl_badge_html}{f'''
         <button id="theme-toggle" onclick="cycleTheme()" title="Toggle theme"
-                style="background:none;border:0;color:var(--dim);cursor:pointer;font-size:16px;padding:4px 8px;">&#9789;</button>
+                style="background:none;border:0;color:var(--dim);cursor:pointer;font-size:16px;padding:4px 8px;">&#9789;</button>''' if _show_theme_toggle else ''}
       </div>
     </div>
 {_subnav_html}
@@ -577,6 +586,12 @@ def _task_page(
     -webkit-overflow-scrolling: touch;
   }}
   /* Main nav + sub nav = one chrome block (toolbar, not stacked cards). */
+  .ts-back-desk {{
+    flex:none; font-size:12px; font-weight:700; letter-spacing:.04em;
+    color:var(--dim); text-decoration:none; padding:4px 8px; margin-right:4px;
+    border:1px solid transparent; border-radius:8px; white-space:nowrap;
+  }}
+  .ts-back-desk:hover {{ color:var(--text); border-color:var(--line, #c4b8a4); }}
   .task-server-header.task-server-header--stack {{
     display: flex;
     flex-direction: column;
@@ -1574,6 +1589,71 @@ def _resolve_product_tracker(task_id: str) -> Tuple[str, str, Any]:
     return slug, raw, product_tracker(slug)
 
 
+def _public_prefix_for_surface(surf: str) -> str:
+    spec = get_product(surf) if surf not in ("ops", "op") else None
+    return TASK_ID_PREFIX_OPS if surf in ("ops", "op") else (spec.prefix if spec else "t")
+
+
+def _task_relations_dicts(
+    surf: str, raw_id: str, tracker: Any
+) -> List[Dict[str, Any]]:
+    """Structured relations for a ticket (empty when store is not local SQLite)."""
+    from worklane import relations as relmod
+
+    try:
+        db_path = _tracker_db_path(tracker)
+    except Exception:
+        return []
+    if db_path is None:
+        return []
+    try:
+        rels = relmod.list_relations(db_path, task_id=raw_id)
+    except Exception:
+        return []
+    prefix = _public_prefix_for_surface(surf)
+
+    def _pub(tid: str) -> str:
+        return f"{prefix}-{tid}"
+
+    out: List[Dict[str, Any]] = []
+    for r in rels:
+        d = r.to_dict()
+        d["from_id"] = _pub(r.from_id)
+        d["to_id"] = _pub(r.to_id)
+        out.append(d)
+    return out
+
+
+def _render_task_relations_panel(
+    task_id: str, raw_id: str, surf: str, tracker: Any
+) -> str:
+    """HTML list of structured relations for the classic full-record page."""
+    rels = _task_relations_dicts(surf, raw_id, tracker)
+    if not rels:
+        return (
+            "<p class='dim' style='margin:0;'>No structured relations yet "
+            "(wl-20). Link tickets via MCP/CLI <code>relations</code>.</p>"
+        )
+    rows: List[str] = []
+    for r in rels:
+        fr = str(r.get("from_id") or "")
+        to = str(r.get("to_id") or "")
+        rt = str(r.get("relation_type") or "")
+        rows.append(
+            "<li style='margin:4px 0;'>"
+            f"<a href='/admin/desk?open={_esc(fr)}'>{_esc(fr)}</a>"
+            f" <span class='dim'>{_esc(rt)}</span> "
+            f"<a href='/admin/desk?open={_esc(to)}'>{_esc(to)}</a>"
+            "</li>"
+        )
+    return (
+        f"<ul style='margin:0; padding-left:18px;'>{''.join(rows)}</ul>"
+        f"<p class='dim' style='margin:8px 0 0; font-size:var(--fs-sm);'>"
+        f"Skim any linked ticket in the Desk drawer · this page is the power bench."
+        f"</p>"
+    )
+
+
 def _tracker_db_path(tracker: Any) -> Optional[Path]:
     """Hot SQLite path for a product tracker, if it is file-backed."""
     p = getattr(tracker, "_db_path", None)
@@ -1843,7 +1923,7 @@ def _render_tickets_module() -> str:
     rows: List[str] = []
     for t in open_sorted:
         tid = _esc(str(t.id))
-        link = f"/admin/tasks/{tid}"
+        link = f"/admin/desk?open={tid}"
         title = _esc(t.title)
         st_badge = _render_status_badge(t.status)
         pri = _render_priority_badge(int(t.priority or 3))
@@ -2363,7 +2443,7 @@ def _render_active_agents_panel(
         ts = preview.get("created_at") or t.updated_at or t.created_at
         age = _pulse_relative_time(ts, now=now)
         rows += (
-            f"<a href='/admin/tasks/{_esc(t.id)}' class='agent-row'>"
+            f"<a href='/admin/desk?open={_esc(t.id)}' class='agent-row'>"
             f"<span class='agent-icon'>{icon}</span>"
             f"<span class='agent-label'>{_esc(label)}</span>"
             f"<span class='agent-arrow'>&rarr;</span>"
@@ -2960,7 +3040,7 @@ def _render_next_up_panel(
         title = _esc(t.title)[:70] + ("…" if len(t.title) > 70 else "")
         age = _pulse_relative_time(t.created_at, now=now)
         rows += (
-            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-side-row'>"
+            f"<a href='/admin/desk?open={_esc(t.id)}' class='pulse-side-row'>"
             f"<span class='pulse-side-pri' style='color:{pri_color};'>P{int(t.priority or 3)}</span>"
             f"<span class='pulse-side-id'><span class='pulse-ticker-dot' "
             f"style='background:var({dot_var});'></span>#{_esc(t.id)}</span>"
@@ -3013,7 +3093,7 @@ def _render_attention_panel(
     for tag, color, t, note in items[:8]:
         title = _esc(t.title)[:60] + ("…" if len(t.title) > 60 else "")
         rows += (
-            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-side-row'>"
+            f"<a href='/admin/desk?open={_esc(t.id)}' class='pulse-side-row'>"
             f"<span class='pulse-attn-tag' style='color:{color};border-color:{color};'>{tag}</span>"
             f"<span class='pulse-side-id'>#{_esc(t.id)}</span>"
             f"<span class='pulse-side-title'>{title}</span>"
@@ -3053,7 +3133,7 @@ def _attention_item(
         "waiting_since": since.isoformat() if since else None,
         "age_minutes": int((now - since).total_seconds() // 60) if since else None,
         "gate_until": None,
-        "url": f"/admin/tasks/{t.id}",
+        "url": f"/admin/desk?open={t.id}",
     }
 
 
@@ -3533,7 +3613,7 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
             status_prefix = _live_dot if t.status == TaskStatus.IN_PROGRESS else ""
             title = _esc(t.title)[:90] + ("…" if len(t.title) > 90 else "")
             cards_html += (
-                f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-card{pulse_cls}'>"
+                f"<a href='/admin/desk?open={_esc(t.id)}' class='pulse-card{pulse_cls}'>"
                 f"<div class='pulse-card-head'>"
                 f"<span class='pulse-id'>#{_esc(t.id)}</span>"
                 f"<span class='pulse-pri' style='color:{pri_color};'>{_priority_label(t.priority)}</span>"
@@ -3556,7 +3636,7 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
         prod_slug, _ = split_task_id(t.id)
         dot_var = dot_vars.get(prod_slug, "--dim")
         ticker_items += (
-            f"<a href='/admin/tasks/{_esc(t.id)}' class='pulse-ticker-row'>"
+            f"<a href='/admin/desk?open={_esc(t.id)}' class='pulse-ticker-row'>"
             f"<span class='pulse-ticker-age'>{_age(t)}</span>"
             f"<span class='pulse-ticker-status' style='color:{status_color};'>{_esc(_STATUS_LABELS.get(t.status, t.status))}</span>"
             f"<span class='pulse-ticker-id'><span class='pulse-ticker-dot' style='background:var({dot_var});'></span>#{_esc(t.id)}</span>"
@@ -4050,7 +4130,7 @@ def _render_task_row(
 ) -> str:
     # wl-38: timetable row — whole row opens the ticket (no inline status
     # edit here; that stays on the task detail page's _status_select).
-    href = f"/admin/tasks/{_esc(t.id)}"
+    href = f"/admin/desk?open={_esc(t.id)}"
     ext = f" <span class='dim'>{_esc(t.ext_id)}</span>" if t.ext_id else ""
     updated_attr = _esc(t.updated_at or "")
     age_html = (
@@ -4931,10 +5011,11 @@ def task_detail(task_id: str) -> str:
 
     desc = task.description or ""
     desc_html = (
-        f"<pre style='white-space:pre-wrap; font-family:var(--font-mono); "
-        f"font-size:var(--fs-sm); margin:0;'>{_esc(desc)}</pre>"
+        f"<div class='wl-md' style='font-size:var(--fs-sm); margin:0;'>"
+        f"{render_markdown(desc)}</div>"
         if desc else "<p class='dim'>No description.</p>"
     )
+    rels_html = _render_task_relations_panel(task_id, raw_id, surf, tracker)
 
     archive_banner = ""
     if archived:
@@ -4969,12 +5050,14 @@ def task_detail(task_id: str) -> str:
     body = (
         _render_tickets_context_strip()
         + f"<p class='dim' style='margin-bottom:8px;'>"
-        f"<a href='{TICKETS_APP_ALL}'>&larr; All tickets</a></p>"
+        f"<a href='/admin/desk?open={_esc(task_id)}'>&larr; Desk drawer</a>"
+        f" · <a href='{TICKETS_APP_ALL}'>All tickets</a></p>"
         + archive_banner
         + f"<h1 style='margin:0 0 4px 0;'>{_esc(task.title)}</h1>"
         f"{ext_html}"
         + _task_card("Metadata", meta)
         + _task_card("Description", desc_html)
+        + _task_card("Relations", rels_html)
         + _task_card(
             f"Comments · {len(comments)}",
             _render_comments(
@@ -5007,12 +5090,13 @@ def task_detail(task_id: str) -> str:
 
 # ── JSON API ────��───────────────────────────────────────────────────────
 
-def _city_neighborhood_slugs() -> Optional[set]:
-    """Neighborhood folder names (lowercased) at the city root, or None when
-    no city is detectable (wl-155). WL stays host-neutral: WL_CITY_ROOT env
-    wins; otherwise walk up from this repo to the topmost dir carrying an
-    AGENTS.md (the city-root convention). A standalone checkout that is its
-    own topmost AGENTS.md dir counts as no city — the check silently skips.
+def _city_root_path() -> Optional[str]:
+    """City root directory, or None when no city is detectable (wl-155).
+
+    WL stays host-neutral: WL_CITY_ROOT env wins; otherwise walk up from this
+    repo to the topmost dir carrying an AGENTS.md (the city-root convention).
+    A standalone checkout that is its own topmost AGENTS.md dir counts as no
+    city — the check silently skips.
     """
     root = (os.environ.get("WL_CITY_ROOT") or "").strip()
     if not root:
@@ -5029,6 +5113,25 @@ def _city_neighborhood_slugs() -> Optional[set]:
             return None
         root = top
     if not os.path.isdir(root):
+        return None
+    return root
+
+
+def _city_folder_name() -> str:
+    """Basename of the city root for `[Folder] Desk` mast parity with Office."""
+    root = _city_root_path()
+    if not root:
+        return "City"
+    name = os.path.basename(root.rstrip(os.sep)) or "City"
+    return name
+
+
+def _city_neighborhood_slugs() -> Optional[set]:
+    """Neighborhood folder names (lowercased) at the city root, or None when
+    no city is detectable (wl-155).
+    """
+    root = _city_root_path()
+    if not root:
         return None
     try:
         return {
@@ -5749,6 +5852,9 @@ def api_get_task(task_id: str) -> JSONResponse:
         }
         for c in comments
     ]
+    desc = task.description or ""
+    out["description_html"] = render_markdown(desc) if desc else ""
+    out["relations"] = _task_relations_dicts(_surf, raw_id, tracker)
     return JSONResponse({"ok": True, "task": out, "archived": archived})
 
 
@@ -7508,14 +7614,15 @@ def _task_server_extra_css() -> str:
 """
 
 
-# ── The living desk (wl-132 / wl-167 / wl-170): the kiosk interior ───────
+# ── The living desk (wl-132 / wl-167 / wl-170 / wl-179): the kiosk interior ─
 # Ratified spec (founder verdicts on wl-132): grok's structure — nameplate,
 # IN-TRAY of decision slips, hold bin of quiet claims, neighborhood-ledger
 # blotter, stamp pad + FILED outbox rail — with claude's liveness (stamp
 # thunk on fresh receipts, real per-item paper stack heights). CITY_DNA
 # sec.5 (wl-170 / pc-52): page base is the city `page` token (#faf6ec) —
-# one sheet across the rooms; paper/LAND surfaces keep plaza tones; live
-# sky band unchanged. The desk keeps the ticket verbs on Board/Table/
+# one sheet across the rooms; paper/LAND surfaces keep plaza tones.
+# wl-179: plat-era live sky/sun band purged after the cabinet pivot —
+# nameplate is the top edge. The desk keeps the ticket verbs on Board/Table/
 # ticket pages; the scene renders around them, never replaces them.
 # Engineering constraint proven live on the sibling rooms: setInterval,
 # never requestAnimationFrame.
@@ -7768,35 +7875,25 @@ _DESK_SCENE_CSS = """
 @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400;
   font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
 :root {
-  /* CITY_DNA sec.5 (wl-170 / pc-52) — city page token; paper objects keep plaza */
-  --desk:#faf6ec; --paper:#e2d9c2; --paper-top:#efe8d5; --line:#8c7a54;
-  --rule:#9fb6d9; /* blue rules — paper-object accent, untouched */
-  --ink:#1f2328; --dim:#7a6f5c; --blue:#1c4f9c; --stamp:#c0392b;
-  --ok:#1e7a45; --warn:#a8681e; --pink:#fbe9ea; --pinkline:#e2b6ba;
-  --gold:#e9c46a;
+  /* CITY_DNA §5 + pc-162 — one daylight sheet; suite accent = verd */
+  --desk:#faf6ec; --page:#faf6ec; --paper:#e2d9c2; --paper-top:#efe8d5; --line:#c4b8a4;
+  --card:#fffdf8; --rule:#9fb6d9; /* blue rules — paper-object accent */
+  --ink:#2a241c; --dim:#6b6154; --blue:#1c4f9c; --stamp:#c0392b;
+  --verd:#3d7a6a; --ok:#2e7d4f; --warn:#a8681e; --fire:#a33327;
+  --pink:#fbe9ea; --pinkline:#e2b6ba; --gold:#e9c46a;
 }
 * { box-sizing:border-box; margin:0; }
+/* Room shell: desk fills the window; main scrolls; footer is the floor. */
 html,body { height:100%; }
-/* page is one sheet (wl-170); no plaza ramp on the body */
-body { background:var(--desk); color:var(--ink);
-  font:14px/1.5 "IBM Plex Sans",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
-  display:flex; flex-direction:column; }
-/* night: the room darkens with the city (paintSky toggles body.night) */
-body.night { background-image:linear-gradient(180deg,#9a9178 0,#a89f86 220px);
-  background-color:#a89f86; }
+/* pc-162: Georgia body matches Office; Plex remains on dense paper widgets */
+body { background:var(--page); color:var(--ink);
+  font:15px/1.45 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  display:flex; flex-direction:column; overflow:hidden; }
 a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
 .dim { color:var(--dim); } .ok { color:var(--ok); } .warn { color:var(--warn); }
-/* live sky band — same skyColors(hourF) as the plat (CITY_DNA sec.5) */
-.sky { position:relative; height:48px; overflow:hidden; flex:none;
-  border-bottom:1px solid var(--line);
-  background:linear-gradient(180deg,#dcebf0,#eef0e2); }
-.celestial { position:absolute; width:16px; height:16px; border-radius:50%;
-  pointer-events:none; transition:left .8s linear, top .8s linear, right .8s linear; }
-.celestial.sun { background:var(--gold); box-shadow:0 0 12px #e9c46a99; opacity:.92; }
-.celestial.moon { background:#e8e4d2; opacity:.88; box-shadow:0 0 10px #e8e4d288; }
-/* wl-165 city DNA: the plat's kiosk is this room's own sign, and papers
-   wear their worker's citizen sprite (CITY_DNA.md — paper re-skin). */
-.nameplate .kiosk { height:40px; width:auto; align-self:center; flex:none; }
+/* wl-179: plat-era sky/sun band purged — nameplate is the top edge.
+   Desk mast mark = stamp (CITY_DNA §3), not the retired street kiosk. */
+.nameplate .mast-stamp { height:36px; width:auto; flex:none; }
 .clip-item svg.citizen { height:15px; width:auto; vertical-align:-3px; margin-right:3px; }
 /* wl-168: the paper line — desk counter strip between nameplate and columns;
    four stations left→right mirror the kanban flow, with live counts. */
@@ -7806,6 +7903,7 @@ a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underli
   padding:10px 22px 12px; }
 .pl-rail { display:flex; align-items:flex-end; justify-content:center; gap:4px;
   max-width:900px; margin:0 auto; position:relative; z-index:1; }
+.pl-station.on { border-color:var(--blue); background:#eef4fc88; box-shadow:0 0 0 1px var(--blue); }
 .pl-station { flex:1; min-width:0; max-width:200px; background:transparent;
   border:1px solid transparent; border-radius:4px; cursor:pointer;
   padding:8px 6px 6px; text-align:center; color:var(--ink); font:inherit; }
@@ -7813,7 +7911,7 @@ a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underli
 .pl-station:focus { outline:none; border-color:var(--blue); }
 .pl-obj { height:36px; display:flex; align-items:flex-end; justify-content:center; }
 .pl-obj svg { height:34px; width:auto; display:block; }
-.pl-label { font:600 10px "IBM Plex Sans",sans-serif; letter-spacing:.18em;
+.pl-label { font:600 10px Georgia,serif; letter-spacing:.18em;
   text-transform:uppercase; color:var(--dim); margin-top:4px; }
 .pl-count { font:700 16px "IBM Plex Mono",ui-monospace,monospace;
   color:var(--ink); line-height:1.2; margin-top:1px; }
@@ -7827,23 +7925,94 @@ a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underli
 .pl-flyer .sheet::before { content:""; position:absolute; left:3px; right:3px; top:6px;
   height:1px; background:var(--rule); box-shadow:0 4px 0 var(--rule),0 8px 0 var(--rule); }
 .pl-flyer svg.citizen { position:absolute; right:-6px; bottom:-2px; height:14px; width:auto; }
-header.nameplate { background:linear-gradient(180deg,var(--paper-top),var(--paper));
+/* Suite mast (pc-162/163): mast | centered search | ops+doors */
+header.nameplate { background:linear-gradient(180deg,var(--page),#ebe4d4);
   border-bottom:1px solid var(--line);
-  border-top:6px solid var(--stamp); box-shadow:0 2px 8px #0002;
-  padding:14px 22px 12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
-h1 { font-size:19px; letter-spacing:.14em; font-weight:700; }
-h1 .fn { color:var(--stamp); }
-.epithet { color:var(--dim); font-size:13px; }
-.badges { margin-left:auto; display:flex; gap:12px; align-items:baseline; font-size:12px;
-  color:var(--dim); }
+  border-top:0; box-shadow:none;
+  padding:10px 16px; display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(200px,300px) minmax(0,1fr);
+  align-items:center; gap:14px; }
+.nameplate .chrome-mast { display:flex; align-items:center; gap:12px; min-width:0; justify-self:start; }
+.nameplate .chrome-title { min-width:0; }
+.nameplate .chrome-search { justify-self:center; width:100%; min-width:0; }
+.nameplate .chrome-right { display:flex; align-items:center; gap:14px; justify-self:end; min-width:0; }
+.nameplate .chrome-ops { display:flex; gap:12px; align-items:baseline; font-size:12px;
+  color:var(--dim); flex:none; }
+.nameplate .searchlight { position:relative; width:100%; }
+.nameplate .searchlight input {
+  width:100%; padding:7px 12px 7px 30px;
+  border:1px solid var(--line); border-radius:6px;
+  background:var(--paper-top) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Ccircle cx='5' cy='5' r='3.2' fill='none' stroke='%238c7a54' stroke-width='1.2'/%3E%3Cpath d='M7.4 7.4L10.2 10.2' stroke='%238c7a54' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 10px 50% no-repeat;
+  color:var(--ink); font:13px Georgia,serif; outline:none;
+}
+.nameplate .searchlight input::placeholder { color:var(--dim); font-style:italic; opacity:.75; }
+.nameplate .searchlight input:focus { border-color:var(--verd); background-color:var(--card);
+  box-shadow:none; }
+.nameplate .search-results {
+  position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); z-index:50;
+  width:min(400px, calc(100vw - 24px));
+  max-height:min(420px, 70vh); overflow:auto; padding:6px 0 4px;
+  background:#faf6ecf8; border:1px solid var(--line); border-radius:8px;
+  box-shadow:0 12px 28px #2a241c33; font:12px/1.4 Georgia,serif;
+}
+.nameplate .search-results.tucked { display:none; }
+.nameplate .search-results .sr-group {
+  padding:6px 12px 2px; color:var(--dim); font-size:9.5px; letter-spacing:.12em;
+  text-transform:uppercase; font-weight:700;
+}
+.nameplate .search-results .sr-item {
+  display:flex; align-items:flex-start; gap:8px; width:100%; padding:7px 12px;
+  border:0; background:transparent; color:var(--ink); text-align:left; cursor:pointer;
+  font:inherit;
+}
+.nameplate .search-results .sr-item:hover,
+.nameplate .search-results .sr-item.is-active { background:#e8e0d0aa; }
+.nameplate .search-results .sr-chip {
+  flex:none; width:auto; min-width:22px; height:22px; padding:0 6px; border-radius:5px;
+  display:flex; align-items:center; justify-content:center; font:600 10px "IBM Plex Mono",ui-monospace,monospace;
+  background:#e8e0d0; border:1px solid var(--line); color:#5a4e38; line-height:1;
+}
+.nameplate .search-results .sr-body { flex:1; min-width:0; }
+.nameplate .search-results .sr-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nameplate .search-results .sr-meta { color:var(--dim); font-size:10.5px; margin-top:1px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nameplate .search-results .sr-empty { padding:12px 14px; color:var(--dim); font-style:italic; font-size:11.5px; }
+h1 { font:700 clamp(16px,2.2vw,22px)/1.15 Georgia,"Times New Roman",serif;
+  letter-spacing:.06em; margin:0; color:var(--ink); }
+h1 .fn { color:var(--verd); }
+.epithet { display:block; color:var(--dim); font-size:12px; letter-spacing:.02em; margin-top:3px; }
+.suite-doors { display:flex; align-items:center; gap:8px; flex:none; }
+.suite-doors:empty { display:none; }
+.suite-doors a {
+  color:var(--verd); font-size:12px; font-weight:700; text-decoration:none;
+  border:1px solid var(--line); padding:5px 10px; border-radius:8px;
+  background:var(--card); letter-spacing:.02em; white-space:nowrap;
+}
+.suite-doors a:hover { border-color:var(--verd); }
+/* Settings gear — D1 room furniture entry from D0 chrome (not a suite peer). */
+.settings-gear {
+  flex:none; width:34px; height:34px; display:inline-flex;
+  align-items:center; justify-content:center;
+  border:1px solid var(--line); border-radius:8px; background:var(--card);
+  color:var(--dim); text-decoration:none; font-size:16px; line-height:1;
+}
+.settings-gear:hover { border-color:var(--verd); color:var(--verd); }
+.settings-gear.on { color:var(--ink); border-color:var(--verd); }
+@media (max-width:720px) {
+  header.nameplate { grid-template-columns:1fr auto; }
+  .nameplate .chrome-mast { grid-column:1; }
+  .nameplate .chrome-right { grid-column:2; }
+  .nameplate .chrome-search { grid-column:1 / -1; order:3; }
+}
 #liveChip { border:1.5px solid var(--ok); color:var(--ok); border-radius:3px;
   font-weight:700; font-size:10px; letter-spacing:.16em; padding:2px 8px;
   text-transform:uppercase; }
 #liveChip.hold { border-color:var(--warn); color:var(--warn); }
 #clock { font-variant-numeric:tabular-nums; }
-main.surface { flex:1; overflow:auto; padding:20px 22px 26px; max-width:1420px;
-  width:100%; margin:0 auto; display:grid; gap:22px;
-  grid-template-columns:minmax(280px,.9fr) minmax(380px,1.35fr) minmax(280px,.9fr); }
+main.surface { flex:1; min-height:0; overflow:auto; padding:20px 22px 26px; max-width:1420px;
+  width:100%; margin:0 auto; display:grid; gap:22px; align-content:start;
+  grid-template-columns:minmax(280px,.9fr) minmax(380px,1.35fr) minmax(280px,.9fr);
+  scrollbar-gutter:stable; }
 @media (max-width:1080px){ main.surface { grid-template-columns:1fr 1fr; } }
 @media (max-width:760px){ main.surface { grid-template-columns:1fr; } }
 h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;
@@ -7852,9 +8021,11 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
   box-shadow:0 2px 6px #0002; padding:14px 16px; margin-bottom:18px; }
 /* paper objects: slips stay paper-white (stamp red / blue rules untouched) */
 .form { background:#fbf6ea; border:1px solid var(--line); box-shadow:0 2px 5px #0002;
-  padding:12px 14px 10px; margin-bottom:12px; position:relative; overflow:hidden; }
+  padding:12px 14px 10px; margin-bottom:12px; position:relative; overflow:hidden;
+  cursor:pointer; }
 .form::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
   background:var(--blue); }
+.form:hover { border-color:var(--blue); box-shadow:0 3px 8px #0002; }
 .form .no { font:600 12px "IBM Plex Mono",ui-monospace,Menlo,monospace; color:var(--blue); }
 .form .t { margin:3px 0 4px; font-weight:600; font-size:13px; }
 .form .meta { font-size:12px; color:var(--dim); }
@@ -7877,16 +8048,6 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
    stores and shove the whole column below its neighbors (wl-117 redux). */
 .tray-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
 .tray-head h2 { flex:1; min-width:0; }
-/* wl-164: the closed control dresses as header type — quiet uppercase
-   label + caret, no box; the option list keeps the per-store counts. */
-#trayFilter { appearance:none; -webkit-appearance:none; border:1px solid transparent;
-  background:transparent url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23848a80'/%3E%3C/svg%3E") no-repeat right 4px center;
-  color:var(--dim); font:600 10.5px "IBM Plex Sans",sans-serif;
-  text-transform:uppercase; letter-spacing:.14em; border-radius:3px;
-  padding:2px 17px 2px 5px; cursor:pointer; max-width:50%; }
-#trayFilter:hover { border-color:var(--line); color:var(--blue); }
-#trayFilter:focus { border-color:var(--blue); color:var(--blue); outline:none; }
-#trayFilter.on { color:var(--blue); }
 /* the blotter: one ledger card per store, paper piles with real heights */
 .hood { border:1px solid var(--line); background:var(--paper-top); box-shadow:0 2px 5px #0002;
   padding:12px 16px 10px; margin-bottom:12px; }
@@ -7894,10 +8055,15 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .hood-head .nm { font-weight:700; letter-spacing:.03em; }
 .hood-head .nm a { color:var(--ink); } .hood-head .nm a:hover { color:var(--blue); }
 .ready-chip { font-size:11px; color:var(--warn); border:1px solid var(--warn);
-  border-radius:3px; padding:0 7px; white-space:nowrap; }
-.ready-chip.zero { color:var(--dim); border-color:var(--line); }
+  border-radius:3px; padding:0 7px; white-space:nowrap; cursor:pointer; }
+.ready-chip:hover { background:#fff6e8; }
+.ready-chip.zero { color:var(--dim); border-color:var(--line); cursor:default; }
+.ready-chip.on { background:#fff6e8; box-shadow:0 0 0 1px var(--warn); }
 .piles { display:flex; gap:18px; margin-top:10px; align-items:flex-end; }
-.pile { flex:1; text-align:center; }
+.pile { flex:1; text-align:center; cursor:pointer; border-radius:4px; padding:2px 0; }
+.pile:hover { background:#fbf6ea88; }
+.pile.on { outline:1px solid var(--blue); background:#eef4fc88; }
+.pile.dim { opacity:.38; }
 .pile .sheets { position:relative; height:56px; }
 /* pile sheets are paper objects — keep the white carbon look */
 .pile .sheet { position:absolute; left:12%; right:12%; height:4px; border-radius:1px;
@@ -7930,6 +8096,9 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .clip-item .when { color:var(--dim); font-variant-numeric:tabular-nums;
   font:11px "IBM Plex Mono",ui-monospace,monospace; }
 .clip-item.fresh { animation:inkin 2.4s ease-out; }
+.clip-item.on-skim { background:#eef4fc66; }
+.pl-station.on .pl-label { color:var(--blue); }
+.pl-station.on .pl-count { color:var(--blue); }
 footer.bar { border-top:1px solid var(--line); background:var(--paper-top);
   padding:8px 22px; display:flex; justify-content:space-between; gap:14px;
   flex-wrap:wrap; font-size:12px; color:var(--dim); }
@@ -7962,6 +8131,13 @@ footer.bar a { margin-right:14px; }
 .wo-desc { font-size:13px; white-space:pre-wrap; background:#fbf6ea;
   border:1px solid var(--line); border-left:4px solid var(--rule);
   padding:10px 12px; margin-bottom:16px; overflow-wrap:break-word; }
+.wo-desc.md { white-space:normal; }
+.wo-desc.md p { margin:0 0 0.6em; }
+.wo-desc.md pre { white-space:pre-wrap; font-size:12px; }
+.wo-rels { font-size:12px; margin:10px 0 16px; padding:8px 10px; background:#fbf6ea;
+  border:1px solid var(--line,#c4b8a4); }
+.wo-rels ul { margin:4px 0 0; padding-left:16px; }
+.wo-rels a { color:var(--verd,#3d7a6a); }
 .wo-entry { border:1px solid var(--line); border-left:3px solid var(--rule);
   background:#fbf6ea; padding:8px 12px; margin-bottom:10px; font-size:12.5px; }
 .wo-entry .who { font:600 11px "IBM Plex Mono",ui-monospace,monospace;
@@ -7984,6 +8160,57 @@ footer.bar a { margin-right:14px; }
 .wo-sign button:disabled { color:var(--dim); border-color:var(--line); cursor:default; }
 .wo-sign .err-note { color:var(--stamp); font-size:11.5px; margin-top:4px; }
 .wo-foot { font-size:11.5px; color:var(--dim); padding:0 20px 12px; }
+/* Founder clear verbs on the drawer (jobs-first) */
+.wo-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; }
+.wo-actions button {
+  border:1.5px solid var(--blue); color:var(--blue); background:var(--paper-top);
+  font:600 11px "IBM Plex Sans",sans-serif; letter-spacing:.12em;
+  text-transform:uppercase; padding:7px 12px; border-radius:3px; cursor:pointer;
+}
+.wo-actions button:hover { background:#eef3fb; }
+.wo-actions button.primary { border-color:var(--ok); color:var(--ok); }
+.wo-actions button.primary:hover { background:#e8f5ee; }
+.wo-actions button.warn { border-color:var(--warn); color:var(--warn); }
+.wo-actions button.warn:hover { background:#fbf3e6; }
+.wo-actions button:disabled { color:var(--dim); border-color:var(--line); cursor:default; }
+.wo-gate { font-size:12.5px; color:var(--dim); margin:0 0 12px; padding:8px 10px;
+  border:1px dashed var(--line); background:#fbf6ea; }
+.wo-gate strong { color:var(--ink); letter-spacing:.08em; text-transform:uppercase;
+  font-size:10px; display:block; margin-bottom:4px; }
+/* Cabinet skim — ledgers are the nav; no tray-corner dropdown */
+.blotter-head { display:flex; align-items:baseline; justify-content:space-between;
+  gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.blotter-head h2 { margin:0; flex:1; min-width:0; }
+.blotter-hint { font-size:12px; color:var(--dim); font-style:italic; margin:0; }
+.skim-chip { display:inline-flex; align-items:center; gap:8px; flex:none;
+  border:1px solid var(--blue); background:#eef3fb; color:var(--blue);
+  border-radius:3px; padding:4px 8px; font:600 11px "IBM Plex Sans",sans-serif;
+  letter-spacing:.04em; }
+.skim-chip button {
+  border:0; background:transparent; color:var(--blue); cursor:pointer;
+  font:600 11px "IBM Plex Sans",sans-serif; letter-spacing:.08em;
+  text-transform:uppercase; padding:0 0 0 6px; border-left:1px solid #b9cdec;
+}
+.skim-chip button:hover { color:var(--ink); }
+.hood { cursor:pointer; transition:opacity .15s, border-color .15s, box-shadow .15s; }
+.hood:hover { border-color:var(--blue); }
+.hood.on { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue); }
+.hood.dim { opacity:.42; }
+.hood.all-hood { background:linear-gradient(180deg,#fbf6ea,var(--paper-top)); }
+.hood.all-hood .all-sub { font-size:12px; color:var(--dim); margin-top:6px; }
+.hood .nm button.hood-scope {
+  background:none; border:0; padding:0; margin:0; font:inherit; font-weight:700;
+  letter-spacing:.03em; color:var(--ink); cursor:pointer; text-align:left;
+}
+.hood .nm button.hood-scope:hover { color:var(--blue); text-decoration:underline; }
+.hood-board { font-size:11px; color:var(--blue); margin-left:8px; font-weight:500;
+  letter-spacing:0; text-transform:none; }
+.hood-board:hover { text-decoration:underline; }
+/* Title-first slips — reason text lives in the drawer */
+.form .meta.sit { font-size:11px; color:var(--dim); margin-top:4px; }
+h1 .folder { font-weight:700; letter-spacing:.06em; text-transform:none; color:var(--ink); }
+h1 .fn { color:var(--verd); font-weight:600; letter-spacing:.12em;
+  text-transform:uppercase; font-size:0.72em; margin-left:0.35em; vertical-align:0.06em; }
 """
 
 # setInterval only — requestAnimationFrame suspends in background panes (the
@@ -8023,9 +8250,30 @@ function renderPaperLine(d){
   n=$("plClaimedN"); if(n)n.textContent=c.claimed;
   n=$("plSignoffN"); if(n)n.textContent=c.signoff;
   n=$("plSignedN"); if(n)n.textContent=c.signed;
-  /* first poll seeds seen-set so we only animate transitions after load */
+  paintStationFocus();
+  /* first poll seeds seen-set so we only animate transitions after load.
+     Deep-link / cabinet skim: replay up to 3 recent flyers for this scope
+     so the paper-line still feels alive when Office lands you filtered. */
   var trs=d.recent_transitions||[];
-  if(firstPlPoll){trs.forEach(function(t){if(t.id)PL_SEEN[t.id]=1;}); firstPlPoll=false; return;}
+  if(firstPlPoll){
+    var replay=[];
+    trs.forEach(function(t){
+      if(!t||!t.id)return;
+      PL_SEEN[t.id]=1;
+      if(TRAY_F!=="all"&&t.store&&t.store!==TRAY_F)return;
+      if(STATUS_F&&t.to_status&&t.to_status!==STATUS_F&&t.from_status!==STATUS_F)return;
+      replay.push(t);
+    });
+    firstPlPoll=false;
+    if(replay.length){
+      setTimeout(function(){
+        replay.slice(0,3).reverse().forEach(function(t,i){
+          setTimeout(function(){ flyPaper(t); }, i*220);
+        });
+      }, 380);
+    }
+    return;
+  }
   trs.slice().reverse().forEach(function(t){ /* oldest first so flyers chain L→R */
     if(!t||!t.id||PL_SEEN[t.id])return;
     PL_SEEN[t.id]=1;
@@ -8058,21 +8306,29 @@ function flyPaper(tr){
     if(p>=1){clearInterval(iv); if(el.parentNode)el.parentNode.removeChild(el); PL_ACTIVE--;}
   },32);}
 function stampFor(kind){
-  if(kind==="in_review")return {txt:"SIGN-OFF DUE",cls:""};
+  /* Attention stamps + station-skim stamps (wl-186 film from Office counts). */
+  if(kind==="in_review"||kind==="signoff")return {txt:"SIGN-OFF DUE",cls:""};
   if(kind==="founder_decision")return {txt:"AWAITING SIGNATURE",cls:""};
   if(kind==="human_gate")return {txt:"AT THE WINDOW",cls:"amber"};
-  if(kind==="timer")return {txt:"EMBARGO",cls:"amber"};
+  if(kind==="embargo"||kind==="timer")return {txt:"EMBARGO",cls:"amber"};
+  if(kind==="filed"||kind==="ready"||kind==="backlog")return {txt:"FILED",cls:"amber"};
+  if(kind==="claimed"||kind==="in_flight"||kind==="in_progress")return {txt:"CLAIMED",cls:""};
+  if(kind==="signed"||kind==="done")return {txt:"SIGNED",cls:"green"};
   return {txt:"GONE QUIET",cls:""};}
 function formHtml(it,slip){
+  /* Title-first slips: id · priority · stamp · title (+ sitting age).
+     Long reason text belongs in the drawer, not on the tray.
+     Whole slip opens the work-order drawer (wl-145); id link remains
+     the cmd-click escape hatch to the full record. */
   var st=stampFor(it.kind);
-  return '<div class="form'+(slip?' slip':'')+'">'+
+  var sit=it.waiting_since?'<div class="meta sit">sitting '+esc(ago(it.waiting_since))+'</div>':'';
+  var href=it.url||("/admin/tasks/"+it.id);
+  return '<div class="form'+(slip?' slip':'')+'" data-id="'+esc(it.id)+'" title="Open work order">'+
     '<div class="stamp '+st.cls+'">'+esc(st.txt)+'</div>'+
-    '<div class="no"><a href="'+esc(it.url||("/admin/tasks/"+it.id))+'">'+
+    '<div class="no"><a href="'+esc(href)+'">'+
       esc(it.id)+'</a> \\u00b7 P'+esc(it.priority)+
       ' \\u00b7 <span class="tag">'+esc(it.product)+'</span></div>'+
-    '<div class="t">'+esc(it.title)+'</div>'+
-    '<div class="meta">'+esc(it.note||"")+
-      (it.waiting_since?' \\u00b7 sitting '+esc(ago(it.waiting_since)):'')+'</div></div>';}
+    '<div class="t">'+esc(it.title)+'</div>'+sit+'</div>';}
 /* City DNA (pc-40 / CITY_DNA.md): identity registry shared with the plat
    and dispatch — same hash, same palette, same little person everywhere.
    founder-terminal and non-roster authors wear the gold founder chip. */
@@ -8087,58 +8343,237 @@ function spriteChip(author){
     '<line x1="2" y1="-4" x2="2" y2="0" stroke="#4a3f2c" stroke-width="2"/>'+
     '<rect x="-4" y="-14" width="8" height="11" rx="2.5" fill="'+col+'"/>'+
     '<circle cx="0" cy="-18" r="4.2" fill="#d9b98c" stroke="#4a3f2c" stroke-width=".7"/></svg>';}
-var TRAY_F=localStorage.getItem("wl_desk_tray_filter")||"all";
+/* wl-186 / suite Click ladder: cabinet + status skim live in the URL so
+   Office Work-rail counts can land on the filtered film. */
+var TRAY_F="all", STATUS_F="";
+var STATUS_LABEL={backlog:"filed",in_progress:"claimed",in_review:"sign-off",done:"signed"};
+var STATUS_SKIM=null, STATUS_SKIM_KEY="";
+function deskQuery(){
+  try{ return new URLSearchParams(location.search||""); }catch(err){ return new URLSearchParams(); }
+}
+function normalizeCabinet(raw, known){
+  var s=String(raw||"").trim(); if(!s||s==="all") return "all";
+  if(known&&known[s]) return s;
+  var low=s.toLowerCase();
+  if(known){
+    if(known[low]) return low;
+    for(var k in known){ if(k.toLowerCase()===low) return k; }
+  }
+  return low;
+}
+function syncDeskQuery(){
+  try{
+    var u=new URL(location.href);
+    if(TRAY_F&&TRAY_F!=="all") u.searchParams.set("cabinet",TRAY_F);
+    else u.searchParams.delete("cabinet");
+    if(STATUS_F) u.searchParams.set("status",STATUS_F);
+    else u.searchParams.delete("status");
+    /* keep ?open= while drawer is up — closeWO clears it */
+    var qs=u.searchParams.toString();
+    history.replaceState({},"",u.pathname+(qs?("?"+qs):"")+u.hash);
+  }catch(err){}
+}
+function bootFiltersFromQuery(){
+  var q=deskQuery();
+  var cab=q.get("cabinet")||q.get("store")||"";
+  var st=q.get("status")||"";
+  if(cab) TRAY_F=normalizeCabinet(cab, null);
+  else TRAY_F=localStorage.getItem("wl_desk_tray_filter")||"all";
+  if(st&&STATUS_LABEL[st]) STATUS_F=st;
+  else STATUS_F="";
+}
+bootFiltersFromQuery();
+function storeDisplay(slug){
+  var stores=(SCENE&&SCENE.stores)||[];
+  for(var i=0;i<stores.length;i++){
+    if(stores[i].slug===slug) return stores[i].display||slug;
+  }
+  return slug;}
+function pileHtml(cls,label,n,status){
+  var on=STATUS_F&&STATUS_F===status;
+  var dim=STATUS_F&&STATUS_F!==status;
+  return '<div class="pile '+cls+(on?' on':'')+(dim?' dim':'')+
+    '" data-status="'+esc(status)+'" title="Skim '+esc(label)+' on this desk">'+
+    '<div class="sheets">'+sheets(n)+'</div>'+
+    '<div class="n">'+esc(n)+'</div><div class="l">'+esc(label)+'</div></div>';}
+function paintStationFocus(){
+  document.querySelectorAll(".pl-station").forEach(function(btn){
+    var st=btn.getAttribute("data-status")||"";
+    btn.classList.toggle("on", !!(STATUS_F&&STATUS_F===st));
+  });}
+function statusSkimUrl(){
+  var q="status="+encodeURIComponent(STATUS_F)+"&limit=48";
+  if(TRAY_F&&TRAY_F!=="all") q+="&product="+encodeURIComponent(TRAY_F);
+  return "/api/admin/tasks?"+q;
+}
+function statusSkimKind(){
+  if(STATUS_F==="in_review") return "signoff";
+  if(STATUS_F==="in_progress") return "claimed";
+  if(STATUS_F==="done") return "signed";
+  if(STATUS_F==="backlog") return "filed";
+  return "filed";
+}
+function taskToForm(t){
+  return {id:t.id, title:t.title, priority:t.priority,
+    product:TRAY_F!=="all"?TRAY_F:(t.product||t.store||""),
+    kind:statusSkimKind(),
+    waiting_since:t.updated_at||t.created_at||t.closed_at||"",
+    url:"/admin/tasks/"+t.id};
+}
+function filedToForm(f){
+  return {id:f.id, title:f.title, priority:f.priority||3,
+    product:f.store||TRAY_F||"", kind:"signed",
+    waiting_since:f.closed_at||"", url:"/admin/tasks/"+f.id};
+}
+function renderStatusSkim(){
+  if(!STATUS_F){
+    STATUS_SKIM=null; STATUS_SKIM_KEY=""; return false;
+  }
+  var key=TRAY_F+"|"+STATUS_F;
+  /* Signed station: film the outbox receipts in the tray (same carbon copies). */
+  if(STATUS_F==="done"){
+    var d=SCENE||{};
+    var signed=[];
+    (d.filed||[]).forEach(function(f){
+      if(TRAY_F!=="all"&&f.store!==TRAY_F&&String(f.store||"").toLowerCase()!==TRAY_F)return;
+      signed.push(filedToForm(f));
+    });
+    STATUS_SKIM=signed; STATUS_SKIM_KEY=key;
+    $("decisionsStack").innerHTML = signed.length
+      ? signed.map(function(it){return formHtml(it,false);}).join("")
+      : '<div class="empty-note">No signed receipts'+(TRAY_F!=="all"?(" in "+esc(storeDisplay(TRAY_F))):"")+
+        ' in the window</div>';
+    $("staleStack").innerHTML='<div class="empty-note">Status skim \\u2014 hold bin paused</div>';
+    $("inCount").textContent=signed.length; $("holdCount").textContent=0;
+    return true;
+  }
+  if(STATUS_SKIM&&STATUS_SKIM_KEY===key){
+    var rows=STATUS_SKIM;
+    $("decisionsStack").innerHTML = rows.length
+      ? rows.map(function(it){return formHtml(it,false);}).join("")
+      : '<div class="empty-note">No '+esc(STATUS_LABEL[STATUS_F]||STATUS_F)+
+        ' tickets'+(TRAY_F!=="all"?(" in "+esc(storeDisplay(TRAY_F))):"")+'</div>';
+    $("staleStack").innerHTML='<div class="empty-note">Status skim \\u2014 hold bin paused</div>';
+    $("inCount").textContent=rows.length; $("holdCount").textContent=0;
+    return true;
+  }
+  $("decisionsStack").innerHTML='<div class="empty-note">Pulling '+esc(STATUS_LABEL[STATUS_F]||STATUS_F)+'\\u2026</div>';
+  $("staleStack").innerHTML='<div class="empty-note">Status skim \\u2014 hold bin paused</div>';
+  $("inCount").textContent="\\u2026"; $("holdCount").textContent=0;
+  var fetchKey=key;
+  fetch(statusSkimUrl(),{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+    if(fetchKey!==(TRAY_F+"|"+STATUS_F)) return;
+    var tasks=(d&&d.tasks)||[];
+    STATUS_SKIM=tasks.map(taskToForm);
+    STATUS_SKIM_KEY=fetchKey;
+    render();
+  }).catch(function(){
+    if(fetchKey!==(TRAY_F+"|"+STATUS_F)) return;
+    STATUS_SKIM=[]; STATUS_SKIM_KEY=fetchKey; render();
+  });
+  return true;
+}
 function render(){
   var d=SCENE; if(!d)return;
   var att=d.attention||[];
-  /* wl-157/wl-162: per-store skim dropdown — one pick narrows both trays */
-  var counts={}; att.forEach(function(it){counts[it.product]=(counts[it.product]||0)+1;});
-  if(TRAY_F!=="all"&&!counts[TRAY_F])TRAY_F="all";
-  var tf=$("trayFilter");
-  if(document.activeElement!==tf){ /* don't rebuild under an open picker */
-    var fz='<option value="all"'+(TRAY_F==="all"?" selected":"")+'>all \\u00b7 '+att.length+'</option>';
-    Object.keys(counts).sort().forEach(function(s){
-      fz+='<option value="'+esc(s)+'"'+(TRAY_F===s?" selected":"")+'>'+
-        esc(s)+' \\u00b7 '+counts[s]+'</option>';});
-    tf.innerHTML=fz;}
-  tf.classList.toggle("on",TRAY_F!=="all");
-  var inTray=[], hold=[];
-  att.forEach(function(it){
-    if(TRAY_F!=="all"&&it.product!==TRAY_F)return;
-    (it.kind==="stalled"?hold:inTray).push(it); });
-  $("decisionsStack").innerHTML = inTray.length
-    ? inTray.map(function(it){return formHtml(it,false);}).join("")
-    : '<div class="empty-note">Tray empty \\u2014 nothing to sign</div>';
-  $("staleStack").innerHTML = hold.length
-    ? hold.map(function(it){return formHtml(it,true);}).join("")
-    : '<div class="empty-note">Nothing gone quiet</div>';
-  $("inCount").textContent=inTray.length; $("holdCount").textContent=hold.length;
+  /* Cabinet skim — ledgers are the nav; validate remembered pick (case-insensitive). */
+  var known={}; (d.stores||[]).forEach(function(s){ known[s.slug]=1; });
+  if(TRAY_F!=="all"){
+    TRAY_F=normalizeCabinet(TRAY_F, known);
+    if(!known[TRAY_F]) TRAY_F="all";
+  }
+  paintStationFocus();
+  /* Tray headers track the film — station skim vs default needs-you. */
+  var inHead=$("inTrayTitle");
+  if(inHead){
+    if(STATUS_F){
+      inHead.innerHTML='Skim \\u00b7 '+esc(STATUS_LABEL[STATUS_F]||STATUS_F)+
+        (TRAY_F!=="all"?(' \\u00b7 '+esc(storeDisplay(TRAY_F))):'')+
+        ' (<span id="inCount">0</span>)';
+    } else {
+      inHead.innerHTML='In-tray \\u00b7 needs you (<span id="inCount">0</span>)';
+    }
+  }
+  var skimmed=renderStatusSkim();
+  if(!skimmed){
+    var inTray=[], hold=[];
+    att.forEach(function(it){
+      if(TRAY_F!=="all"&&it.product!==TRAY_F&&String(it.product||"").toLowerCase()!==TRAY_F)return;
+      (it.kind==="stalled"?hold:inTray).push(it); });
+    $("decisionsStack").innerHTML = inTray.length
+      ? inTray.map(function(it){return formHtml(it,false);}).join("")
+      : '<div class="empty-note">Tray empty \\u2014 nothing to sign</div>';
+    $("staleStack").innerHTML = hold.length
+      ? hold.map(function(it){return formHtml(it,true);}).join("")
+      : '<div class="empty-note">Nothing gone quiet</div>';
+    $("inCount").textContent=inTray.length; $("holdCount").textContent=hold.length;
+  }
 
-  var hz="";
+  /* Blotter chrome: show-all lives here when a cabinet or status is scoped */
+  var scopeEl=$("blotterScope");
+  if(scopeEl){
+    if(TRAY_F==="all"&&!STATUS_F){
+      scopeEl.innerHTML='<p class="blotter-hint">Click a cabinet or station to skim \\u00b7 board stays on the ledger</p>';
+    } else {
+      var bits=[];
+      if(TRAY_F!=="all") bits.push('<strong>'+esc(storeDisplay(TRAY_F))+'</strong>');
+      if(STATUS_F) bits.push(esc(STATUS_LABEL[STATUS_F]||STATUS_F));
+      scopeEl.innerHTML='<span class="skim-chip" title="Desk skim from Office / stations">'+
+        'Skimming '+bits.join(" \\u00b7 ")+
+        '<button type="button" id="clearSkim" data-slug="all">Show all</button></span>';
+    }
+  }
+
+  var openAll=0, readyAll=0, doneAll=0;
+  (d.stores||[]).forEach(function(s){
+    openAll+=s.backlog+s.in_progress+s.in_review;
+    readyAll+=s.ready||0; doneAll+=s.done_total||0;});
+  var readyOn=STATUS_F==="backlog"&&TRAY_F==="all";
+  var hz='<div class="hood all-hood'+(TRAY_F==="all"?' on':'')+'" data-slug="all">'+
+    '<div class="hood-head"><span class="nm"><button type="button" class="hood-scope" data-slug="all"'+
+    ' title="Show every cabinet">All cabinets</button></span>'+
+    '<span class="ready-chip'+(readyAll?'':' zero')+(readyOn?' on':'')+
+    '" data-ready-slug="all" title="Skim ready (filed) across cabinets">'+esc(readyAll)+' ready</span></div>'+
+    '<div class="all-sub">'+esc(att.length)+' needing you \\u00b7 '+esc(openAll)+
+    ' open across the city \\u00b7 click again on a scoped cabinet also clears</div></div>';
   (d.stores||[]).forEach(function(s){
     var open=s.backlog+s.in_progress+s.in_review;
-    hz+='<div class="hood"><div class="hood-head">'+
-      '<span class="nm"><a href="/admin/tickets/'+esc(s.slug)+'">'+esc(s.display||s.slug)+'</a>'+
-      ' <span class="tag">'+esc(s.prefix)+'-</span></span>'+
-      '<span class="ready-chip'+(s.ready?'':' zero')+'">'+esc(s.ready)+' ready</span></div>'+
-      '<div class="piles">'+pile("backlog","filed",s.backlog)+
-      pile("doing","claimed",s.in_progress)+pile("review","sign-off",s.in_review)+
+    var on=TRAY_F===s.slug, dim=TRAY_F!=="all"&&!on;
+    var rOn=STATUS_F==="backlog"&&TRAY_F===s.slug;
+    hz+='<div class="hood'+(on?' on':'')+(dim?' dim':'')+'" data-slug="'+esc(s.slug)+'">'+
+      '<div class="hood-head">'+
+      '<span class="nm"><button type="button" class="hood-scope" data-slug="'+esc(s.slug)+'"'+
+      ' title="Skim Desk to this cabinet">'+esc(s.display||s.slug)+'</button>'+
+      ' <span class="tag">'+esc(s.prefix)+'-</span>'+
+      ' <a class="hood-board" href="/admin/tickets/'+esc(s.slug)+'" title="Open Board for this cabinet">board</a></span>'+
+      '<span class="ready-chip'+(s.ready?'':' zero')+(rOn?' on':'')+
+      '" data-ready-slug="'+esc(s.slug)+'" title="Skim ready (filed) for this cabinet">'+
+      esc(s.ready)+' ready</span></div>'+
+      '<div class="piles">'+pileHtml("backlog","filed",s.backlog,"backlog")+
+      pileHtml("doing","claimed",s.in_progress,"in_progress")+
+      pileHtml("review","sign-off",s.in_review,"in_review")+
       '</div>'+
       '<div class="empty-note" style="margin-top:6px">'+esc(open)+' open work orders \\u00b7 '+
       esc(s.done_total)+' signed off, ever</div></div>';});
   $("hoodList").innerHTML = hz || '<div class="empty-note">No ledgers yet \\u2014 no stores discovered</div>';
 
-  var filed=d.filed||[], freshCount=0, cz="";
+  /* Outbox + stamp pad always live — cabinet skim narrows them; status skim
+     only filters the left trays (Office deep-link film must not kill the room). */
+  var filed=d.filed||[], freshCount=0, cz="", shown=0;
   filed.forEach(function(f){
+    if(TRAY_F!=="all"&&f.store!==TRAY_F&&String(f.store||"").toLowerCase()!==TRAY_F)return;
+    shown++;
     var fresh=!firstPoll && !seenFiled[f.id]; if(fresh)freshCount++;
-    cz+='<div class="clip-item'+(fresh?' fresh':'')+'">'+spriteChip(f.author)+
+    var hi=STATUS_F==="done"?" on-skim":"";
+    cz+='<div class="clip-item'+(fresh?' fresh':'')+hi+'">'+spriteChip(f.author)+
       '<span class="when">'+esc(ago(f.closed_at))+'</span> '+
       '<a href="/admin/tasks/'+esc(f.id)+'">'+esc(f.id)+'</a> '+
       '<span class="dim">['+esc(f.store)+']</span> '+esc(String(f.title).slice(0,64))+'</div>';});
   $("shippedClip").innerHTML = cz || '<div class="clip-item empty-note">No carbon copies in the window</div>';
   filed.forEach(function(f){seenFiled[f.id]=1;});
-  $("padCount").textContent=filed.length;
-  $("padWindow").textContent="filed \\u00b7 last "+(d.window_hours||24)+"h";
+  $("padCount").textContent=shown;
+  $("padWindow").textContent=(TRAY_F!=="all"?"signed \\u00b7 "+storeDisplay(TRAY_F)+" \\u00b7 ":"signed \\u00b7 ")+
+    "last "+(d.window_hours||24)+"h";
   if(freshCount>0)thunk();
   renderPaperLine(d);
   firstPoll=false;}
@@ -8155,39 +8590,108 @@ function poll(){
   }).catch(function(){
     $("liveChip").className="hold"; $("liveChip").textContent=SCENE?"HOLDING":"NO SIGNAL";});}
 poll(); setInterval(poll,15000);
-/* CITY_DNA sec.5 (wl-167): live sky — same formula as the plat; sun/moon
-   ride the wall clock. Re-derived on setInterval (never rAF). */
-function skyColors(hourF){
-  if(hourF<5.5||hourF>=21)return ["#232c3a","#3a4152"];
-  if(hourF<8)return ["#d9a06a","#e8d3b0"];
-  if(hourF<17)return ["#dcebf0","#eef0e2"];
-  if(hourF<21)return ["#d98a5f","#e3c9a0"];
-  return ["#232c3a","#3a4152"];}
-function paintSky(){
-  var now=new Date(), hourF=now.getHours()+now.getMinutes()/60;
-  var c=skyColors(hourF), night=hourF<5.5||hourF>=21;
-  var sky=$("sky"); if(sky)sky.style.background="linear-gradient(180deg,"+c[0]+","+c[1]+")";
-  document.body.classList.toggle("night", night);
-  var cel=$("celestial"); if(!cel)return;
-  if(night){
-    cel.className="celestial moon";
-    cel.style.left="auto"; cel.style.right="12%"; cel.style.top="22%";
-  }else{
-    var dayF=Math.min(1,Math.max(0,(hourF-6)/15));
-    cel.className="celestial sun";
-    cel.style.right="auto";
-    cel.style.left=(6+dayF*82)+"%";
-    cel.style.top=(58-Math.sin(dayF*Math.PI)*40)+"%";
-  }}
+/* wl-179: wall clock only — plat sky/sun band retired with the cabinet pivot. */
 setInterval(function(){
   var n=new Date();
   $("clock").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-  paintSky();
 },1000);
-paintSky();
+(function(){ var n=new Date();
+  $("clock").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}); })();
+
+/* pc-163: Desk D0 search — same chrome slot as Office; scope = tickets */
+var SR_IX=-1, SR_HITS=[];
+function deskSearchCorpus(){
+  var out=[], seen={}, d=SCENE||{};
+  function add(id,title,meta,kind){
+    if(!id||seen[id])return; seen[id]=1;
+    out.push({id:id, title:title||"", meta:meta||"", kind:kind||"ticket"});
+  }
+  (d.attention||[]).forEach(function(it){
+    add(it.id, it.title, (it.product||"")+" \\u00b7 "+(it.kind||"attention"), "attention");
+  });
+  (d.filed||[]).forEach(function(f){
+    add(f.id, f.title, (f.store||"")+" \\u00b7 signed", "filed");
+  });
+  (d.stores||[]).forEach(function(s){
+    /* store names are findable; pick jumps to that ledger */
+    if(!s.slug)return;
+    out.push({id:"store:"+s.slug, title:s.display||s.slug, meta:(s.prefix||"")+"- \\u00b7 ledger",
+      kind:"store", href:"/admin/tickets/"+encodeURIComponent(s.slug)});
+  });
+  return out;
+}
+function runDeskSearch(q, keepIx){
+  q=String(q||"").trim().toLowerCase();
+  var box=$("searchResults"), field=$("searchField");
+  if(!box||!field)return;
+  if(!q){ box.classList.add("tucked"); field.setAttribute("aria-expanded","false");
+    SR_IX=-1; SR_HITS=[]; return; }
+  var hits=deskSearchCorpus().filter(function(h){
+    return (h.id+" "+h.title+" "+h.meta).toLowerCase().indexOf(q)>=0;
+  }).slice(0,12);
+  /* Exact-ish id: also offer open even if not in scene window */
+  if(/^[a-z]{1,6}-\\d+$/i.test(q) && !hits.some(function(h){return String(h.id).toLowerCase()===q;})){
+    hits.unshift({id:q, title:"open "+q, meta:"lookup by id", kind:"id"});
+  }
+  SR_HITS=hits;
+  if(keepIx){ SR_IX=Math.max(0, Math.min(hits.length-1, SR_IX)); }
+  else { SR_IX=hits.length?0:-1; }
+  if(!hits.length){
+    box.innerHTML='<div class="sr-empty">No tickets match \\u2014 try an id like pc-163</div>';
+  } else {
+    var html="", last="";
+    hits.forEach(function(h,i){
+      var g=h.kind==="store"?"ledgers":(h.kind==="filed"?"signed":"work orders");
+      if(g!==last){ html+='<div class="sr-group">'+g+'</div>'; last=g; }
+      html+='<button type="button" class="sr-item'+(i===SR_IX?' is-active':'')+
+        '" data-ix="'+i+'" role="option">'+
+        '<span class="sr-chip">'+esc(String(h.id).replace(/^store:/,"").slice(0,10))+'</span>'+
+        '<span class="sr-body"><div class="sr-title">'+esc(h.title||h.id)+'</div>'+
+        '<div class="sr-meta">'+esc(h.meta)+'</div></span></button>';
+    });
+    box.innerHTML=html;
+  }
+  box.classList.remove("tucked");
+  field.setAttribute("aria-expanded","true");
+}
+function pickDeskSearch(ix){
+  var h=SR_HITS[ix]; if(!h)return;
+  $("searchResults").classList.add("tucked");
+  $("searchField").setAttribute("aria-expanded","false");
+  $("searchField").blur();
+  if(h.href){ location.href=h.href; return; }
+  if(h.kind==="store"){ location.href="/admin/tickets/"+encodeURIComponent(String(h.id).replace(/^store:/,"")); return; }
+  openWO(h.id);
+}
+(function wireDeskSearch(){
+  var field=$("searchField"), box=$("searchResults");
+  if(!field||!box)return;
+  field.addEventListener("input", function(){ runDeskSearch(field.value, false); });
+  field.addEventListener("keydown", function(e){
+    if(e.key==="ArrowDown"){ e.preventDefault();
+      if(box.classList.contains("tucked")) runDeskSearch(field.value, false);
+      if(!SR_HITS.length)return;
+      SR_IX=Math.min(SR_HITS.length-1, SR_IX+1); runDeskSearch(field.value, true); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); if(!SR_HITS.length)return;
+      SR_IX=Math.max(0, SR_IX-1); runDeskSearch(field.value, true); }
+    else if(e.key==="Enter"){ e.preventDefault();
+      if(box.classList.contains("tucked")||SR_IX<0) runDeskSearch(field.value, false);
+      if(SR_IX>=0) pickDeskSearch(SR_IX); }
+    else if(e.key==="Escape"){ box.classList.add("tucked"); field.setAttribute("aria-expanded","false"); }
+  });
+  box.addEventListener("mousedown", function(e){
+    var btn=e.target.closest(".sr-item"); if(!btn)return;
+    e.preventDefault(); pickDeskSearch(+btn.getAttribute("data-ix"));
+  });
+  document.addEventListener("click", function(e){
+    if(!e.target.closest("#searchlight")) box.classList.add("tucked");
+  });
+})();
 
 /* ── the work-order drawer (wl-145): tickets open ON the desk ── */
-var WO_ID=null;
+var WO_ID=null, WO_TASK=null;
+var FD_LABELS={"needs:founder-decision":1,"founder-decision":1};
+function founderAuthor(){return (window.FOUNDER&&FOUNDER.founder_id)||"founder-terminal";}
 function stampForStatus(st){
   if(st==="backlog")return {txt:"FILED",cls:""};
   if(st==="in_progress")return {txt:"CLAIMED",cls:"amber"};
@@ -8197,7 +8701,7 @@ function stampForStatus(st){
   return {txt:String(st||"?").toUpperCase(),cls:""};}
 function closeBtnHtml(){return '<button class="wo-close" onclick="closeWO()" title="close (esc)">\\u00d7</button>';}
 function closeWO(){
-  WO_ID=null;$("wo").classList.remove("open");$("scrim").classList.remove("open");
+  WO_ID=null;WO_TASK=null;$("wo").classList.remove("open");$("scrim").classList.remove("open");
   /* HISTORY LAW: clear sticky ?open= so refresh does not reopen the overlay. */
   try{
     var u=new URL(location.href);
@@ -8209,7 +8713,8 @@ function closeWO(){
   }catch(err){}
 }
 function openWO(id){
-  WO_ID=id; $("scrim").classList.add("open"); $("wo").classList.add("open");
+  WO_ID=id; WO_TASK=null;
+  $("scrim").classList.add("open"); $("wo").classList.add("open");
   $("woHead").innerHTML='<div class="no">'+esc(id)+'</div>'+
     '<div class="t">pulling the carbon\\u2026</div>'+closeBtnHtml();
   $("woBody").innerHTML='<div class="empty-note">pulling the record\\u2026</div>';
@@ -8223,19 +8728,67 @@ function fetchWO(id){
     renderWO(d.task);})
   .catch(function(){if(WO_ID===id)
     $("woBody").innerHTML='<div class="empty-note">record unreachable \\u2014 try the full page</div>';});}
+function attentionKindFor(t){
+  var id=String(t.id||"");
+  var att=(SCENE&&SCENE.attention)||[];
+  for(var i=0;i<att.length;i++){ if(String(att[i].id)===id) return att[i].kind; }
+  return "";}
+function woActionsHtml(t){
+  var labels=t.labels||[];
+  var hasFd=labels.some(function(l){return FD_LABELS[l];});
+  var kind=attentionKindFor(t);
+  var bits=[], gate="";
+  if(t.status==="in_review"){
+    bits.push('<button type="button" class="primary" data-wo-act="approve">Approve</button>');
+    bits.push('<button type="button" data-wo-act="reopen">Reopen</button>');
+  }
+  if(hasFd){
+    bits.push('<button type="button" class="primary" data-wo-act="verdict">Sign verdict</button>');
+  }
+  if(t.status==="in_progress"||t.status==="in_review"||kind==="stalled"){
+    bits.push('<button type="button" class="warn" data-wo-act="release">Release claim</button>');
+  }
+  if(t.gate_type==="human"){
+    gate='<div class="wo-gate"><strong>At the window</strong>'+
+      esc(t.gate_note||"Waiting on a person or external event.")+
+      '</div>';
+    bits.push('<button type="button" data-wo-act="clear-gate">Clear gate</button>');
+  } else if(t.gate_type==="timer"){
+    gate='<div class="wo-gate"><strong>Embargo</strong>Releases itself'+
+      (t.gate_until?' on '+esc(String(t.gate_until).slice(0,10)):'')+
+      (t.gate_note?' \\u2014 '+esc(t.gate_note):'')+
+      '. No force-clear.</div>';
+  }
+  if(!bits.length&&!gate) return {gate:"",actions:""};
+  return {gate:gate, actions:bits.length?'<div class="wo-actions" id="woActionRow">'+bits.join("")+'</div>':""};}
 function renderWO(t){
+  WO_TASK=t;
   var st=stampForStatus(t.status);
   $("woHead").innerHTML='<div class="stamp '+st.cls+'">'+esc(st.txt)+'</div>'+
     '<div class="no">'+esc(t.id)+'</div>'+
     '<div class="t">'+esc(t.title||"")+'</div>'+closeBtnHtml();
   var labels=(t.labels||[]).map(function(l){return '<span class="tag">'+esc(l)+'</span>';}).join(" ");
-  var h='<table class="wo-meta">'+
+  var acts=woActionsHtml(t);
+  var h=acts.gate+acts.actions+
+    '<table class="wo-meta">'+
     '<tr><td>priority</td><td>P'+esc(t.priority!=null?t.priority:"3")+'</td></tr>'+
     '<tr><td>routing</td><td>'+(labels||'<span class="dim">none</span>')+'</td></tr>'+
     '<tr><td>filed</td><td>'+esc(t.created_at||"\\u2014")+'</td></tr>'+
     '<tr><td>last touch</td><td>'+esc(ago(t.updated_at)||t.updated_at||"\\u2014")+'</td></tr>'+
     '</table>';
-  if(t.description)h+='<div class="wo-desc">'+esc(t.description)+'</div>';
+  if(t.description_html)h+='<div class="wo-desc md">'+t.description_html+'</div>';
+  else if(t.description)h+='<div class="wo-desc">'+esc(t.description)+'</div>';
+  var rels=t.relations||[];
+  if(rels.length){
+    h+='<div class="wo-rels"><strong>Relations</strong><ul>';
+    rels.forEach(function(r){
+      var fr=r.from_id||"", to=r.to_id||"", rt=r.relation_type||"";
+      h+='<li><a href="/admin/desk?open='+encodeURIComponent(fr)+'">'+esc(fr)+'</a>'+
+        ' <span class="dim">'+esc(rt)+'</span> '+
+        '<a href="/admin/desk?open='+encodeURIComponent(to)+'">'+esc(to)+'</a></li>';
+    });
+    h+='</ul></div>';
+  }
   var cs=(t.comments||[]).slice().reverse();
   h+='<h2>Day book \\u00b7 '+cs.length+'</h2>';
   if(!cs.length)h+='<div class="empty-note">no entries yet</div>';
@@ -8243,9 +8796,9 @@ function renderWO(t){
     '</span> <span class="dim">\\u00b7 '+esc(ago(c.created_at)||c.created_at||"")+'</span>'+
     '<div class="body">'+esc(c.body||"")+'</div></div>';});
   $("woBody").innerHTML=h;
-  $("woFoot").innerHTML='verbs beyond a signed note live on <a href="/admin/tasks/'+
+  $("woFoot").innerHTML='power edits on <a href="/admin/tasks/'+
     esc(t.id)+'">the full record \\u2197</a>';
-  $("woSignAs").innerHTML='SIGNED AS '+signer(window.FOUNDER&&FOUNDER.founder_id||"founder-terminal");
+  $("woSignAs").innerHTML='SIGNED AS '+signer(founderAuthor());
   $("woErr").textContent="";}
 function signer(a){
   /* wl-148: aliases are paint, ids are identity — the alias renders,
@@ -8253,45 +8806,187 @@ function signer(a){
   if(window.FOUNDER&&a===FOUNDER.founder_id&&FOUNDER.founder_alias)
     return esc(FOUNDER.founder_alias)+' <span class="dim">('+esc(a)+')</span>';
   return esc(a||"unsigned");}
+function woPostComment(body){
+  return fetch("/api/admin/tasks/"+encodeURIComponent(WO_ID)+"/comments",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({body:body,author:founderAuthor()})}).then(function(r){return r.json();});}
+function woPatch(payload){
+  return fetch("/api/admin/tasks/"+encodeURIComponent(WO_ID),{method:"PATCH",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)}).then(function(r){return r.json();});}
+function woPatchLabels(remove){
+  return fetch("/api/admin/tasks/"+encodeURIComponent(WO_ID)+"/labels",{method:"PATCH",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({remove:remove})}).then(function(r){return r.json();});}
+function setWoBusy(on){
+  var row=$("woActionRow");
+  if(row) Array.prototype.forEach.call(row.querySelectorAll("button"),function(b){b.disabled=!!on;});
+  var sb=$("woSignBtn"); if(sb)sb.disabled=!!on;}
+function afterWoWrite(j, failMsg){
+  setWoBusy(false);
+  if(!j||!j.ok){$("woErr").textContent=(j&&j.error)||failMsg||"the desk refused";return;}
+  $("woNote").value=""; fetchWO(WO_ID); poll();}
+function runWoAct(act){
+  if(!WO_ID||!WO_TASK)return;
+  var note=$("woNote").value.trim();
+  $("woErr").textContent=""; setWoBusy(true);
+  if(act==="approve"){
+    woPatch({status:"done",author:founderAuthor()})
+      .then(function(j){afterWoWrite(j,"approve refused \\u2014 close-out may be missing");})
+      .catch(function(){setWoBusy(false);$("woErr").textContent="desk unreachable";});
+    return;}
+  if(act==="reopen"){
+    var body=note||"Reopened by founder \\u2014 needs more work";
+    woPostComment(body).then(function(j){
+      if(!j||!j.ok){afterWoWrite(j,"could not file reopen note");return;}
+      return woPatch({status:"in_progress",author:founderAuthor()});
+    }).then(function(j){ if(j!==undefined) afterWoWrite(j,"reopen refused"); })
+      .catch(function(){setWoBusy(false);$("woErr").textContent="desk unreachable";});
+    return;}
+  if(act==="verdict"){
+    if(!note){setWoBusy(false);$("woErr").textContent="write the verdict in the note first";return;}
+    var drop=(WO_TASK.labels||[]).filter(function(l){return FD_LABELS[l];});
+    woPostComment(note).then(function(j){
+      if(!j||!j.ok){afterWoWrite(j,"verdict note refused");return;}
+      return woPatchLabels(drop);
+    }).then(function(j){ if(j!==undefined) afterWoWrite(j,"could not drop founder-decision label"); })
+      .catch(function(){setWoBusy(false);$("woErr").textContent="desk unreachable";});
+    return;}
+  if(act==="release"){
+    var rel=note
+      ? ("Blocked: "+note+"\\nNext step: return to pool for another agent")
+      : ("Released by "+founderAuthor()+" \\u2014 returning to backlog");
+    woPostComment(rel).then(function(j){
+      if(!j||!j.ok){afterWoWrite(j,"release note refused");return;}
+      /* Blocked:+Next step: auto-returns via comment lifecycle; bare release needs PATCH */
+      if(note){ afterWoWrite(j); return; }
+      return woPatch({status:"backlog",author:founderAuthor()});
+    }).then(function(j){ if(j!==undefined) afterWoWrite(j,"release refused"); })
+      .catch(function(){setWoBusy(false);$("woErr").textContent="desk unreachable";});
+    return;}
+  if(act==="clear-gate"){
+    woPatch({gate_type:"",author:founderAuthor()})
+      .then(function(j){afterWoWrite(j,"could not clear gate");})
+      .catch(function(){setWoBusy(false);$("woErr").textContent="desk unreachable";});
+    return;}
+  setWoBusy(false);}
 function signWO(){
   if(!WO_ID)return;
   /* wl-150: the desk signs for the founder — whoever clicked IS the founder;
      other identities sign via MCP/CLI, never this chair */
-  var author=(window.FOUNDER&&FOUNDER.founder_id)||"founder-terminal";
   var body=$("woNote").value.trim(), b=$("woSignBtn");
   if(!body){$("woErr").textContent="nothing to file \\u2014 write the note first";return;}
   b.disabled=true; $("woErr").textContent="";
-  fetch("/api/admin/tasks/"+encodeURIComponent(WO_ID)+"/comments",{method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({body:body,author:author})})
-  .then(function(r){return r.json();})
+  woPostComment(body)
   .then(function(j){b.disabled=false;
     if(!j.ok){$("woErr").textContent=j.error||"the desk refused the note";return;}
     $("woNote").value=""; fetchWO(WO_ID); poll();})
   .catch(function(){b.disabled=false;
     $("woErr").textContent="desk unreachable \\u2014 note not filed";});}
 document.addEventListener("click",function(e){
+  var actBtn=e.target&&e.target.closest?e.target.closest("[data-wo-act]"):null;
+  if(actBtn&&$("wo").contains(actBtn)){ e.preventDefault(); runWoAct(actBtn.getAttribute("data-wo-act")); return; }
+  var clear=e.target&&e.target.closest?e.target.closest("#clearSkim"):null;
+  if(clear){ e.preventDefault(); clearDeskSkim(); return; }
+  var readyChip=e.target&&e.target.closest?e.target.closest(".ready-chip[data-ready-slug]"):null;
+  if(readyChip&&!readyChip.classList.contains("zero")){
+    e.preventDefault(); e.stopPropagation();
+    var rs=readyChip.getAttribute("data-ready-slug")||"all";
+    if(TRAY_F===rs&&STATUS_F==="backlog"){ setTrayFilter("all",{keepStatus:false}); setStatusFilter(""); }
+    else { if(rs!=="all") setTrayFilter(rs,{keepStatus:true}); else setTrayFilter("all",{keepStatus:true});
+      setStatusFilter("backlog"); }
+    return;}
+  var pileEl=e.target&&e.target.closest?e.target.closest(".pile[data-status]"):null;
+  if(pileEl){
+    e.preventDefault(); e.stopPropagation();
+    var hoodForPile=pileEl.closest(".hood[data-slug]");
+    var ps=(hoodForPile&&hoodForPile.getAttribute("data-slug"))||"all";
+    var pst=pileEl.getAttribute("data-status")||"";
+    if(ps&&ps!=="all") setTrayFilter(ps,{keepStatus:true});
+    setStatusFilter(STATUS_F===pst&&TRAY_F===ps?"":pst);
+    return;}
+  var scopeBtn=e.target&&e.target.closest?e.target.closest("button.hood-scope"):null;
+  if(scopeBtn){
+    e.preventDefault();
+    var slug=scopeBtn.getAttribute("data-slug")||"all";
+    if(slug==="all") setTrayFilter("all");
+    else setTrayFilter(TRAY_F===slug?"all":slug);
+    return;}
+  var hood=e.target&&e.target.closest?e.target.closest(".hood[data-slug]"):null;
+  if(hood&&!(e.target.closest&&e.target.closest("a"))){
+    var hs=hood.getAttribute("data-slug")||"all";
+    if(hs==="all") setTrayFilter("all");
+    else setTrayFilter(TRAY_F===hs?"all":hs);
+    return;}
   if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
-  var a=e.target&&e.target.closest?e.target.closest('a[href^="/admin/tasks/"]'):null;
-  if(!a)return;
-  if(a.closest("#wo"))return; /* the full-record link is the escape hatch */
-  var id=a.getAttribute("href").slice("/admin/tasks/".length).split("?")[0];
-  if(!id)return;
-  e.preventDefault(); openWO(decodeURIComponent(id));});
+  var a=e.target&&e.target.closest?e.target.closest('a[href^="/admin/tasks/"], a[href*="/admin/desk?open="]'):null;
+  if(a){
+    if(a.closest("#woFoot"))return; /* the full-record link is the escape hatch */
+    var href=a.getAttribute("href")||"";
+    var aid="";
+    if(href.indexOf("/admin/desk?open=")>=0){
+      try{ aid=new URL(href,location.origin).searchParams.get("open")||""; }
+      catch(_){ aid=""; }
+    } else {
+      aid=href.slice("/admin/tasks/".length).split("?")[0];
+    }
+    if(!aid)return;
+    e.preventDefault(); openWO(decodeURIComponent(aid)); return;}
+  /* Whole IN-TRAY slip → drawer (title is the big click target). */
+  var form=e.target&&e.target.closest?e.target.closest(".form[data-id]"):null;
+  if(form){
+    var fid=form.getAttribute("data-id")||"";
+    if(fid){ e.preventDefault(); openWO(fid); }
+  }});
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeWO();});
-$("trayFilter").addEventListener("change",function(){
-  TRAY_F=this.value||"all";
+/* Office / deep-link: ?open=<id> drawer; ?cabinet=&status= skim (wl-186). */
+(function bootOpenFromQuery(){
+  try{
+    var id=(deskQuery().get("open")||"");
+    if(id) openWO(id);
+  }catch(err){}
+})();
+function clearDeskSkim(){
+  TRAY_F="all"; STATUS_F=""; STATUS_SKIM=null; STATUS_SKIM_KEY="";
+  localStorage.setItem("wl_desk_tray_filter","all");
+  syncDeskQuery(); render();
+}
+function setTrayFilter(v, opts){
+  opts=opts||{};
+  TRAY_F=v||"all";
   localStorage.setItem("wl_desk_tray_filter",TRAY_F);
-  this.blur(); /* release focus so the next poll may rebuild the options */
-  render();});
-/* wl-168: station click → classic Board filtered to that status (escape hatch) */
+  /* Default: cabinet toggle keeps STATUS_F (Office inbound film + pile drills).
+     Pass clearStatus:true to drop the station filter. */
+  if(opts.clearStatus) STATUS_F="";
+  STATUS_SKIM=null; STATUS_SKIM_KEY="";
+  syncDeskQuery(); render();
+}
+function setStatusFilter(st){
+  var next=st||"";
+  if(next&&!STATUS_LABEL[next]) next="";
+  STATUS_F=next;
+  STATUS_SKIM=null; STATUS_SKIM_KEY="";
+  syncDeskQuery(); render();
+}
+/* wl-186: station click filters Desk D0 (Board remains via ledger "board" link). */
 document.querySelectorAll(".pl-station").forEach(function(btn){
   btn.addEventListener("click",function(){
     var st=btn.getAttribute("data-status")||"";
     if(!st)return;
-    var base=(TRAY_F&&TRAY_F!=="all")?("/admin/tickets/"+encodeURIComponent(TRAY_F)):"/admin/tickets/all";
-    window.location.href=base+"?status="+encodeURIComponent(st);
+    setStatusFilter(STATUS_F===st?"":st);
   });});
+/* Pin room to real visible viewport (Simple Browser / embedded webviews). */
+(function pinRoomShell(){
+  function apply(){
+    var h=Math.round((window.visualViewport&&visualViewport.height)||innerHeight);
+    if(!h) return;
+    document.documentElement.style.height=h+"px";
+    document.body.style.height=h+"px";
+  }
+  apply();
+  window.addEventListener("resize",apply);
+  if(window.visualViewport) visualViewport.addEventListener("resize",apply);
+})();
 </script>
 """
 
@@ -8299,19 +8994,18 @@ document.querySelectorAll(".pl-station").forEach(function(btn){
 @router.get("/admin/desk", response_class=HTMLResponse)
 def admin_desk() -> str:
     """The work-order desk as a live model (wl-132): the room you walk into.
-    Self-contained page polling /api/scene; the ticket verbs stay on the
-    Board/Table/ticket pages, one click away. Mode-aware branding (wl-134)
-    and mode-aware directory doors (pc-37 case #4)."""
-    # Third naming amendment (pc-39, ratified 2026-07-14): the room name
-    # leads alone; suite + engine share one quiet subtitle; the epithet
-    # sentence retired to the room guide. Standalone keeps the engine brand,
-    # no suite line.
+    Self-contained page polling /api/scene; founder gate clears live in the
+    drawer; Board/Table/Report remain D1 power benches. Mode-aware branding
+    (wl-134) and mode-aware directory doors (pc-37 case #4)."""
+    # Sixth naming amendment: city D0 mast is "[Folder] Desk" (Office parity).
+    # Tab <title> keeps ProtocolCity — Desk · Tickets. Standalone keeps engine brand.
     if _BRAND_MODE == "city":
-        h1 = "<span class='fn'>TICKET DESK</span> · TICKETS"
+        folder = _esc(_city_folder_name())
+        h1 = f"<span class='folder'>{folder}</span><span class='fn'>Desk</span>"
         epithet = "ProtocolCity · powered by WorkLane"
         doors = (
-            f"<a href='{_esc(_CITYHALL_URL)}'>City Hall — Projects</a>"
-            f"<a href='{_esc(_WORKFORCE_URL)}'>Dispatch — Workers</a>"
+            f"<a href='{_esc(_CITYHALL_URL)}'>Office</a>"
+            f"<a href='{_esc(_WORKFORCE_URL)}'>Roster</a>"
         )
     else:
         h1 = "WORKLANE — <span class='fn'>TICKETS</span>"
@@ -8321,35 +9015,43 @@ def admin_desk() -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(_BRAND_NAME)}</title>
 <style>{_DESK_SCENE_CSS}</style></head><body>
-<div class="sky" id="sky" aria-hidden="true">
-  <div class="celestial sun" id="celestial"></div>
-</div>
 <header class="nameplate">
-  <svg class="kiosk" viewBox="-38 -60 76 62" aria-hidden="true">
-    <!-- wl-165 city DNA: the plat's kiosk (CITY_DNA sec.3), ink line-art;
-         the awning keeps civic green as the desk's one accent. On the plat,
-         papers fly INTO this kiosk — this room is its interior. -->
-    <rect x="-30" y="-24" width="60" height="24" fill="none" stroke="var(--ink)"/>
-    <rect x="-34" y="-29" width="68" height="5" fill="none" stroke="var(--ink)" stroke-width=".8"/>
-    <line x1="-30" y1="-56" x2="-30" y2="-29" stroke="var(--ink)" stroke-width="2"/>
-    <line x1="30" y1="-56" x2="30" y2="-29" stroke="var(--ink)" stroke-width="2"/>
-    <path d="M-36 -56 h72 l-5 11 h-62 z" fill="#3d7a6a" stroke="var(--ink)" stroke-width=".8"/>
-    <line x1="-16" y1="-56" x2="-17.5" y2="-45" stroke="#f3ecdd" stroke-width="4"/>
-    <line x1="0" y1="-56" x2="0" y2="-45" stroke="#f3ecdd" stroke-width="4"/>
-    <line x1="16" y1="-56" x2="17.5" y2="-45" stroke="#f3ecdd" stroke-width="4"/>
-    <rect x="-20" y="-33" width="13" height="4" fill="#fbf6ea" stroke="var(--ink)" stroke-width=".5"/>
-    <circle cx="14" cy="-32" r="3" fill="#e9c46a"/>
-  </svg>
-  <h1>{h1}</h1>
-  <span class="epithet">{_esc(epithet)}</span>
-  <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
+  <div class="chrome-mast">
+    <svg class="mast-stamp" viewBox="0 0 48 40" aria-hidden="true">
+      <!-- CITY_DNA §3 — Desk mast mark: rubber stamp on pad (paper room) -->
+      <ellipse cx="24" cy="34" rx="18" ry="4.5" fill="#e2d9c2" stroke="var(--ink)" stroke-width="1.2"/>
+      <rect x="16" y="4" width="16" height="8" rx="1.5" fill="#3d7a6a" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="18" y="12" width="12" height="6" fill="#5a4e38" stroke="var(--ink)" stroke-width="1.1"/>
+      <rect x="14" y="18" width="20" height="10" rx="1" fill="#a33327" stroke="var(--ink)" stroke-width="1.1"/>
+      <line x1="17" y1="22" x2="31" y2="22" stroke="#fbf6ea" stroke-width="1.2" opacity=".7"/>
+      <line x1="17" y1="25" x2="28" y2="25" stroke="#fbf6ea" stroke-width="1.2" opacity=".55"/>
+    </svg>
+    <div class="chrome-title">
+      <h1>{h1}</h1>
+      <span class="epithet">{_esc(epithet)}</span>
+    </div>
+  </div>
+  <div class="chrome-search">
+    <div class="searchlight" id="searchlight">
+      <input type="search" id="searchField" placeholder="find tickets…"
+             autocomplete="off" spellcheck="false" enterkeyhint="search"
+             aria-label="find tickets" aria-controls="searchResults"
+             aria-autocomplete="list" aria-expanded="false" role="combobox">
+      <div class="search-results tucked" id="searchResults" role="listbox" aria-label="search results"></div>
+    </div>
+  </div>
+  <div class="chrome-right">
+    <div class="chrome-ops badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
+    <a class="settings-gear" href="/admin/settings" title="Settings — projects, prefixes, numbering, service" aria-label="Settings">&#9881;</a>
+    <div class="suite-doors">{doors}</div>
+  </div>
 </header>
 <!-- wl-168: the paper line — desk counter between nameplate and the three columns;
      FILED → CLAIMED → SIGN-OFF DUE → SIGNED, live counts, click opens Board. -->
 <div class="paper-line" id="paperLine" aria-label="the paper line · work-order stations">
   <div class="pl-rail">
     <button type="button" class="pl-station" id="plFiled" data-status="backlog"
-      title="open Board · filed (backlog)">
+      title="Skim filed (backlog) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
           <rect x="10" y="18" width="28" height="12" fill="#fbf6ea"/>
@@ -8364,7 +9066,7 @@ def admin_desk() -> str:
     </button>
     <div class="pl-arrow" aria-hidden="true">→</div>
     <button type="button" class="pl-station" id="plClaimed" data-status="in_progress"
-      title="open Board · claimed (in progress)">
+      title="Skim claimed (in progress) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
           <rect x="8" y="8" width="22" height="20" fill="#fbf6ea" transform="rotate(-8 19 18)"/>
@@ -8382,7 +9084,7 @@ def admin_desk() -> str:
     </button>
     <div class="pl-arrow" aria-hidden="true">→</div>
     <button type="button" class="pl-station" id="plSignoff" data-status="in_review"
-      title="open Board · sign-off due (in review)">
+      title="Skim sign-off due (in review) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
           <!-- spike -->
@@ -8398,7 +9100,7 @@ def admin_desk() -> str:
     </button>
     <div class="pl-arrow" aria-hidden="true">→</div>
     <button type="button" class="pl-station" id="plSigned" data-status="done"
-      title="open Board · signed (done)">
+      title="Skim signed (done) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
           <rect x="6" y="10" width="20" height="16" fill="#fbf6ea"/>
@@ -8420,8 +9122,8 @@ def admin_desk() -> str:
 <main class="surface">
   <div>
     <div class="tray"><div class="tray-head">
-      <h2>In-tray · needs you (<span id="inCount">0</span>)</h2>
-      <select id="trayFilter" title="Narrow both trays to one store"></select></div>
+      <h2 id="inTrayTitle">In-tray · needs you (<span id="inCount">0</span>)</h2>
+    </div>
       <div id="decisionsStack"><div class="empty-note">Waiting for the morning filing…</div></div>
     </div>
     <div class="tray"><h2>Hold bin · quiet claims (<span id="holdCount">0</span>)</h2>
@@ -8429,7 +9131,11 @@ def admin_desk() -> str:
     </div>
   </div>
   <div>
-    <div class="blotter"><h2>Neighborhood ledgers · open work</h2>
+    <div class="blotter">
+      <div class="blotter-head">
+        <h2>Neighborhood ledgers · open work</h2>
+        <div id="blotterScope"></div>
+      </div>
       <div id="hoodList"><div class="empty-note">Waiting for the morning filing…</div></div>
     </div>
   </div>
@@ -8445,12 +9151,11 @@ def admin_desk() -> str:
   </div>
 </main>
 <footer class="bar">
-  <div>The desk owns the ticket verbs —
+  <div>Founder clears live in the drawer · filing &amp; claiming stay on
     <a href="/admin/tickets/all">board (power)</a>
-    <a href="/admin/overview">report sheet</a>
+    <a href="/admin/overview">Overview</a>
     <a href="/admin/settings">Settings</a>
     <a href="/admin/docs/desk">How to read this room</a></div>
-  <div>{doors}</div>
 </footer>
 <div id="scrim" onclick="closeWO()"></div>
 <aside id="wo" aria-label="work order">
@@ -8592,86 +9297,106 @@ _REPORT_CSS = """
   font-display:swap; src:url("/static/fonts/ibm-plex-sans-700.woff2") format("woff2"); }
 @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400;
   font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
+/* Suite daylight sheet (pc-162 / Desk Home) — Overview is D1 furniture of Desk,
+   not a grey pre-theme bench. Georgia body; Plex for dense meters. */
 :root {
-  --desk:#e9e7e2; --paper:#fdfdfb; --line:#d7d5cf; --rule:#9fb6d9;
-  --ink:#1f2328; --dim:#6d7480; --blue:#1c4f9c; --stamp:#c0392b;
-  --ok:#1e7a45; --warn:#a8681e; --pink:#fbe9ea; --pinkline:#e2b6ba;
+  --page:#faf6ec; --paper:#fffdf8; --paper-top:#efe8d5; --line:#c4b8a4;
+  --ink:#2a241c; --dim:#6b6154; --blue:#1c4f9c; --stamp:#c0392b;
+  --verd:#3d7a6a; --ok:#2e7d4f; --warn:#a8681e; --fire:#a33327;
+  --rule:#c9c2b0; --pink:#fbe9ea; --pinkline:#e2b6ba;
 }
 * { box-sizing:border-box; margin:0; }
 html,body { height:100%; }
-body { background:var(--desk); color:var(--ink);
-  font:14px/1.5 "IBM Plex Sans",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
-  background-image:linear-gradient(180deg,#dedcd6 0,var(--desk) 220px);
+body { background:var(--page); color:var(--ink);
+  font:15px/1.45 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   display:flex; flex-direction:column; }
-a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
+a { color:var(--verd); text-decoration:none; } a:hover { color:var(--ink); text-decoration:underline; }
 .dim { color:var(--dim); } .ok { color:var(--ok); } .warn { color:var(--warn); }
-.mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
-header.nameplate { background:var(--paper); border-bottom:1px solid var(--line);
-  border-top:6px solid var(--stamp); box-shadow:0 2px 8px #0002;
-  padding:14px 22px 12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
-h1 { font-size:19px; letter-spacing:.14em; font-weight:700; }
-h1 .fn { color:var(--stamp); }
-.epithet { color:var(--dim); font-size:13px; }
-.badges { margin-left:auto; display:flex; gap:12px; align-items:baseline; font-size:12px;
-  color:var(--dim); }
+.mono { font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:13px; }
+header.nameplate { background:linear-gradient(180deg,var(--paper-top),var(--paper));
+  border-bottom:1px solid var(--line); box-shadow:0 2px 8px #2a241c12;
+  padding:12px 22px 11px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+h1 { font-size:18px; letter-spacing:.06em; font-weight:700; color:var(--ink); }
+h1 .fn { color:var(--verd); letter-spacing:.12em; }
+.epithet { color:var(--dim); font-size:12.5px; }
+.badges { margin-left:auto; display:flex; gap:12px; align-items:center; font-size:12px;
+  color:var(--dim); font-family:"IBM Plex Sans",system-ui,sans-serif; }
 #liveChip { border:1.5px solid var(--ok); color:var(--ok); border-radius:3px;
   font-weight:700; font-size:10px; letter-spacing:.16em; padding:2px 8px;
   text-transform:uppercase; }
 #liveChip.hold { border-color:var(--warn); color:var(--warn); }
-.room-back { font-size:12px; color:var(--blue); border:1px solid var(--line);
-  border-radius:3px; padding:3px 10px; white-space:nowrap; background:var(--paper); }
-.room-back:hover { border-color:var(--blue); text-decoration:none; }
-main.sheet { flex:1; overflow:auto; padding:20px 22px 26px; max-width:1180px;
+.room-back { font-size:12px; color:var(--ink); border:1px solid var(--line);
+  border-radius:4px; padding:4px 11px; white-space:nowrap; background:var(--paper);
+  font-family:"IBM Plex Sans",system-ui,sans-serif; font-weight:600; }
+.room-back:hover { border-color:var(--verd); color:var(--verd); text-decoration:none; }
+.kpis { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 6px; }
+.kpi { flex:1 1 120px; min-width:110px; background:var(--paper);
+  border:1px solid var(--line); border-radius:4px; padding:10px 12px;
+  box-shadow:0 1px 3px #2a241c0a; }
+.kpi .k { font:700 9px/1 "IBM Plex Sans",system-ui,sans-serif; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--dim); }
+.kpi .v { font:700 20px/1.2 Georgia,serif; margin-top:4px; color:var(--ink); }
+.kpi .v.hot { color:var(--fire); } .kpi .v.ok { color:var(--ok); }
+.kpi .s { font-size:11.5px; color:var(--dim); margin-top:2px; }
+main.sheet { flex:1; overflow:auto; padding:18px 22px 28px; max-width:1180px;
   width:100%; margin:0 auto; }
-h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppercase;
-  margin:22px 0 10px; font-weight:600; }
+h2 { font:700 10px/1 "IBM Plex Sans",system-ui,sans-serif; letter-spacing:.18em;
+  color:var(--dim); text-transform:uppercase; margin:20px 0 9px; }
 h2:first-child { margin-top:0; }
-.card { background:var(--paper); border:1px solid var(--line);
-  box-shadow:0 2px 6px #0002; padding:14px 16px; }
+.card { background:var(--paper); border:1px solid var(--line); border-radius:4px;
+  box-shadow:0 1px 4px #2a241c0a; padding:14px 16px; }
 .verdicts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  gap:12px; }
-.verdict { background:var(--paper); border:1px solid var(--line);
-  box-shadow:0 2px 5px #0002; padding:10px 14px; position:relative; overflow:hidden; }
+  gap:10px; }
+.verdict { background:var(--paper); border:1px solid var(--line); border-radius:4px;
+  box-shadow:0 1px 3px #2a241c0a; padding:10px 14px; position:relative; overflow:hidden; }
 .verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
   background:var(--rule); }
-.verdict.aging::before { background:var(--stamp); }
+.verdict.aging::before { background:var(--fire); }
 .verdict.growing::before { background:var(--warn); }
+.verdict.keeping::before, .verdict.steady::before { background:var(--ok); }
 .verdict .nm { font-weight:700; font-size:13px; }
-.verdict .nm a { color:var(--ink); } .verdict .nm a:hover { color:var(--blue); }
-.verdict .vw { font-size:16px; font-weight:700; margin-top:2px; }
-.verdict.aging .vw { color:var(--stamp); } .verdict.growing .vw { color:var(--warn); }
+.verdict .nm a { color:var(--ink); } .verdict .nm a:hover { color:var(--verd); }
+.verdict .vw { font-size:16px; font-weight:700; margin-top:2px;
+  font-family:"IBM Plex Sans",system-ui,sans-serif; letter-spacing:.04em; }
+.verdict.aging .vw { color:var(--fire); } .verdict.growing .vw { color:var(--warn); }
 .verdict.keeping .vw, .verdict.steady .vw { color:var(--ok); }
-.verdict .meta { font-size:11.5px; color:var(--dim); margin-top:2px; }
+.verdict .meta { font-size:11.5px; color:var(--dim); margin-top:3px; }
 .rows { display:grid; grid-template-columns:130px minmax(0,1fr) 90px;
-  gap:6px 12px; align-items:center; font-size:13px; }
+  gap:6px 12px; align-items:center; font-size:13px;
+  font-family:"IBM Plex Sans",system-ui,sans-serif; }
 .rows .lbl { color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rows .num { color:var(--dim); text-align:right; font-variant-numeric:tabular-nums; }
 /* chart bars are .meter, never .bar — footer.bar wears that class (wl-163) */
 .meter { display:block; height:9px; border-radius:2px; background:var(--rule); }
-.meter.g { background:#bfd8c4; }
+.meter.g { background:#a8d4b8; }
 .meter + .meter { margin-top:2px; }
 .split { display:flex; height:22px; border-radius:3px; overflow:hidden;
   border:1px solid var(--line); }
-.split .you { background:var(--stamp); } .split .rdy { background:#bfd8c4; }
+.split .you { background:var(--fire); } .split .rdy { background:#a8d4b8; }
 .split .oth { background:var(--rule); }
-.legend { display:flex; gap:18px; font-size:12.5px; margin-top:8px; flex-wrap:wrap; }
-.li { display:flex; justify-content:space-between; gap:10px; padding:6px 2px;
+.legend { display:flex; gap:18px; font-size:12.5px; margin-top:8px; flex-wrap:wrap;
+  font-family:"IBM Plex Sans",system-ui,sans-serif; }
+.li { display:flex; justify-content:space-between; gap:10px; padding:7px 2px;
   border-bottom:1px dotted var(--line); font-size:13px; }
 .li:last-child { border-bottom:0; }
-.li .age { color:var(--warn); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.li .age { color:var(--warn); white-space:nowrap; font-variant-numeric:tabular-nums;
+  font-family:"IBM Plex Sans",system-ui,sans-serif; }
 .tag { border:1px solid var(--line); border-radius:3px; padding:0 6px; font-size:11px;
-  color:var(--dim); background:#fff; }
+  color:var(--dim); background:var(--page);
+  font-family:"IBM Plex Sans",system-ui,sans-serif; }
 .note { font-size:12px; color:var(--dim); margin-top:8px; }
 .stamp-count { display:inline-block; border:2.5px solid var(--stamp); color:var(--stamp);
   border-radius:4px; font-weight:800; padding:6px 12px; transform:rotate(-3deg);
   font-size:15px; letter-spacing:.06em;
-  mask-image:radial-gradient(circle at 35% 45%, #000 90%, #0007 100%); }
+  font-family:"IBM Plex Sans",system-ui,sans-serif; }
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
 @media (max-width:900px){ .grid2 { grid-template-columns:1fr; } }
 footer.bar { border-top:1px solid var(--line); background:var(--paper);
-  padding:8px 22px; display:flex; justify-content:space-between; gap:14px;
-  flex-wrap:wrap; font-size:12px; color:var(--dim); }
-footer.bar a { margin-right:14px; }
+  padding:9px 22px; display:flex; justify-content:space-between; gap:14px;
+  flex-wrap:wrap; font-size:12px; color:var(--dim);
+  font-family:"IBM Plex Sans",system-ui,sans-serif; }
+footer.bar a { margin-right:14px; color:var(--verd); }
+footer.bar a.quiet { color:var(--dim); }
 """
 
 # setInterval only — never requestAnimationFrame (city constraint).
@@ -8683,36 +9408,54 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function $(id){return document.getElementById(id);}
 function pct(n,d){return d>0?Math.max(n>0?2:0,Math.round(n/d*100)):0;}
+function deskOpen(id){return "/admin/desk?open="+encodeURIComponent(id);}
+function deskCab(slug){return "/admin/desk?cabinet="+encodeURIComponent(slug);}
 function render(){
   var d=R; if(!d)return;
+  var b=d.blocker||{};
+  /* City pulse — strategic facts at a glance (wl-156). */
+  if($("kpiOpen")) $("kpiOpen").textContent=String(d.open_total||0);
+  if($("kpiYou")){
+    $("kpiYou").textContent=String(b.waiting_on_you||0);
+    $("kpiYou").className="v"+((b.waiting_on_you|0)>0?" hot":"");
+  }
+  if($("kpiReady")){
+    $("kpiReady").textContent=String(b.worker_ready||0);
+    $("kpiReady").className="v"+((b.worker_ready|0)>0?" ok":"");
+  }
+  if($("kpiWin")) $("kpiWin").textContent=(d.window_days||7)+"d";
+  if($("w1")) $("w1").textContent=String(d.window_days||7);
+
   var vz="";
   (d.stores||[]).forEach(function(s){
     var cls=s.verdict==="keeping up"?"keeping":esc(s.verdict);
     var extra=s.verdict==="aging"
       ? esc(s.over_aging)+" orders past "+esc(d.aging_days)+"d"
       : "filed "+esc(s.filed)+" \\u00b7 signed "+esc(s.signed);
-    vz+='<div class="verdict '+cls+'"><div class="nm"><a href="/admin/tickets/'+
-      esc(s.slug)+'">'+esc(s.display||s.slug)+'</a></div>'+
+    /* Store → living Desk skim (?cabinet=), never Board table. */
+    vz+='<div class="verdict '+cls+'"><div class="nm"><a href="'+deskCab(s.slug)+
+      '" title="Open Desk skim for this cabinet">'+esc(s.display||s.slug)+'</a></div>'+
       '<div class="vw">'+esc(s.verdict)+'</div>'+
-      '<div class="meta">'+extra+' \\u00b7 net '+(s.net>=0?"+":"")+esc(s.net)+'</div></div>';});
+      '<div class="meta">'+extra+' \\u00b7 net '+(s.net>=0?"+":"")+esc(s.net)+
+      ' \\u00b7 '+esc(s.open)+' open</div></div>';});
   $("verdictStrip").innerHTML=vz||'<div class="note">no ledgers with activity</div>';
 
   var maxF=1; (d.stores||[]).forEach(function(s){maxF=Math.max(maxF,s.filed,s.signed);});
   var fz="";
   (d.stores||[]).forEach(function(s){
-    fz+='<span class="lbl">'+esc(s.display||s.slug)+'</span>'+
+    fz+='<span class="lbl"><a href="'+deskCab(s.slug)+'">'+esc(s.display||s.slug)+'</a></span>'+
       '<span><span class="meter" style="width:'+pct(s.filed,maxF)+'%"></span>'+
       '<span class="meter g" style="width:'+pct(s.signed,maxF)+'%"></span></span>'+
       '<span class="num">'+esc(s.filed)+' / '+esc(s.signed)+'</span>';});
   $("flowRows").innerHTML=fz;
 
-  var b=d.blocker||{}, tot=Math.max(1,d.open_total||0);
+  var tot=Math.max(1,d.open_total||0);
   $("splitBar").innerHTML=
     '<div class="you" style="width:'+pct(b.waiting_on_you,tot)+'%"></div>'+
     '<div class="rdy" style="width:'+pct(b.worker_ready,tot)+'%"></div>'+
     '<div class="oth" style="flex:1"></div>';
   $("splitLegend").innerHTML=
-    '<span><b style="color:var(--stamp)">'+esc(b.waiting_on_you)+' waiting on you</b></span>'+
+    '<span><b style="color:var(--fire)">'+esc(b.waiting_on_you)+' waiting on you</b></span>'+
     '<span><b style="color:var(--ok)">'+esc(b.worker_ready)+' worker-ready</b></span>'+
     '<span class="dim">'+esc(b.other)+' in flight / gated</span>'+
     '<span class="dim">'+esc(d.open_total)+' open in all</span>';
@@ -8727,13 +9470,13 @@ function render(){
       '<span class="num">'+esc(n)+'</span>';});
   $("agingRows").innerHTML=az;
   var oz=(d.oldest||[]).map(function(e){
-    return '<a href="/admin/tasks/'+esc(e.id)+'" class="mono">'+esc(e.id)+'</a> ('+
+    return '<a href="'+deskOpen(e.id)+'" class="mono">'+esc(e.id)+'</a> ('+
       esc(Math.round(e.age_days))+'d)';}).join(" \\u00b7 ");
   $("agingNote").innerHTML=oz?("oldest on the rack: "+oz):"the rack is fresh";
 
   var uz="";
   (d.urgent_unclaimed||[]).forEach(function(e){
-    uz+='<div class="li"><span><a href="/admin/tasks/'+esc(e.id)+'" class="mono">'+
+    uz+='<div class="li"><span><a href="'+deskOpen(e.id)+'" class="mono">'+
       esc(e.id)+'</a> <span class="tag">'+esc(e.store)+'</span> '+
       esc(String(e.title).slice(0,64))+'</span>'+
       '<span class="age">P'+esc(e.priority)+' \\u00b7 '+esc(Math.round(e.age_days))+'d</span></div>';});
@@ -8742,12 +9485,13 @@ function render(){
   var p=d.prune||{count:0,items:[]};
   $("pruneStamp").textContent=p.count+" TO PRUNE";
   var pz=(p.items||[]).slice(0,5).map(function(e){
-    return '<a href="/admin/tasks/'+esc(e.id)+'" class="mono">'+esc(e.id)+'</a> ('+
+    return '<a href="'+deskOpen(e.id)+'" class="mono">'+esc(e.id)+'</a> ('+
       esc(Math.round(e.quiet_days))+'d quiet)';}).join(" \\u00b7 ");
   $("pruneNote").innerHTML=p.count
     ? "quiet past "+esc(Math.round(d.prune_quiet_hours/24))+"d: "+pz+
       ' \\u2014 cancel, demote, or re-label for a lane'
-    : "nothing is being carried silently";}
+    : "nothing is being carried silently";
+}
 function poll(){
   fetch("/api/report",{cache:"no-store"}).then(function(r){
     if(!r.ok)throw 0; return r.json();
@@ -8763,33 +9507,73 @@ setInterval(function(){var n=new Date();
 """
 
 
+# Non-f-string: empty {{}} would break an f-string (port-return room-back).
+_ROOM_BACK_JS = """
+<script>
+/* Port/path ownership: Overview is Desk D1 (:8799). If Office sent us
+   (?from=office&return=…), room-back re-enters Office. Browser Back also
+   works when history has the foyer. Never invent a fourth suite peer. */
+(function(){
+  try {
+    var p = new URLSearchParams(location.search||"");
+    var back = document.getElementById("roomBack");
+    if(!back) return;
+    var ret = p.get("return") || "";
+    var from = (p.get("from")||"").toLowerCase();
+    var officeOk = /^https?:\\/\\/127\\.0\\.0\\.1:8796\\/?$/.test(ret)
+      || /^https?:\\/\\/localhost:8796\\/?$/.test(ret);
+    if(from==="office" && ret && officeOk){
+      back.href = ret; back.textContent = "\\u2190 Office";
+    } else if(document.referrer && /:8796(?:\\/|$)/.test(document.referrer)){
+      back.href = "http://127.0.0.1:8796/"; back.textContent = "\\u2190 Office";
+    }
+  } catch(e){}
+})();
+</script>
+"""
+
+
 def _render_report_page() -> str:
-    """The desk's report in the paper voice (wl-156 ruling 4): a bench of the
-    Ticket Desk, so the desk palette, one sheet, no scene furniture."""
+    """Desk D1 Overview — strategic facts sheet (wl-156 / pc-183).
+    Suite daylight chrome (pc-162); deep links land on the living Desk room
+    (?cabinet= / ?open=), never the Board table as primary."""
     if _BRAND_MODE == "city":
-        h1 = "<span class='fn'>THE REPORT</span> · OVERVIEW"
-        epithet = "ProtocolCity · the desk's strategic view"
+        h1 = "OVERVIEW <span class='fn'>· Desk</span>"
+        epithet = "ProtocolCity · powered by WorkLane · strategic facts"
     else:
-        h1 = "WORKLANE — <span class='fn'>THE REPORT</span>"
-        epithet = "the strategic view"
+        h1 = "OVERVIEW <span class='fn'>· WorkLane</span>"
+        epithet = "the strategic view of your work orders"
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Overview · {_esc(_BRAND_NAME)}</title>
 <style>{_REPORT_CSS}</style></head><body>
 <header class="nameplate">
-  <a class="room-back" href="/admin/desk">← Ticket Desk</a>
-  <h1>{h1}</h1>
-  <span class="epithet">{_esc(epithet)}</span>
+  <a class="room-back" id="roomBack" href="/admin/desk">← Desk</a>
+  <div>
+    <h1>{h1}</h1>
+    <div class="epithet">{_esc(epithet)}</div>
+  </div>
   <div class="badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
 </header>
+{_ROOM_BACK_JS}
 <main class="sheet">
+  <div class="kpis" aria-label="City pulse">
+    <div class="kpi"><div class="k">Open</div><div class="v" id="kpiOpen">—</div>
+      <div class="s">across all ledgers</div></div>
+    <div class="kpi"><div class="k">Waiting on you</div><div class="v" id="kpiYou">—</div>
+      <div class="s">founder-gated</div></div>
+    <div class="kpi"><div class="k">Worker-ready</div><div class="v" id="kpiReady">—</div>
+      <div class="s">lanes can claim</div></div>
+    <div class="kpi"><div class="k">Window</div><div class="v" id="kpiWin">—</div>
+      <div class="s">filed vs signed</div></div>
+  </div>
   <h2>Verdicts · one word per ledger</h2>
   <div class="verdicts" id="verdictStrip"><div class="note">pulling the morning figures…</div></div>
   <div class="grid2" style="margin-top:6px">
     <div>
       <h2>Flow · filed vs signed off, last <span id="w1">7</span> days</h2>
       <div class="card"><div class="rows" id="flowRows"></div>
-        <div class="note">blue = filed in · green = signed off · the gap is backlog growth</div></div>
+        <div class="note">top bar = filed in · green = signed off · the gap is backlog growth</div></div>
       <h2>Who's the blocker</h2>
       <div class="card"><div class="split" id="splitBar"></div>
         <div class="legend" id="splitLegend"></div></div>
@@ -8807,12 +9591,12 @@ def _render_report_page() -> str:
   </div>
 </main>
 <footer class="bar">
-  <div>A bench of the Ticket Desk —
-    <a href="/admin/desk">back to the room</a>
-    <a href="/admin/tickets/all">board (power)</a>
+  <div>Desk Overview —
+    <a href="/admin/desk">← back to Desk</a>
     <a href="/admin/settings">Settings</a>
-    <a href="/admin/docs/desk">How to read this room</a></div>
-  <div><span class="dim">records request: <a href="/api/report">/api/report</a></span></div>
+    <a class="quiet" href="/admin/tickets/all">Board (power)</a>
+    <a class="quiet" href="/admin/docs/desk">How to read this room</a></div>
+  <div><span class="dim">facts: <a href="/api/report">/api/report</a></span></div>
 </footer>
 {_REPORT_JS}</body></html>"""
 

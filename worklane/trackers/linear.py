@@ -52,13 +52,16 @@ class LinearTracker(ProjectTracker):
         priority: int = 3,
         labels: Optional[List[str]] = None,
         ext_id: Optional[str] = None,
+        actor: str = "",
     ) -> Task:
         raise NotImplementedError(
             "LinearTracker is a read-only stub. Use the Linear MCP server "
             "for interactive writes, or switch to TRADEOS_TRACKER=sqlite."
         )
 
-    def update_status(self, task_id: str, status: str) -> Optional[Task]:
+    def update_status(
+        self, task_id: str, status: str, actor: str = ""
+    ) -> Optional[Task]:
         raise NotImplementedError(
             "LinearTracker is a read-only stub. Use the Linear MCP server "
             "for interactive writes, or switch to TRADEOS_TRACKER=sqlite."

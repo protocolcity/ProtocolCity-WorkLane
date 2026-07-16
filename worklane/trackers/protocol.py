@@ -138,9 +138,12 @@ class ProjectTracker(Protocol):
         priority: int = 3,
         labels: Optional[List[str]] = None,
         ext_id: Optional[str] = None,
+        actor: str = "",
     ) -> Task: ...
 
-    def update_status(self, task_id: str, status: str) -> Optional[Task]: ...
+    def update_status(
+        self, task_id: str, status: str, actor: str = ""
+    ) -> Optional[Task]: ...
 
     def add_comment(self, task_id: str, body: str, author: str = "") -> TaskComment: ...
 

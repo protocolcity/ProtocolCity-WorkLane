@@ -127,31 +127,46 @@ class OverviewScopeTest(unittest.TestCase):
         for marker in ("decisionsStack", "staleStack", "hoodList",
                        "rubberStamp", "shippedClip"):
             self.assertIn(marker, body)
-        # wl-145: the work-order drawer — tickets open on the same screen,
-        # wired to the existing task + comments APIs
+        # wl-145 + jobs-first: work-order drawer clears founder stamps on-page
         for marker in ('id="wo"', 'id="scrim"', "openWO", "signWO",
-                       "/api/admin/tasks/", "woSignBtn"):
+                       "/api/admin/tasks/", "woSignBtn", "runWoAct",
+                       'data-wo-act="approve"', "Sign verdict", "Release claim"):
             self.assertIn(marker, body)
-        # wl-157: per-store skim chips; ids render bare (no WO pseudo-prefix)
-        self.assertIn('id="trayFilter"', body)
+        # Cabinet skim — ledgers are the nav (tray-corner dropdown retired)
+        self.assertNotIn('id="trayFilter"', body)
         self.assertIn("wl_desk_tray_filter", body)
+        self.assertIn("hood-scope", body)
+        self.assertIn("setTrayFilter", body)
+        self.assertIn("All cabinets", body)
+        self.assertIn("clearSkim", body)
+        self.assertIn("Show all", body)
         self.assertNotIn(">WO '+", body)
-        # wl-165 city DNA: the plat's kiosk fronts the nameplate, outbox
-        # papers wear their worker's sprite chip in the shared identity color
-        for marker in ('class="kiosk"', "spriteChip", "DNA_PALETTE",
-                       "dnaHash"):
+        # Title-first slips + EMBARGO stamp maps kind=embargo
+        self.assertIn("Title-first slips", body)
+        self.assertIn('kind==="embargo"', body)
+        # City DNA sprites; stamp mast (sky/kiosk retired wl-179)
+        for marker in ("spriteChip", "DNA_PALETTE", "dnaHash", "mast-stamp"):
             self.assertIn(marker, body)
-        # wl-170: city page token on the body; paper objects keep plaza;
-        # live sky band (canonical skyColors(hourF); sun/moon via paintSky)
-        for marker in ("skyColors", 'id="sky"', "paintSky", "celestial",
-                       "--desk:#faf6ec", "--paper:#e2d9c2"):
-            self.assertIn(marker, body)
+        self.assertNotIn('id="sky"', body)
+        # [Folder] Desk mast (sixth amendment) when city-branded
+        self.assertIn("class='folder'", body)
+        self.assertIn("class='fn'>Desk</span>", body)
         # wl-168: the paper line — desk-counter stations FILED→CLAIMED→
         # SIGN-OFF DUE→SIGNED with live counts; flyers via setInterval
         for marker in ('id="paperLine"', 'id="plFiled"', 'id="plClaimed"',
                        'id="plSignoff"', 'id="plSigned"', "renderPaperLine",
                        "flyPaper", "recent_transitions", "plFiledN"):
             self.assertIn(marker, body)
+        # wl-186: Office deep-link film stays on Desk D0; outbox/pad stay live
+        for marker in ("bootFiltersFromQuery", "STATUS_F", "syncDeskQuery",
+                       "setStatusFilter", "renderStatusSkim", "statusSkimUrl",
+                       "statusSkimKind", 'searchParams.set("status"',
+                       'searchParams.set("cabinet"'):
+            self.assertIn(marker, body)
+        self.assertNotIn("Outbox paused while skimming", body)
+        self.assertIn("Skim filed (backlog) on this desk", body)
+        self.assertNotIn("open Board · filed (backlog)", body)
+        self.assertIn('id="inTrayTitle"', body)
         self.assertIn("PL_MAX", body)
         self.assertIn("/admin/tickets/", body)
 
@@ -172,7 +187,7 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertEqual(it["product"], "beta")
         self.assertNotEqual(str(it["id"]), str(t.id))  # composite, never bare
         self.assertTrue(str(it["id"]).endswith(f"-{t.id}"), it["id"])
-        self.assertEqual(it["url"], f"/admin/tasks/{it['id']}")
+        self.assertEqual(it["url"], f"/admin/desk?open={it['id']}")
 
     def test_add_project_warns_without_neighborhood_folder(self) -> None:
         # wl-155: founding-path guardrail — slug must match a neighborhood
@@ -329,8 +344,13 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertLessEqual(len(inline_pills), _SCOPE_NAV_MAX_INLINE + 1)
         # Overflowed stores still reachable inside the menu.
         self.assertIn("synth19", r.text)
-        # wl-117 design req 4: utility chrome (settings/theme) still present.
-        self.assertIn("id=\"theme-toggle\"", r.text)
+        # wl-117 design req 4: utility chrome still present. City brand
+        # locks the paper theme (wl-180) so the toggle may be absent; Settings
+        # gear remains either way.
+        self.assertTrue(
+            'id="theme-toggle"' in r.text or "/admin/settings" in r.text,
+            "expected theme toggle (standalone) or settings link (city)",
+        )
         self.assertIn("/admin/settings", r.text)
 
     def test_scope_nav_middle_truncates_long_display_names(self) -> None:

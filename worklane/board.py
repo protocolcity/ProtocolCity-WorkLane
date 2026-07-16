@@ -871,7 +871,7 @@ def _render_task_card(
         f"{ext_html}"
         f"<span class='tb-card-priority'>{priority_badge}</span>"
         "</header>"
-        f"<a class='tb-card-title' href='/admin/tasks/{_esc(t.id)}'>"
+        f"<a class='tb-card-title' href='/admin/desk?open={_esc(t.id)}'>"
         f"{_esc(t.title)}</a>"
         + decision_html
         + gate_html
@@ -1339,7 +1339,7 @@ def _client_js() -> str:
     var v = (form.elements['id'].value || '').trim().replace(/^#/, '');
     if (!v) return false;
     if (/^[A-Za-z]+-\d+$/.test(v)) {
-      window.location.href = '/admin/tasks/' + v;
+      window.location.href = '/admin/desk?open=' + encodeURIComponent(v);
       return false;
     }
     if (!/^\d+$/.test(v)) {
@@ -1348,17 +1348,17 @@ def _client_js() -> str:
     }
     var prefix = form.getAttribute('data-scope-prefix') || '';
     if (prefix) {
-      window.location.href = '/admin/tasks/' + prefix + '-' + v;
+      window.location.href = '/admin/desk?open=' + encodeURIComponent(prefix + '-' + v);
       return false;
     }
     try {
       var resp = await fetch('/api/admin/tasks/resolve?id=' + encodeURIComponent(v));
       var j = await resp.json();
       if (j.ok && j.match) {
-        window.location.href = '/admin/tasks/' + j.match;
+        window.location.href = '/admin/desk?open=' + encodeURIComponent(j.match);
       } else if (j.ok && j.candidates && j.candidates.length && box) {
         box.innerHTML = j.candidates.map(function (c) {
-          return "<a href='/admin/tasks/" + adminBoardEscape(c.id) + "'>" +
+          return "<a href='/admin/desk?open=" + encodeURIComponent(c.id) + "'>" +
             adminBoardEscape(c.id) + ' — ' + adminBoardEscape(c.title) + '</a>';
         }).join('');
         box.hidden = false;
@@ -1389,7 +1389,7 @@ def _client_js() -> str:
       if (t.last_comment_preview) {
         comment = ' — ' + adminBoardEscape((t.last_comment_preview || '').slice(0, 70));
       }
-      return "<a class='tb-strip-item' href='/admin/tasks/" + adminBoardEscape(t.id) + "'"
+      return "<a class='tb-strip-item' href='/admin/desk?open=" + encodeURIComponent(t.id) + "'"
            + " title='" + adminBoardEscape(t.title) + "'>"
            + "<span class='tb-strip-dot'></span>"
            + "<span class='tb-strip-id'>" + idStr + "</span>"

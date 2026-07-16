@@ -283,6 +283,7 @@ class TPHandlers:
             description=description,
             priority=prio,
             labels=list(labels or []),
+            actor=self.author,
         )
         tr.add_comment(
             str(task.id), f"Intake: filed by {self.author}", author=self.author
@@ -314,10 +315,10 @@ class TPHandlers:
         # backlog → in_review → in_progress; in_review → in_progress;
         # already in_progress is idempotent re-claim (reposts marker).
         if task.status == TaskStatus.BACKLOG:
-            tr.update_status(raw_id, TaskStatus.IN_REVIEW)
-            tr.update_status(raw_id, TaskStatus.IN_PROGRESS)
+            tr.update_status(raw_id, TaskStatus.IN_REVIEW, actor=self.author)
+            tr.update_status(raw_id, TaskStatus.IN_PROGRESS, actor=self.author)
         elif task.status == TaskStatus.IN_REVIEW:
-            tr.update_status(raw_id, TaskStatus.IN_PROGRESS)
+            tr.update_status(raw_id, TaskStatus.IN_PROGRESS, actor=self.author)
         elif task.status != TaskStatus.IN_PROGRESS:
             raise ToolError(
                 f"cannot claim from status {task.status!r}; "
@@ -471,7 +472,7 @@ class TPHandlers:
             body = f"Released by {self.author} — returning to backlog"
             comment = tr.add_comment(raw_id, body, author=self.author)
             if task.status != TaskStatus.BACKLOG:
-                tr.update_status(raw_id, TaskStatus.BACKLOG)
+                tr.update_status(raw_id, TaskStatus.BACKLOG, actor=self.author)
 
         fresh = tr.get_task(raw_id)
         return {
@@ -584,7 +585,7 @@ class TPHandlers:
 
         body = f"Canceled: {reason_s}"
         comment = tr.add_comment(raw_id, body, author=self.author)
-        tr.update_status(raw_id, TaskStatus.CANCELED)
+        tr.update_status(raw_id, TaskStatus.CANCELED, actor=self.author)
         fresh = tr.get_task(raw_id)
         return {
             "ok": True,
@@ -617,7 +618,7 @@ class TPHandlers:
         else:
             body = f"Reopened by {self.author} — returning to backlog"
         comment = tr.add_comment(raw_id, body, author=self.author)
-        tr.update_status(raw_id, TaskStatus.BACKLOG)
+        tr.update_status(raw_id, TaskStatus.BACKLOG, actor=self.author)
         fresh = tr.get_task(raw_id)
         return {
             "ok": True,
@@ -646,7 +647,7 @@ class TPHandlers:
             # Idempotent re-reserve: repost marker, stay in_review.
             pass
         elif task.status == TaskStatus.BACKLOG:
-            tr.update_status(raw_id, TaskStatus.IN_REVIEW)
+            tr.update_status(raw_id, TaskStatus.IN_REVIEW, actor=self.author)
         elif task.status == TaskStatus.IN_PROGRESS:
             raise ToolError(
                 f"{self._public_id(slug, raw_id)} is in_progress — "
@@ -698,7 +699,7 @@ class TPHandlers:
             # Already parked — idempotent note only.
             pass
         elif task.status == TaskStatus.IN_PROGRESS:
-            tr.update_status(raw_id, TaskStatus.IN_REVIEW)
+            tr.update_status(raw_id, TaskStatus.IN_REVIEW, actor=self.author)
         else:
             raise ToolError(
                 f"can only park from in_progress/in_review "

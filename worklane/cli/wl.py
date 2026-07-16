@@ -234,10 +234,17 @@ def cmd_comment(args: argparse.Namespace) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
+    body: Dict[str, Any] = {"status": args.new_status}
+    # Scene-feed attribution: sign the transition when an identity is
+    # available (--author / WL_AGENT_ID). Optional — unsigned status moves
+    # keep working; the event's actor is simply left empty.
+    author = _resolve_author(getattr(args, "author", ""))
+    if author:
+        body["author"] = author
     payload = _request(
         "PATCH",
         f"/api/admin/tasks/{urllib.parse.quote(args.id, safe='')}",
-        body={"status": args.new_status},
+        body=body,
     )
     print(f"{payload['task']['id']} -> {payload['task']['status']}")
 
@@ -491,6 +498,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_status = sub.add_parser("status", help="Update task status")
     p_status.add_argument("id")
     p_status.add_argument("new_status", choices=_STATUS_CHOICES)
+    p_status.add_argument("--author", default="",
+                          help="Agent id signing the transition (or WL_AGENT_ID)")
 
     p_label = sub.add_parser("label", help="Add or remove labels")
     p_label.add_argument("id")
