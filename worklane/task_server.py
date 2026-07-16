@@ -439,8 +439,9 @@ def _task_page(
     # wl-128 / pc-160: suite peer doors belong on D0 (/admin/desk) only.
     # Board/ops shell is D1 furniture — never a partial Dispatch link here.
     _workforce_url = ""
-    # City brand locks paper theme; theme toggle is Settings-only (wl-180).
-    _show_theme_toggle = _BRAND_MODE != "city"
+    # Suite dark/light toggle on all brands (Office · Desk · Roster share
+    # protocolcity-theme). Standalone WorkLane keeps the same control.
+    _show_theme_toggle = True
     # wl-184 / pc-177: port numeral + WL badge are anti-pattern #5 on citizen
     # chrome — keep them for standalone WorkLane installs only.
     _show_service_chrome = _BRAND_MODE != "city"
@@ -478,26 +479,26 @@ def _task_page(
   <title>{_BRAND_NAME if _is_landing else f"{_esc(title)} · {_BRAND_NAME}"}</title>
   <style>{_css()}</style>
   <script>
-  /* Theme init (before paint). City brand (pc-160 / wl-180): lock paper/light —
-     theme toggle is not D1 primary chrome. Standalone keeps dark/system. */
+  /* Theme init (before paint). Suite key protocolcity-theme; wl-theme kept
+     in sync for legacy Desk D1 pages. light|dark only (binary toggle). */
   (function() {{
     /* wl-84: key renamed from 'tradeos-theme' — migrate old prefs once. */
     var legacy = localStorage.getItem('tradeos-theme');
-    if (legacy && !localStorage.getItem('wl-theme')) {{
-      localStorage.setItem('wl-theme', legacy);
+    if (legacy && !localStorage.getItem('wl-theme') && !localStorage.getItem('protocolcity-theme')) {{
+      localStorage.setItem('wl-theme', legacy === 'dark' ? 'dark' : 'light');
       localStorage.removeItem('tradeos-theme');
     }}
-    if ({str(_BRAND_MODE == "city").lower()}) {{
-      localStorage.setItem('wl-theme', 'light');
-      document.documentElement.setAttribute('data-theme', 'light');
-      return;
+    var suite = localStorage.getItem('protocolcity-theme');
+    var stored = suite || localStorage.getItem('wl-theme') || 'light';
+    if (stored === 'system') {{
+      stored = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }}
-    var stored = localStorage.getItem('wl-theme') || 'light';
-    function resolve(p) {{
-      if (p === 'system') return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-      return p;
-    }}
-    document.documentElement.setAttribute('data-theme', resolve(stored));
+    if (stored !== 'dark' && stored !== 'light') stored = 'light';
+    try {{
+      localStorage.setItem('protocolcity-theme', stored);
+      localStorage.setItem('wl-theme', stored);
+    }} catch (e) {{}}
+    document.documentElement.setAttribute('data-theme', stored);
   }})();
 
   /* Toast system */
@@ -551,23 +552,37 @@ def _task_page(
     {body}
   </div>
   <script>
-  var _themeIcons = {{ dark: '\\u263D', light: '\\u2600', system: '\\u25D1' }};
+  /* Binary suite toggle — moon means "go dark", sun means "go light". */
   function cycleTheme() {{
-    var order = ['dark', 'light', 'system'];
-    var current = localStorage.getItem('wl-theme') || 'light';
-    var next = order[(order.indexOf(current) + 1) % order.length];
-    localStorage.setItem('wl-theme', next);
-    var resolved = (next === 'system')
-      ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
-      : next;
-    document.documentElement.setAttribute('data-theme', resolved);
+    var cur = localStorage.getItem('protocolcity-theme')
+           || localStorage.getItem('wl-theme') || 'light';
+    if (cur === 'system') {{
+      cur = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }}
+    var next = (cur === 'dark') ? 'light' : 'dark';
+    try {{
+      localStorage.setItem('protocolcity-theme', next);
+      localStorage.setItem('wl-theme', next);
+    }} catch (e) {{}}
+    document.documentElement.setAttribute('data-theme', next);
     var btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = _themeIcons[next] || '\\u263D';
+    if (btn) {{
+      btn.textContent = next === 'dark' ? '\\u2600' : '\\u263D';
+      btn.title = next === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+    }}
   }}
   (function() {{
-    var pref = localStorage.getItem('wl-theme') || 'light';
+    var pref = localStorage.getItem('protocolcity-theme')
+            || localStorage.getItem('wl-theme') || 'light';
+    if (pref === 'system') {{
+      pref = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }}
+    if (pref !== 'dark' && pref !== 'light') pref = 'light';
     var btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = _themeIcons[pref] || '\\u263D';
+    if (btn) {{
+      btn.textContent = pref === 'dark' ? '\\u2600' : '\\u263D';
+      btn.title = pref === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+    }}
   }})();
   </script>
   <style>
@@ -5548,6 +5563,7 @@ def _tracker_db_path(tracker: Any) -> Path:
 def api_tasks_ready(
     product: str = "",
     label: str = "",
+    worker: str = "",
     explain: int = 0,
     limit: int = 200,
 ) -> JSONResponse:
@@ -5558,6 +5574,12 @@ def api_tasks_ready(
     the ready ones; full backlog explain is under ``explain`` when set).
     Prose ``Depends on #N`` remains the intake shim — it is not replaced
     here; materialize via the dry-run backfill script.
+
+    ``worker=<name>`` applies the assignment law for default lanes
+    (wl-191): a ticket carrying any ``worker:*`` label is ready for the
+    caller only when ``worker:<name>`` is among them; unlabeled tickets
+    stay ready for everyone. Narrow lanes keep ``label=`` (strict
+    include); the two filters compose.
     """
     from worklane import relations as relmod
 
@@ -5596,6 +5618,14 @@ def api_tasks_ready(
     if label:
         lab = label.strip()
         tasks = [t for t in tasks if lab in (t.labels or [])]
+    if worker:
+        me = "worker:" + worker.strip().lower()
+
+        def _claimable(t) -> bool:
+            assigned = [l for l in (t.labels or []) if l.startswith("worker:")]
+            return not assigned or me in assigned
+
+        tasks = [t for t in tasks if _claimable(t)]
 
     status_by_id = relmod.load_status_map(db_path)
     # Include non-backlog statuses for blocker resolution (done/canceled).
@@ -6169,12 +6199,16 @@ def api_list_tasks(
     label: str = "",
     priority: str = "",
     product: str = "",
+    project: str = "",
     limit: int = 200,
     with_preview: int = 0,
 ) -> JSONResponse:
     products = product_trackers()
     prio_int = parse_wq_priority(priority)
-    prod = parse_wq_product(product)
+    # wl-64: ``project`` is the canonical scope param; ``product`` stays a
+    # silent back-compat alias for the same field (mirrors the CLI/MCP
+    # surfaces). Existing ``product=`` callers keep working unchanged.
+    prod = parse_wq_product(project or product)
     tasks, tradeos_prev = _list_tasks_for_wq_multi_resolved(
         products,
         status=status or None,
@@ -7727,15 +7761,29 @@ def _closeout_authors(slug: str) -> Dict[str, str]:
 # only carries new_status (no old→new pair), so the engine computes a small
 # window from task_events and the scene animates it. Engines compute facts;
 # scenes animate them.
-_SCENE_TRANSITION_HOURS = 2
+# wl-191: the window must match the advertised _SCENE_WINDOW_HOURS — the
+# Office receipt tape renders from recent_transitions and says "last 24h",
+# so a narrower window makes the tape lie (2h showed 1 ticket while 83
+# filed). Replay storms are the client's job: boot.js seeds hops older
+# than its film window as seen. Busy days truncate at
+# _SCENE_TRANSITION_LIMIT (newest first) — the tape links to Desk for
+# the rest.
+_SCENE_TRANSITION_HOURS = _SCENE_WINDOW_HOURS
 _SCENE_TRANSITION_LIMIT = 40
 
 
 def _scene_recent_transitions(
     now: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """status_change events with from_status inferred from the prior event
-    that recorded a status for the same task (created or earlier change)."""
+    """Status hops for board film (wl-168 / CITY_FLOW F1–F10).
+
+    Includes:
+    - ``status_change`` with from_status inferred from the prior status-bearing
+      event on the same task
+    - ``created`` (birth onto backlog) — intake never emits a status_change, so
+      without this row Office/Desk paper-flyers never fire for new filings
+      (founder dogfood 2026-07-16, pc-194/pc-195)
+    """
     now = now or datetime.now(timezone.utc)
     cutoff_ts = (now - timedelta(hours=_SCENE_TRANSITION_HOURS)).timestamp()
     out: List[Dict[str, Any]] = []
@@ -7750,6 +7798,7 @@ def _scene_recent_transitions(
                 rows = conn.execute(
                     """
                     SELECT e.id AS event_id,
+                           e.event_type AS event_type,
                            COALESCE(t.ext_id, CAST(t.id AS TEXT)) AS task_id,
                            e.status AS to_status,
                            e.created_at AS ts,
@@ -7759,18 +7808,27 @@ def _scene_recent_transitions(
                                AND e2.status IS NOT NULL
                                AND e2.status != ''
                              ORDER BY e2.id DESC LIMIT 1) AS from_status,
-                           (SELECT c.author FROM task_comments c
-                             WHERE c.task_id = e.task_id
-                               AND c.author != ''
-                               AND c.created_at <= e.created_at
-                             ORDER BY c.created_at DESC LIMIT 1) AS author
+                           CASE WHEN e.event_type = 'created' THEN
+                             /* Intake comment is written after the created
+                                row — take the first non-empty author. */
+                             (SELECT c.author FROM task_comments c
+                               WHERE c.task_id = e.task_id
+                                 AND c.author != ''
+                               ORDER BY c.id ASC LIMIT 1)
+                           ELSE
+                             (SELECT c.author FROM task_comments c
+                               WHERE c.task_id = e.task_id
+                                 AND c.author != ''
+                                 AND c.created_at <= e.created_at
+                               ORDER BY c.created_at DESC LIMIT 1)
+                           END AS author
                       FROM task_events e
                       JOIN tasks t ON t.id = e.task_id
-                     WHERE e.event_type = 'status_change'
+                     WHERE e.event_type IN ('status_change', 'created')
                        AND e.status IS NOT NULL
                        AND e.status != ''
                      ORDER BY e.id DESC
-                     LIMIT 60
+                     LIMIT 80
                     """,
                 ).fetchall()
             finally:
@@ -7780,6 +7838,11 @@ def _scene_recent_transitions(
         for r in rows:
             to_st = str(r["to_status"] or "").strip()
             from_st = str(r["from_status"] or "").strip()
+            et = str(r["event_type"] or "").strip()
+            # Birth filings: no prior status — force empty from so film treats
+            # them as F1/F3 (file onto Desk), not a no-op same-status hop.
+            if et == "created":
+                from_st = ""
             if not to_st or from_st == to_st:
                 continue
             ts = r["ts"] or ""
@@ -7813,6 +7876,7 @@ def api_desk_scene() -> JSONResponse:
     wl-168: also a recent_transitions[] window (task id, from_status,
     to_status, author, ts) so the paper line can animate status movement —
     /api/dev/activity only carries new_status, not old→new pairs.
+    Birth filings use event_type=created (empty from_status → backlog).
     """
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=_SCENE_WINDOW_HOURS)
@@ -7874,13 +7938,25 @@ _DESK_SCENE_CSS = """
   font-display:swap; src:url("/static/fonts/ibm-plex-sans-700.woff2") format("woff2"); }
 @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400;
   font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
-:root {
+:root, [data-theme="light"] {
   /* CITY_DNA §5 + pc-162 — one daylight sheet; suite accent = verd */
   --desk:#faf6ec; --page:#faf6ec; --paper:#e2d9c2; --paper-top:#efe8d5; --line:#c4b8a4;
   --card:#fffdf8; --rule:#9fb6d9; /* blue rules — paper-object accent */
   --ink:#2a241c; --dim:#6b6154; --blue:#1c4f9c; --stamp:#c0392b;
   --verd:#3d7a6a; --ok:#2e7d4f; --warn:#a8681e; --fire:#a33327;
   --pink:#fbe9ea; --pinkline:#e2b6ba; --gold:#e9c46a;
+  --chrome-end:#ebe4d4; --sheet:#fbf6ea; --search-bg:#faf6ecf8; --shadow:#2a241c33;
+  color-scheme:light;
+}
+/* Suite night sheet — shared with Office / Roster via protocolcity-theme */
+[data-theme="dark"] {
+  --desk:#1a1814; --page:#1a1814; --paper:#2a261e; --paper-top:#322c24; --line:#4a4338;
+  --card:#252018; --rule:#5a6e88;
+  --ink:#f0eade; --dim:#a89f8e; --blue:#7a9ec4; --stamp:#d4543f;
+  --verd:#5a9a88; --ok:#4caf7d; --warn:#d9a441; --fire:#d4543f;
+  --pink:#3a2426; --pinkline:#6a4044; --gold:#d4b05a;
+  --chrome-end:#221e18; --sheet:#2a261e; --search-bg:#1a1814f2; --shadow:#00000066;
+  color-scheme:dark;
 }
 * { box-sizing:border-box; margin:0; }
 /* Room shell: desk fills the window; main scrolls; footer is the floor. */
@@ -7903,11 +7979,11 @@ a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underli
   padding:10px 22px 12px; }
 .pl-rail { display:flex; align-items:flex-end; justify-content:center; gap:4px;
   max-width:900px; margin:0 auto; position:relative; z-index:1; }
-.pl-station.on { border-color:var(--blue); background:#eef4fc88; box-shadow:0 0 0 1px var(--blue); }
+.pl-station.on { border-color:var(--blue); background:color-mix(in srgb, var(--blue) 12%, transparent); box-shadow:0 0 0 1px var(--blue); }
 .pl-station { flex:1; min-width:0; max-width:200px; background:transparent;
   border:1px solid transparent; border-radius:4px; cursor:pointer;
   padding:8px 6px 6px; text-align:center; color:var(--ink); font:inherit; }
-.pl-station:hover { border-color:var(--line); background:#fbf6ea66; }
+.pl-station:hover { border-color:var(--line); background:color-mix(in srgb, var(--card) 40%, transparent); }
 .pl-station:focus { outline:none; border-color:var(--blue); }
 .pl-obj { height:36px; display:flex; align-items:flex-end; justify-content:center; }
 .pl-obj svg { height:34px; width:auto; display:block; }
@@ -7920,13 +7996,13 @@ a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underli
 .pl-flyers { position:absolute; inset:0; pointer-events:none; overflow:visible; z-index:2; }
 .pl-flyer { position:fixed; z-index:50; pointer-events:none;
   width:28px; height:34px; margin-left:-14px; margin-top:-17px; }
-.pl-flyer .sheet { width:22px; height:28px; background:#fbf6ea; border:1px solid var(--line);
+.pl-flyer .sheet { width:22px; height:28px; background:var(--sheet); border:1px solid var(--line);
   box-shadow:1px 2px 4px #0002; border-radius:1px; position:relative; }
 .pl-flyer .sheet::before { content:""; position:absolute; left:3px; right:3px; top:6px;
   height:1px; background:var(--rule); box-shadow:0 4px 0 var(--rule),0 8px 0 var(--rule); }
 .pl-flyer svg.citizen { position:absolute; right:-6px; bottom:-2px; height:14px; width:auto; }
 /* Suite mast (pc-162/163): mast | centered search | ops+doors */
-header.nameplate { background:linear-gradient(180deg,var(--page),#ebe4d4);
+header.nameplate { background:linear-gradient(180deg,var(--page),var(--chrome-end));
   border-bottom:1px solid var(--line);
   border-top:0; box-shadow:none;
   padding:10px 16px; display:grid;
@@ -7952,8 +8028,8 @@ header.nameplate { background:linear-gradient(180deg,var(--page),#ebe4d4);
   position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); z-index:50;
   width:min(400px, calc(100vw - 24px));
   max-height:min(420px, 70vh); overflow:auto; padding:6px 0 4px;
-  background:#faf6ecf8; border:1px solid var(--line); border-radius:8px;
-  box-shadow:0 12px 28px #2a241c33; font:12px/1.4 Georgia,serif;
+  background:var(--search-bg); border:1px solid var(--line); border-radius:8px;
+  box-shadow:0 12px 28px var(--shadow); font:12px/1.4 Georgia,serif;
 }
 .nameplate .search-results.tucked { display:none; }
 .nameplate .search-results .sr-group {
@@ -7966,11 +8042,11 @@ header.nameplate { background:linear-gradient(180deg,var(--page),#ebe4d4);
   font:inherit;
 }
 .nameplate .search-results .sr-item:hover,
-.nameplate .search-results .sr-item.is-active { background:#e8e0d0aa; }
+.nameplate .search-results .sr-item.is-active { background:var(--paper); }
 .nameplate .search-results .sr-chip {
   flex:none; width:auto; min-width:22px; height:22px; padding:0 6px; border-radius:5px;
   display:flex; align-items:center; justify-content:center; font:600 10px "IBM Plex Mono",ui-monospace,monospace;
-  background:#e8e0d0; border:1px solid var(--line); color:#5a4e38; line-height:1;
+  background:var(--paper); border:1px solid var(--line); color:var(--dim); line-height:1;
 }
 .nameplate .search-results .sr-body { flex:1; min-width:0; }
 .nameplate .search-results .sr-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -7989,14 +8065,17 @@ h1 .fn { color:var(--verd); }
   background:var(--card); letter-spacing:.02em; white-space:nowrap;
 }
 .suite-doors a:hover { border-color:var(--verd); }
-/* Settings gear — D1 room furniture entry from D0 chrome (not a suite peer). */
-.settings-gear {
+/* Theme + settings — D1 room furniture entry from D0 chrome (not a suite peer). */
+.settings-gear,
+.theme-toggle {
   flex:none; width:34px; height:34px; display:inline-flex;
   align-items:center; justify-content:center;
   border:1px solid var(--line); border-radius:8px; background:var(--card);
   color:var(--dim); text-decoration:none; font-size:16px; line-height:1;
+  cursor:pointer; padding:0; font-family:inherit;
 }
-.settings-gear:hover { border-color:var(--verd); color:var(--verd); }
+.settings-gear:hover,
+.theme-toggle:hover { border-color:var(--verd); color:var(--verd); }
 .settings-gear.on { color:var(--ink); border-color:var(--verd); }
 @media (max-width:720px) {
   header.nameplate { grid-template-columns:1fr auto; }
@@ -8062,7 +8141,7 @@ h2 { font-size:11px; letter-spacing:.24em; color:var(--dim); text-transform:uppe
 .piles { display:flex; gap:18px; margin-top:10px; align-items:flex-end; }
 .pile { flex:1; text-align:center; cursor:pointer; border-radius:4px; padding:2px 0; }
 .pile:hover { background:#fbf6ea88; }
-.pile.on { outline:1px solid var(--blue); background:#eef4fc88; }
+.pile.on { outline:1px solid var(--blue); background:color-mix(in srgb, var(--blue) 12%, transparent); }
 .pile.dim { opacity:.38; }
 .pile .sheets { position:relative; height:56px; }
 /* pile sheets are paper objects — keep the white carbon look */
@@ -8218,6 +8297,30 @@ h1 .fn { color:var(--verd); font-weight:600; letter-spacing:.12em;
 _DESK_SCENE_JS = """
 <script>
 "use strict";
+/* Suite dark/light — shared with Office / Roster (protocolcity-theme). */
+(function(){
+  var KEY='protocolcity-theme';
+  function theme(){
+    try{ var t=localStorage.getItem(KEY)||localStorage.getItem('wl-theme')||'light';
+      return t==='dark'?'dark':'light'; }
+    catch(e){ return 'light'; }
+  }
+  function apply(t){
+    t=(t==='dark')?'dark':'light';
+    document.documentElement.setAttribute('data-theme', t);
+    try{ localStorage.setItem(KEY,t); localStorage.setItem('wl-theme',t); }catch(e){}
+    var btn=document.getElementById('theme-toggle');
+    if(btn){
+      btn.textContent = t==='dark' ? '\\u2600' : '\\u263D';
+      btn.title = t==='dark' ? 'Switch to light theme' : 'Switch to dark theme';
+      btn.setAttribute('aria-label', btn.title);
+    }
+  }
+  function toggle(){ apply(theme()==='dark'?'light':'dark'); }
+  apply(theme());
+  var btn=document.getElementById('theme-toggle');
+  if(btn) btn.addEventListener('click', toggle);
+})();
 var SCENE=null, seenFiled={}, firstPoll=true;
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -8287,8 +8390,17 @@ function stationCenter(status){
   return {x:r.left+r.width/2, y:r.top+r.height/2};}
 function flyPaper(tr){
   if(PL_ACTIVE>=PL_MAX)return;
-  var a=stationCenter(tr.from_status), b=stationCenter(tr.to_status);
-  if(!a||!b)return;
+  var b=stationCenter(tr.to_status);
+  if(!b)return;
+  var a=stationCenter(tr.from_status);
+  /* Birth filings (created → backlog): no from-station — enter from the
+     left of the paper line so the sheet still lands on Filed. */
+  if(!a){
+    var line=$("paperLine");
+    if(!line)return;
+    var lr=line.getBoundingClientRect();
+    a={x:lr.left+16, y:lr.top+lr.height/2};
+  }
   if(Math.abs(a.x-b.x)<4&&Math.abs(a.y-b.y)<4)return;
   PL_ACTIVE++;
   var el=document.createElement("div");
@@ -8616,7 +8728,7 @@ function deskSearchCorpus(){
     /* store names are findable; pick jumps to that ledger */
     if(!s.slug)return;
     out.push({id:"store:"+s.slug, title:s.display||s.slug, meta:(s.prefix||"")+"- \\u00b7 ledger",
-      kind:"store", href:"/admin/tickets/"+encodeURIComponent(s.slug)});
+      kind:"store", href:"/admin/desk?cabinet="+encodeURIComponent(s.slug)});
   });
   return out;
 }
@@ -8660,7 +8772,7 @@ function pickDeskSearch(ix){
   $("searchField").setAttribute("aria-expanded","false");
   $("searchField").blur();
   if(h.href){ location.href=h.href; return; }
-  if(h.kind==="store"){ location.href="/admin/tickets/"+encodeURIComponent(String(h.id).replace(/^store:/,"")); return; }
+  if(h.kind==="store"){ location.href="/admin/desk?cabinet="+encodeURIComponent(String(h.id).replace(/^store:/,"")); return; }
   openWO(h.id);
 }
 (function wireDeskSearch(){
@@ -9014,17 +9126,32 @@ def admin_desk() -> str:
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(_BRAND_NAME)}</title>
-<style>{_DESK_SCENE_CSS}</style></head><body>
+<style>{_DESK_SCENE_CSS}</style>
+<script>
+/* Suite theme before paint — shared key with Office / Roster. */
+(function(){{
+  var K='protocolcity-theme';
+  try{{
+    var leg=localStorage.getItem('wl-theme');
+    if(leg&&!localStorage.getItem(K))
+      localStorage.setItem(K,leg==='dark'?'dark':'light');
+    var t=localStorage.getItem(K)||'light';
+    if(t!=='dark'&&t!=='light')t='light';
+    document.documentElement.setAttribute('data-theme',t);
+  }}catch(e){{ document.documentElement.setAttribute('data-theme','light'); }}
+}})();
+</script>
+</head><body>
 <header class="nameplate">
   <div class="chrome-mast">
     <svg class="mast-stamp" viewBox="0 0 48 40" aria-hidden="true">
       <!-- CITY_DNA §3 — Desk mast mark: rubber stamp on pad (paper room) -->
-      <ellipse cx="24" cy="34" rx="18" ry="4.5" fill="#e2d9c2" stroke="var(--ink)" stroke-width="1.2"/>
-      <rect x="16" y="4" width="16" height="8" rx="1.5" fill="#3d7a6a" stroke="var(--ink)" stroke-width="1.1"/>
+      <ellipse cx="24" cy="34" rx="18" ry="4.5" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2"/>
+      <rect x="16" y="4" width="16" height="8" rx="1.5" fill="var(--verd)" stroke="var(--ink)" stroke-width="1.1"/>
       <rect x="18" y="12" width="12" height="6" fill="#5a4e38" stroke="var(--ink)" stroke-width="1.1"/>
-      <rect x="14" y="18" width="20" height="10" rx="1" fill="#a33327" stroke="var(--ink)" stroke-width="1.1"/>
-      <line x1="17" y1="22" x2="31" y2="22" stroke="#fbf6ea" stroke-width="1.2" opacity=".7"/>
-      <line x1="17" y1="25" x2="28" y2="25" stroke="#fbf6ea" stroke-width="1.2" opacity=".55"/>
+      <rect x="14" y="18" width="20" height="10" rx="1" fill="var(--stamp)" stroke="var(--ink)" stroke-width="1.1"/>
+      <line x1="17" y1="22" x2="31" y2="22" stroke="var(--sheet)" stroke-width="1.2" opacity=".7"/>
+      <line x1="17" y1="25" x2="28" y2="25" stroke="var(--sheet)" stroke-width="1.2" opacity=".55"/>
     </svg>
     <div class="chrome-title">
       <h1>{h1}</h1>
@@ -9042,6 +9169,8 @@ def admin_desk() -> str:
   </div>
   <div class="chrome-right">
     <div class="chrome-ops badges"><span id="clock">—:—:—</span><span id="liveChip" class="hold">NO SIGNAL</span></div>
+    <button type="button" class="theme-toggle" id="theme-toggle"
+            title="Switch to dark theme" aria-label="Toggle dark or light theme">&#9789;</button>
     <a class="settings-gear" href="/admin/settings" title="Settings — projects, prefixes, numbering, service" aria-label="Settings">&#9881;</a>
     <div class="suite-doors">{doors}</div>
   </div>
@@ -9054,9 +9183,9 @@ def admin_desk() -> str:
       title="Skim filed (backlog) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
-          <rect x="10" y="18" width="28" height="12" fill="#fbf6ea"/>
-          <rect x="12" y="12" width="28" height="12" fill="#fbf6ea"/>
-          <rect x="14" y="6" width="28" height="12" fill="#fbf6ea"/>
+          <rect x="10" y="18" width="28" height="12" fill="var(--sheet)"/>
+          <rect x="12" y="12" width="28" height="12" fill="var(--sheet)"/>
+          <rect x="14" y="6" width="28" height="12" fill="var(--sheet)"/>
           <line x1="18" y1="10" x2="36" y2="10" stroke="var(--rule)" stroke-width=".8"/>
           <line x1="18" y1="13" x2="34" y2="13" stroke="var(--rule)" stroke-width=".8"/>
         </svg>
@@ -9069,7 +9198,7 @@ def admin_desk() -> str:
       title="Skim claimed (in progress) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
-          <rect x="8" y="8" width="22" height="20" fill="#fbf6ea" transform="rotate(-8 19 18)"/>
+          <rect x="8" y="8" width="22" height="20" fill="var(--sheet)" transform="rotate(-8 19 18)"/>
           <line x1="12" y1="14" x2="24" y2="12" stroke="var(--rule)" stroke-width=".8"/>
           <line x1="12" y1="18" x2="23" y2="16" stroke="var(--rule)" stroke-width=".8"/>
           <!-- small walking worker (ink) -->
@@ -9090,9 +9219,9 @@ def admin_desk() -> str:
           <!-- spike -->
           <line x1="24" y1="4" x2="24" y2="32" stroke="var(--ink)" stroke-width="1.6"/>
           <polygon points="24,2 26.5,7 21.5,7" fill="var(--ink)"/>
-          <rect x="14" y="10" width="20" height="5" fill="#fbf6ea" transform="rotate(-12 24 12.5)"/>
-          <rect x="14" y="16" width="20" height="5" fill="#fbf6ea" transform="rotate(8 24 18.5)"/>
-          <rect x="15" y="22" width="18" height="4" fill="#fbf6ea" transform="rotate(-4 24 24)"/>
+          <rect x="14" y="10" width="20" height="5" fill="var(--sheet)" transform="rotate(-12 24 12.5)"/>
+          <rect x="14" y="16" width="20" height="5" fill="var(--sheet)" transform="rotate(8 24 18.5)"/>
+          <rect x="15" y="22" width="18" height="4" fill="var(--sheet)" transform="rotate(-4 24 24)"/>
         </svg>
       </div>
       <div class="pl-label">Sign-off due</div>
@@ -9103,7 +9232,7 @@ def admin_desk() -> str:
       title="Skim signed (done) on this desk">
       <div class="pl-obj" aria-hidden="true">
         <svg viewBox="0 0 48 36" fill="none" stroke="var(--ink)" stroke-width="1.2">
-          <rect x="6" y="10" width="20" height="16" fill="#fbf6ea"/>
+          <rect x="6" y="10" width="20" height="16" fill="var(--sheet)"/>
           <line x1="10" y1="15" x2="22" y2="15" stroke="var(--rule)" stroke-width=".8"/>
           <line x1="10" y1="19" x2="20" y2="19" stroke="var(--rule)" stroke-width=".8"/>
           <!-- stamp pad -->
@@ -9299,11 +9428,19 @@ _REPORT_CSS = """
   font-display:swap; src:url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
 /* Suite daylight sheet (pc-162 / Desk Home) — Overview is D1 furniture of Desk,
    not a grey pre-theme bench. Georgia body; Plex for dense meters. */
-:root {
+:root, [data-theme="light"] {
   --page:#faf6ec; --paper:#fffdf8; --paper-top:#efe8d5; --line:#c4b8a4;
   --ink:#2a241c; --dim:#6b6154; --blue:#1c4f9c; --stamp:#c0392b;
   --verd:#3d7a6a; --ok:#2e7d4f; --warn:#a8681e; --fire:#a33327;
   --rule:#c9c2b0; --pink:#fbe9ea; --pinkline:#e2b6ba;
+  color-scheme:light;
+}
+[data-theme="dark"] {
+  --page:#1a1814; --paper:#252018; --paper-top:#322c24; --line:#4a4338;
+  --ink:#f0eade; --dim:#a89f8e; --blue:#7a9ec4; --stamp:#d4543f;
+  --verd:#5a9a88; --ok:#4caf7d; --warn:#d9a441; --fire:#d4543f;
+  --rule:#4a4338; --pink:#3a2426; --pinkline:#6a4044;
+  color-scheme:dark;
 }
 * { box-sizing:border-box; margin:0; }
 html,body { height:100%; }
@@ -9546,7 +9683,18 @@ def _render_report_page() -> str:
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Overview · {_esc(_BRAND_NAME)}</title>
-<style>{_REPORT_CSS}</style></head><body>
+<style>{_REPORT_CSS}</style>
+<script>
+(function(){{
+  var K='protocolcity-theme';
+  try{{
+    var t=localStorage.getItem(K)||localStorage.getItem('wl-theme')||'light';
+    if(t!=='dark'&&t!=='light')t='light';
+    document.documentElement.setAttribute('data-theme',t);
+  }}catch(e){{ document.documentElement.setAttribute('data-theme','light'); }}
+}})();
+</script>
+</head><body>
 <header class="nameplate">
   <a class="room-back" id="roomBack" href="/admin/desk">← Desk</a>
   <div>

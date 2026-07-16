@@ -100,6 +100,59 @@ class OverviewScopeTest(unittest.TestCase):
                           ("aging", "growing", "keeping up", "steady"))
             self.assertEqual(s["net"], s["filed"] - s["signed"])
 
+    def test_admin_tasks_project_alias_scopes_like_product(self) -> None:
+        # wl-64: the JSON list endpoint honors ``project`` as the canonical
+        # scope param, resolving identically to the ``product`` back-compat
+        # alias — /api/admin/tasks was the last surface still product-only,
+        # so a client sending project= silently fell through to no-scope.
+        by_product = self.client.get("/api/admin/tasks?product=beta").json()
+        by_project = self.client.get("/api/admin/tasks?project=beta").json()
+        self.assertTrue(by_product["ok"])
+        self.assertTrue(by_project["ok"])
+        ids_product = sorted(t["id"] for t in by_product["tasks"])
+        ids_project = sorted(t["id"] for t in by_project["tasks"])
+        self.assertEqual(ids_project, ids_product)
+        # Scope is real, not a no-op: beta's two seeded tasks, not alpha's.
+        self.assertEqual(len(ids_project), 2)
+        titles = {t["title"] for t in by_project["tasks"]}
+        self.assertTrue(all("beta" in x for x in titles), titles)
+
+    def test_admin_tasks_project_scopes_counts_not_just_tasks(self) -> None:
+        # wl-193: project=<slug> must scope scope_counts AND column_counts to
+        # that store, not just the tasks array — the reported bug was that
+        # every slug returned the identical city-wide aggregate. Seed: alpha
+        # (tradeos) = 3 backlog; beta = 1 in_progress + 1 backlog.
+        by_all = self.client.get("/api/admin/tasks?project=all").json()
+        by_beta = self.client.get("/api/admin/tasks?project=beta").json()
+
+        # City-wide aggregate (project=all keeps current behavior).
+        self.assertEqual(by_all["scope_counts"][TaskStatus.BACKLOG], 4)
+        self.assertEqual(by_all["scope_counts"][TaskStatus.IN_PROGRESS], 1)
+
+        # Per-store scope is real, not the global aggregate.
+        self.assertEqual(by_beta["scope_counts"][TaskStatus.BACKLOG], 1)
+        self.assertEqual(by_beta["scope_counts"][TaskStatus.IN_PROGRESS], 1)
+
+        # The whole point of the bug: per-store and all must differ.
+        self.assertNotEqual(
+            by_beta["scope_counts"][TaskStatus.BACKLOG],
+            by_all["scope_counts"][TaskStatus.BACKLOG],
+        )
+
+        # column_counts scopes the same way under a status filter.
+        beta_backlog = self.client.get(
+            "/api/admin/tasks?project=beta&status=backlog"
+        ).json()
+        self.assertEqual(beta_backlog["column_counts"][TaskStatus.BACKLOG], 1)
+
+        # city-steward roster-queue contract: project=all&status=backlog&limit=1
+        # reads column_counts.backlog as the city-wide queue depth — must stay
+        # global, never collapse to a single store, while per-store scoping works.
+        roster_probe = self.client.get(
+            "/api/admin/tasks?project=all&status=backlog&limit=1"
+        ).json()
+        self.assertEqual(roster_probe["column_counts"][TaskStatus.BACKLOG], 4)
+
     def test_unknown_scope_404s(self) -> None:
         self.assertEqual(self.client.get("/admin/overview/nope").status_code, 404)
 
@@ -276,6 +329,27 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertTrue(tr["id"])
         self.assertTrue(tr["ts"])
 
+    def test_api_scene_recent_transitions_includes_create_birth(self) -> None:
+        # Intake create is event_type=created (not status_change). Without it
+        # Office/Desk never animate YOU→Desk for new filings (CITY_FLOW F1/F3).
+        t = self.beta.create_task(title="birth flyer", description="file me")
+        self.beta.add_comment(t.id, "Intake: filed by grok", author="grok")
+        j = self.client.get("/api/scene").json()
+        match = [
+            tr for tr in j["recent_transitions"]
+            if tr.get("to_status") == TaskStatus.BACKLOG
+            and not tr.get("from_status")
+            and str(t.id) in str(tr.get("task_id", ""))
+        ]
+        self.assertTrue(match, j["recent_transitions"])
+        tr = match[0]
+        self.assertEqual(tr["from_status"], "")
+        self.assertEqual(tr["to_status"], TaskStatus.BACKLOG)
+        self.assertEqual(tr["store"], "beta")
+        self.assertEqual(tr["author"], "grok")
+        self.assertTrue(tr["id"])
+        self.assertTrue(tr["ts"])
+
     # ── Summary APIs ─────────────────────────────────────────────────────
 
     def test_board_summary_scope_filters_counts(self) -> None:
@@ -344,13 +418,9 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertLessEqual(len(inline_pills), _SCOPE_NAV_MAX_INLINE + 1)
         # Overflowed stores still reachable inside the menu.
         self.assertIn("synth19", r.text)
-        # wl-117 design req 4: utility chrome still present. City brand
-        # locks the paper theme (wl-180) so the toggle may be absent; Settings
-        # gear remains either way.
-        self.assertTrue(
-            'id="theme-toggle"' in r.text or "/admin/settings" in r.text,
-            "expected theme toggle (standalone) or settings link (city)",
-        )
+        # wl-117 design req 4: utility chrome still present. Suite theme
+        # toggle is on all brands; Settings gear remains either way.
+        self.assertIn('id="theme-toggle"', r.text)
         self.assertIn("/admin/settings", r.text)
 
     def test_scope_nav_middle_truncates_long_display_names(self) -> None:
