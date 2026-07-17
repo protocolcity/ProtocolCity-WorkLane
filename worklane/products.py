@@ -134,34 +134,38 @@ def _config_overrides() -> Dict[str, Dict[str, str]]:
 def default_product_slug_with_source() -> Tuple[str, str]:
     """Resolve the host's bootstrap-default product slug and where it came from.
 
-    Order: ``WL_DEFAULT_PRODUCT`` env (explicit, always wins), the
+    Order: ``WL_DEFAULT_PROJECT`` env (canonical, always wins),
+    ``WL_DEFAULT_PRODUCT`` (silent back-compat alias for the same), the
     ``"default"`` key in the ``products.json`` config overlay (an operator's
-    persisted choice), ``WL_PRODUCT`` env (the client-scoping convention,
+    persisted choice), ``WL_PROJECT`` env (the client-scoping convention,
     used here only as a fresh-install fallback when no config overlay has
-    picked a default yet), then the first product discovered on disk.
+    picked a default yet), ``WL_PRODUCT`` (silent back-compat alias), then
+    the first product discovered on disk.
 
-    The config overlay outranks ``WL_PRODUCT`` deliberately: ``WL_PRODUCT``
+    The config overlay outranks ``WL_PROJECT`` deliberately: ``WL_PROJECT``
     is a *client* identity var (which store a given CLI/MCP session talks
     to), not server config. A lane exporting it and then restarting the
     server (wl-68, 2026-07-11) must not silently override an operator's
     configured default — that flips routing for every other client. Fresh
     installs with no ``products.json`` yet still get a sane default via the
-    ``WL_PRODUCT`` fallback, and ``WL_DEFAULT_PRODUCT`` remains available as
+    ``WL_PROJECT`` fallback, and ``WL_DEFAULT_PROJECT`` remains available as
     an explicit, intentional override for either case.
 
     Empty slug only on a fresh install with nothing configured and nothing
     on disk yet — callers treat that as "no default product" rather than
     substituting a literal.
     """
-    val = (os.environ.get("WL_DEFAULT_PRODUCT") or "").strip().lower()
+    val = (os.environ.get("WL_DEFAULT_PROJECT") or os.environ.get("WL_DEFAULT_PRODUCT") or "").strip().lower()
     if val:
-        return val, "env:WL_DEFAULT_PRODUCT"
+        src = "WL_DEFAULT_PROJECT" if os.environ.get("WL_DEFAULT_PROJECT") else "WL_DEFAULT_PRODUCT"
+        return val, f"env:{src}"
     configured = _raw_products_config().get("default")
     if isinstance(configured, str) and configured.strip():
         return configured.strip().lower(), "config:products.json"
-    val = (os.environ.get("WL_PRODUCT") or "").strip().lower()
+    val = (os.environ.get("WL_PROJECT") or os.environ.get("WL_PRODUCT") or "").strip().lower()
     if val:
-        return val, "env:WL_PRODUCT (fresh-install fallback)"
+        src = "WL_PROJECT" if os.environ.get("WL_PROJECT") else "WL_PRODUCT"
+        return val, f"env:{src} (fresh-install fallback)"
     data = wl_data_dir()
     if data.is_dir():
         found = sorted(

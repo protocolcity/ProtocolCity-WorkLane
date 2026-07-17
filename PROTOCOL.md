@@ -62,6 +62,11 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
 6. **Declare dependencies** — use `Depends on #NNN` in the description so the queue guard can freeze siblings.
 7. **Recommendation-default decisions** (founder-ratified 2026-07-09) — when a ticket hits a decision point, the agent records its recommendation as the decision (`DECISION (recommendation-default): <choice> — <why>` comment) and keeps working; the founder reviews and can veto after the fact. `needs:founder-decision` is reserved for the escalation class only: real-money gates (LIVE flips, risk-limit widening, new broker/credential enablement, moving money, gate bypasses), reversals of ratified ADRs/product direction, and public-facing or expensive-to-reverse actions. Everything else — including strategy-intent on paper/bench plays and exposure-reducing enforcement — proceeds on the recommendation. Decisions must be logged in ticket comments so the veto window is real.
 8. **Sign every comment** (2026-07-10) — pass the author flag (`--author "<agent-id>"` on the CLI, `author` on the API) on every comment you post, using your canonical agent id from §5.2. The `Owner:` line inside the body documents the claim; the author *field* is what the board byline, filters, and ghost-audits key on. The two must carry the same id. An unsigned (empty-author) comment is a process violation, not a default.
+9. **Human-gate hard stop** (2026-07-16) — `gate_type=human` and `needs:founder-decision` feed **Waiting on You**. They are scarce signals, not a parking lot.
+   - **One ticket, one reason.** Every human gate needs a concrete `gate_note` (or decision label) that says why You must act and what clears it.
+   - **No bulk sweeps.** Agents must not set `gate_type=human` on more than **three** tickets in a single shift unless a ticket they hold explicitly authorizes a named bulk re-gate (ids listed). Mass “park the pool so I look unwedged” is an automatic reject.
+   - **Do not re-gate the already gated.** Leave existing human/decision gates; comment if the note is wrong.
+   - **Snooze ≠ clear.** You may snooze a product on Waiting on You to mute attention for a day without changing store gates. Mechanical enforcement: **wl-205**.
 
 ## 4) Transitions
 
@@ -161,10 +166,21 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
    in the ticket comment so a future claim resumes from it. Dead ends → abandon
    deliberately and say so in the comment ("edits abandoned deliberately").
    Silence is not a disposition.
-3. **`done` means reachable from `main`.** Before the `Completed:` comment,
-   verify the closing commit is on `main` (`git merge-base --is-ancestor <sha>
-   main`), not just committed on a branch. A merged-but-unpushed or
-   committed-but-unmerged close-out is a `Blocked:`, not a `done`.
+3. **`done` means reachable from `origin/main` (amended 2026-07-16, wl-212).**
+   Before the `Completed:` comment, verify the closing commit is on `main`
+   (`git merge-base --is-ancestor <sha> main`), not just committed on a
+   branch — then **push**. On private/internal remotes (the host's own
+   private repos — everything outside the public protocolcity org) the
+   same slice that closes the ticket pushes `main` to origin; after the
+   push, `git merge-base --is-ancestor <sha> origin/main` is the check. A
+   merged-but-unpushed or committed-but-unmerged close-out is a `Blocked:`,
+   not a `done`. Local-only `main` is how ~70 finished commits sat with no
+   offsite copy while the board said done (2026-07-16 drift audit, wl-211).
+   Two carve-outs: repos under the **protocolcity GitHub org** are never
+   pushed by workers — stage the sync and file the `FOUNDER · publish` gate
+   ticket instead (founder gate, ratified 2026-07-16); and a repo with **no
+   remote** (e.g. a local-only store) closes on local `main` and says so in
+   `Verification:`.
 4. **Rescue stalled-but-alive claims, never discard.** A claim whose `Start:` is
    older than 3 hours with a live working copy: inspect per step 1; if work
    exists, commit + push it and comment the branch pointer before releasing to

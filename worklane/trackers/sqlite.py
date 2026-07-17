@@ -29,7 +29,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import Dict, Iterator, List, Optional
 
 from worklane.trackers.protocol import ProjectTracker, Task, TaskComment, TaskStatus
 
@@ -969,6 +969,44 @@ class SQLiteTracker(ProjectTracker):
                 self._insert_comment(conn, task_pk, audit, actor or "cli-update", now)
 
         return self.get_task(task_id)
+
+    def count_human_gate_sets_since(self, author: str, since_iso: str) -> int:
+        """Count how many times `author` set gate_type=human since `since_iso`.
+
+        Scans task_comments for audit lines written by update_task when
+        gate_type='human' is applied.  Used by the hard-stop guard in the API.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n
+                FROM task_comments
+                WHERE author = ?
+                  AND body LIKE '%→ ''human''%'
+                  AND created_at >= ?
+                """,
+                (author, since_iso),
+            ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def human_gate_stats_since(self, since_iso: str) -> List[Dict[str, object]]:
+        """Return per-author counts of human-gate sets since `since_iso`.
+
+        Each entry: {"author": str, "count": int}.  Used for metrics display.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT author, COUNT(*) AS n
+                FROM task_comments
+                WHERE body LIKE '%→ ''human''%'
+                  AND created_at >= ?
+                GROUP BY author
+                ORDER BY n DESC
+                """,
+                (since_iso,),
+            ).fetchall()
+        return [{"author": r["author"], "count": int(r["n"])} for r in rows]
 
     def update_labels(
         self,

@@ -79,16 +79,16 @@ or in any MCP host config (Claude Code / Claude Desktop / Cursor / …):
 `wl_close` takes structured closeout sections (`completed`, `verification`,
 `links`, `follow_ups`) — a malformed closeout is impossible by construction.
 
-There's also `wl`, a stdlib-only CLI for agents and scripts that shouldn't
-import anything:
+There's also `tk`, a stdlib-only CLI for agents and scripts that shouldn't
+import anything (`wl` is an installed alias):
 
 ```bash
 export WL_AGENT_ID=my-agent
-wl list --project worklane --status backlog
-wl show wl-1
-wl status wl-1 in_progress
-wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
-wl doctor  # optional Charter compliance check — reports, never blocks
+tk list --project worklane --status backlog
+tk show wl-1
+tk status wl-1 in_progress
+tk comment wl-1 "Owner: my-agent — claiming" --author my-agent
+tk doctor  # optional Charter compliance check — reports, never blocks
 ```
 
 ## The protocol in 60 seconds

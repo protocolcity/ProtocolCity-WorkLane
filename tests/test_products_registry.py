@@ -28,6 +28,8 @@ def _make_env(tmp: Path) -> None:
     Sets ``WL_DEFAULT_PRODUCT`` explicitly — the registry no longer
     hardcodes a default product slug (wl-43), so tests configure the
     tradeos host profile the same way a real host would.
+    WL_DEFAULT_PROJECT / WL_PROJECT (canonical since wl-196) are cleared
+    so tests don't accidentally inherit a caller's env.
     """
     (tmp / "data").mkdir(parents=True, exist_ok=True)
     os.environ["WORKLANE_RUNTIME_DIR"] = str(tmp)
@@ -35,7 +37,9 @@ def _make_env(tmp: Path) -> None:
     os.environ.pop("TRADEOS_TRACKER_DB", None)
     os.environ["TRADEOS_TICKETS_SOURCE"] = "sqlite"
     os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+    os.environ.pop("WL_DEFAULT_PROJECT", None)
     os.environ.pop("WL_PRODUCT", None)
+    os.environ.pop("WL_PROJECT", None)
 
 
 class ProductRegistryTest(unittest.TestCase):
@@ -49,7 +53,9 @@ class ProductRegistryTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PROJECT",
                 "WL_DEFAULT_PRODUCT",
+                "WL_PROJECT",
                 "WL_PRODUCT",
             )
         }
@@ -175,7 +181,9 @@ class ProductRegistryTest(unittest.TestCase):
         self.assertEqual((spec.display, spec.prefix), ("My App", "ma"))
 
     def test_register_product_meta_preserves_default_key(self) -> None:
+        os.environ.pop("WL_DEFAULT_PROJECT", None)
         os.environ.pop("WL_DEFAULT_PRODUCT", None)
+        os.environ.pop("WL_PROJECT", None)
         os.environ.pop("WL_PRODUCT", None)
         self._seed("myapp", "hello")
         cfg = self.root / "config" / "products.json"
@@ -355,7 +363,9 @@ class SurfaceRoutingTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PROJECT",
                 "WL_DEFAULT_PRODUCT",
+                "WL_PROJECT",
                 "WL_PRODUCT",
             )
         }
@@ -823,12 +833,12 @@ class SurfaceRoutingTest(unittest.TestCase):
                 f"/api/admin/tasks/{tid}/comments",
                 json={
                     "body": "Owner: wl-pool (claude-sonnet-5)\nStart: now",
-                    "author": "founder-terminal",
+                    "author": "founder",
                 },
             )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(
-            any("wl-pool" in msg and "founder-terminal" in msg for msg in cm.output)
+            any("wl-pool" in msg and "founder" in msg for msg in cm.output)
         )
 
     def test_default_identity_normal_use_stays_silent(self) -> None:
@@ -837,7 +847,7 @@ class SurfaceRoutingTest(unittest.TestCase):
             with self.assertLogs("worklane.task_server", level="WARNING"):
                 r = self.client.post(
                     f"/api/admin/tasks/{tid}/comments",
-                    json={"body": "just a note", "author": "founder-terminal"},
+                    json={"body": "just a note", "author": "founder"},
                 )
                 self.assertEqual(r.status_code, 200)
 
@@ -868,7 +878,9 @@ class TasksResolveTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PROJECT",
                 "WL_DEFAULT_PRODUCT",
+                "WL_PROJECT",
                 "WL_PRODUCT",
             )
         }
@@ -936,6 +948,80 @@ class TasksResolveTest(unittest.TestCase):
         r = self.client.get("/api/admin/tasks/resolve", params={"id": ""})
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.json()["error"], "empty")
+
+
+class EnvVarAliasTest(unittest.TestCase):
+    """wl-196: WL_PROJECT / WL_DEFAULT_PROJECT canonical; WL_PRODUCT / WL_DEFAULT_PRODUCT back-compat."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._env_before = {
+            k: os.environ.get(k)
+            for k in (
+                "WORKLANE_RUNTIME_DIR",
+                "WORKLANE_DB",
+                "TRADEOS_TRACKER_DB",
+                "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PROJECT",
+                "WL_DEFAULT_PRODUCT",
+                "WL_PROJECT",
+                "WL_PRODUCT",
+            )
+        }
+        (self.root / "data").mkdir(parents=True, exist_ok=True)
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(self.root)
+        os.environ["WORKLANE_DB"] = str(self.root / "data" / "tradeos.db")
+        os.environ.pop("TRADEOS_TRACKER_DB", None)
+        os.environ["TRADEOS_TICKETS_SOURCE"] = "sqlite"
+        for k in ("WL_DEFAULT_PROJECT", "WL_DEFAULT_PRODUCT", "WL_PROJECT", "WL_PRODUCT"):
+            os.environ.pop(k, None)
+
+    def tearDown(self) -> None:
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._tmp.cleanup()
+
+    def test_tp_default_project_canonical(self) -> None:
+        os.environ["WL_DEFAULT_PROJECT"] = "tradeos"
+        slug, src = products.default_product_slug_with_source()
+        self.assertEqual(slug, "tradeos")
+        self.assertIn("WL_DEFAULT_PROJECT", src)
+
+    def test_tp_default_product_back_compat(self) -> None:
+        os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+        slug, src = products.default_product_slug_with_source()
+        self.assertEqual(slug, "tradeos")
+        self.assertIn("WL_DEFAULT_PRODUCT", src)
+
+    def test_tp_project_canonical_fresh_install_fallback(self) -> None:
+        os.environ["WL_PROJECT"] = "worklane"
+        slug, src = products.default_product_slug_with_source()
+        self.assertEqual(slug, "worklane")
+        self.assertIn("WL_PROJECT", src)
+
+    def test_tp_product_back_compat_fresh_install_fallback(self) -> None:
+        os.environ["WL_PRODUCT"] = "worklane"
+        slug, src = products.default_product_slug_with_source()
+        self.assertEqual(slug, "worklane")
+        self.assertIn("WL_PRODUCT", src)
+
+    def test_tp_default_project_beats_tp_default_product(self) -> None:
+        os.environ["WL_DEFAULT_PROJECT"] = "winner"
+        os.environ["WL_DEFAULT_PRODUCT"] = "loser"
+        slug, src = products.default_product_slug_with_source()
+        self.assertEqual(slug, "winner")
+        self.assertIn("WL_DEFAULT_PROJECT", src)
+
+    def test_tp_project_beats_tp_product_fallback(self) -> None:
+        os.environ["WL_PROJECT"] = "winner"
+        os.environ["WL_PRODUCT"] = "loser"
+        slug, src = products.default_product_slug_with_source()
+        self.assertEqual(slug, "winner")
+        self.assertIn("WL_PROJECT", src)
 
 
 if __name__ == "__main__":

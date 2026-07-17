@@ -229,5 +229,187 @@ class GateChipRenderTest(unittest.TestCase):
         self.assertNotIn("tb-card-gate", html)
 
 
+class HumanGateCountTrackerTest(unittest.TestCase):
+    """wl-205: SQLiteTracker.count_human_gate_sets_since and human_gate_stats_since."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.TemporaryDirectory(prefix="wl_hgc_")
+        self.db_path = Path(self.tmpdir.name) / "tickets.db"
+        self.tracker = SQLiteTracker(db_path=self.db_path)
+
+    def tearDown(self) -> None:
+        self.tmpdir.cleanup()
+
+    def test_count_zero_on_fresh_db(self) -> None:
+        since = "2000-01-01T00:00:00Z"
+        self.assertEqual(self.tracker.count_human_gate_sets_since("alice", since), 0)
+
+    def test_count_increments_per_author(self) -> None:
+        since = "2000-01-01T00:00:00Z"
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Task {i}")
+            self.tracker.update_task(t.id, gate_type="human", actor="alice")
+        self.assertEqual(self.tracker.count_human_gate_sets_since("alice", since), 3)
+
+    def test_count_isolates_by_author(self) -> None:
+        since = "2000-01-01T00:00:00Z"
+        for i in range(2):
+            t = self.tracker.create_task(title=f"Alice task {i}")
+            self.tracker.update_task(t.id, gate_type="human", actor="alice")
+        t2 = self.tracker.create_task(title="Bob task")
+        self.tracker.update_task(t2.id, gate_type="human", actor="bob")
+        self.assertEqual(self.tracker.count_human_gate_sets_since("alice", since), 2)
+        self.assertEqual(self.tracker.count_human_gate_sets_since("bob", since), 1)
+
+    def test_count_excludes_clears(self) -> None:
+        since = "2000-01-01T00:00:00Z"
+        t = self.tracker.create_task(title="Toggle")
+        self.tracker.update_task(t.id, gate_type="human", actor="alice")
+        self.tracker.update_task(t.id, gate_type="", actor="alice")
+        self.assertEqual(self.tracker.count_human_gate_sets_since("alice", since), 1)
+
+    def test_human_gate_stats_since_aggregates(self) -> None:
+        since = "2000-01-01T00:00:00Z"
+        for _ in range(2):
+            t = self.tracker.create_task(title="x")
+            self.tracker.update_task(t.id, gate_type="human", actor="alice")
+        t2 = self.tracker.create_task(title="y")
+        self.tracker.update_task(t2.id, gate_type="human", actor="bob")
+        stats = self.tracker.human_gate_stats_since(since)
+        by_author = {row["author"]: row["count"] for row in stats}
+        self.assertEqual(by_author["alice"], 2)
+        self.assertEqual(by_author["bob"], 1)
+
+    def test_human_gate_stats_empty_on_fresh_db(self) -> None:
+        stats = self.tracker.human_gate_stats_since("2000-01-01T00:00:00Z")
+        self.assertEqual(stats, [])
+
+
+class HumanGateHardStopHttpTest(unittest.TestCase):
+    """wl-205: PATCH /api/admin/tasks/{id} hard stop at 3 human gates per 2h."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="wl_hghs_")
+        self.root = Path(self._tmp.name)
+        (self.root / "data").mkdir(parents=True, exist_ok=True)
+        self._env_before = {
+            k: os.environ.get(k)
+            for k in (
+                "WORKLANE_RUNTIME_DIR",
+                "WORKLANE_DB",
+                "TRADEOS_TRACKER_DB",
+                "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PRODUCT",
+                "WL_PRODUCT",
+            )
+        }
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(self.root)
+        os.environ["WORKLANE_DB"] = str(self.root / "data" / "tradeos.db")
+        os.environ.pop("TRADEOS_TRACKER_DB", None)
+        os.environ["TRADEOS_TICKETS_SOURCE"] = "sqlite"
+        os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+        os.environ.pop("WL_PRODUCT", None)
+        self.tracker = SQLiteTracker(db_path=self.root / "data" / "tradeos.db")
+
+        from worklane.task_server import router
+
+        app = FastAPI()
+        app.include_router(router)
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._tmp.cleanup()
+
+    def _patch_human_gate(self, task_id: str, author: str, **extra: object) -> object:
+        body = {"gate_type": "human", "author": author}
+        body.update(extra)
+        return self.client.patch(f"/api/admin/tasks/{task_id}", json=body)
+
+    def test_first_three_gates_allowed(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            r = self._patch_human_gate(f"t-{t.id}", "alice")
+            self.assertEqual(r.status_code, 200, f"gate {i+1} should be allowed")
+
+    def test_fourth_gate_blocked(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            self._patch_human_gate(f"t-{t.id}", "alice")
+        t4 = self.tracker.create_task(title="Fourth")
+        r = self._patch_human_gate(f"t-{t4.id}", "alice")
+        self.assertEqual(r.status_code, 429)
+        body = r.json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["limit"], 3)
+        self.assertEqual(body["human_gate_count"], 3)
+
+    def test_different_authors_independent(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            self._patch_human_gate(f"t-{t.id}", "alice")
+        t_bob = self.tracker.create_task(title="Bob ticket")
+        r = self._patch_human_gate(f"t-{t_bob.id}", "bob")
+        self.assertEqual(r.status_code, 200)
+
+    def test_bulk_gate_ok_bypasses_limit(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            self._patch_human_gate(f"t-{t.id}", "alice")
+        t4 = self.tracker.create_task(title="Fourth")
+        r = self._patch_human_gate(
+            f"t-{t4.id}",
+            "alice",
+            bulk_gate_ok=True,
+            ticket_ids=[f"t-{t4.id}"],
+            authorizing_ticket="t-99",
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_bulk_gate_ok_without_ticket_ids_is_400(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            self._patch_human_gate(f"t-{t.id}", "alice")
+        t4 = self.tracker.create_task(title="Fourth")
+        r = self._patch_human_gate(
+            f"t-{t4.id}",
+            "alice",
+            bulk_gate_ok=True,
+            authorizing_ticket="t-99",
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_bulk_gate_ok_without_authorizing_ticket_is_400(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            self._patch_human_gate(f"t-{t.id}", "alice")
+        t4 = self.tracker.create_task(title="Fourth")
+        r = self._patch_human_gate(
+            f"t-{t4.id}",
+            "alice",
+            bulk_gate_ok=True,
+            ticket_ids=[f"t-{t4.id}"],
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_no_author_uses_cli_update_bucket(self) -> None:
+        for i in range(3):
+            t = self.tracker.create_task(title=f"Ticket {i}")
+            self.client.patch(
+                f"/api/admin/tasks/t-{t.id}",
+                json={"gate_type": "human"},
+            )
+        t4 = self.tracker.create_task(title="Fourth anon")
+        r = self.client.patch(
+            f"/api/admin/tasks/t-{t4.id}",
+            json={"gate_type": "human"},
+        )
+        self.assertEqual(r.status_code, 429)
+
+
 if __name__ == "__main__":
     unittest.main()

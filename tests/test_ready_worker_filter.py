@@ -33,7 +33,9 @@ class ReadyWorkerFilterTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PROJECT",
                 "WL_DEFAULT_PRODUCT",
+                "WL_PROJECT",
                 "WL_PRODUCT",
             )
         }
@@ -42,6 +44,8 @@ class ReadyWorkerFilterTest(unittest.TestCase):
         os.environ.pop("TRADEOS_TRACKER_DB", None)
         os.environ["TRADEOS_TICKETS_SOURCE"] = "sqlite"
         os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+        os.environ.pop("WL_DEFAULT_PROJECT", None)
+        os.environ.pop("WL_PROJECT", None)
         os.environ.pop("WL_PRODUCT", None)
         self.tracker = SQLiteTracker(db_path=self.root / "data" / "tradeos.db")
 

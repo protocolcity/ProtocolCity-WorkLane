@@ -1260,8 +1260,15 @@ def _task_page(
     border: 1px solid rgba(255,59,59,.3);
   }}
   .ts-attention-badge {{
-    background: rgba(245,158,11,.15); color: #f59e0b;
-    border: 1px solid rgba(245,158,11,.3);
+    background: linear-gradient(180deg, rgba(255,231,168,.95), rgba(245,200,74,.9));
+    color: #5c3a08; font-weight: 700;
+    border: 1px solid #a8681e;
+    box-shadow: 0 0 0 0 rgba(245,158,11,.0);
+    animation: tsYouPulse 2.4s ease-in-out infinite;
+  }}
+  @keyframes tsYouPulse {{
+    0%, 100% {{ box-shadow: 0 0 0 0 rgba(245,158,11,0); }}
+    50% {{ box-shadow: 0 0 0 4px rgba(245,158,11,.28); }}
   }}
   /* Slide-down create panel (full form — same as former workspace card) */
   /* Filter form — consistent with main app */
@@ -3203,7 +3210,143 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
     return items
 
 
+
+
+# ── Attention focus / snooze (mute notifications, not ticket gates) ─────────
+# Prefs live in wl_data_dir()/attention_prefs.json (gitignored runtime).
+# Snoozing a product hides it from Waiting on You until `until` without
+# changing gate_type on tickets — wrong tool for "I'm not in tradeOS today".
+
+_ATTENTION_PREFS_NAME = "attention_prefs.json"
+
+
+def _attention_prefs_path() -> Path:
+    return wl_data_dir() / _ATTENTION_PREFS_NAME
+
+
+def _load_attention_prefs() -> Dict[str, Any]:
+    path = _attention_prefs_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw
+    except (OSError, ValueError, TypeError):
+        pass
+    return {"snoozes": []}
+
+
+def _save_attention_prefs(prefs: Dict[str, Any]) -> None:
+    path = _attention_prefs_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(prefs, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _parse_until_iso(raw: str, *, now: datetime) -> datetime:
+    """Accept ISO datetime, YYYY-MM-DD, or duration tokens: today|1d|3d|1w|eod."""
+    s = (raw or "").strip().lower()
+    if not s:
+        raise ValueError("until is required")
+    # end of local calendar day in UTC-ish: use now's date + 1 day 00:00 UTC as "tomorrow morning"
+    if s in ("today", "eod", "end-of-day"):
+        # snooze until next local midnight approximated as now+ (24h - hour) or simply +12h max day remainder
+        end = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        if end <= now:
+            end = now + timedelta(hours=12)
+        return end
+    if s in ("1d", "day", "24h"):
+        return now + timedelta(days=1)
+    if s in ("3d", "3day"):
+        return now + timedelta(days=3)
+    if s in ("1w", "week", "7d"):
+        return now + timedelta(days=7)
+    if s in ("1h", "hour"):
+        return now + timedelta(hours=1)
+    # date only
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        try:
+            d = datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return d
+        except ValueError as exc:
+            raise ValueError(f"bad until date: {raw!r}") from exc
+    # ISO
+    try:
+        iso = raw.strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except ValueError as exc:
+        raise ValueError(
+            "until must be ISO datetime, YYYY-MM-DD, or today|1d|3d|1w"
+        ) from exc
+
+
+def _active_attention_snoozes(*, now: datetime) -> List[Dict[str, Any]]:
+    prefs = _load_attention_prefs()
+    raw = prefs.get("snoozes") if isinstance(prefs.get("snoozes"), list) else []
+    active: List[Dict[str, Any]] = []
+    kept: List[Dict[str, Any]] = []
+    changed = False
+    for s in raw:
+        if not isinstance(s, dict):
+            changed = True
+            continue
+        until_s = s.get("until") or ""
+        try:
+            until = _parse_until_iso(str(until_s), now=now) if until_s else None
+        except ValueError:
+            changed = True
+            continue
+        if until is not None and until <= now:
+            changed = True
+            continue
+        kept.append(s)
+        active.append({
+            "scope": s.get("scope") or "product",
+            "product": (s.get("product") or "").strip().lower(),
+            "kind": (s.get("kind") or "").strip().lower(),
+            "until": until.isoformat() if until else None,
+            "reason": s.get("reason") or "",
+        })
+    if changed:
+        prefs["snoozes"] = kept
+        _save_attention_prefs(prefs)
+    return active
+
+
+def _item_is_snoozed(it: Dict[str, Any], snoozes: List[Dict[str, Any]]) -> bool:
+    prod = (it.get("product") or "").strip().lower()
+    kind = (it.get("kind") or "").strip().lower()
+    for s in snoozes:
+        scope = s.get("scope") or "product"
+        if scope == "product" and s.get("product") and s["product"] == prod:
+            return True
+        if scope == "kind" and s.get("kind") and s["kind"] == kind:
+            return True
+        if scope == "all":
+            return True
+    return False
+
+
+def _partition_attention_items(
+    items: List[Dict[str, Any]], *, now: datetime
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Returns (visible, snoozed_items, active_snoozes)."""
+    snoozes = _active_attention_snoozes(now=now)
+    vis: List[Dict[str, Any]] = []
+    hid: List[Dict[str, Any]] = []
+    for it in items:
+        if _item_is_snoozed(it, snoozes):
+            hid.append(it)
+        else:
+            vis.append(it)
+    return vis, hid, snoozes
+
+
+
 def _render_founder_attention_rows(items: List[Dict[str, Any]], *, limit: Optional[int] = None) -> str:
+    """Compact side-panel rows (Overview). Full decision board is
+    `_render_attention_page_body`."""
     if not items:
         return "<div class='pulse-empty'>&#10003; Nothing waiting on you.</div>"
     rows = ""
@@ -3222,26 +3365,617 @@ def _render_founder_attention_rows(items: List[Dict[str, Any]], *, limit: Option
     return f"<div class='pulse-side-rows'>{rows}</div>"
 
 
-def _render_attention_page_body(items: List[Dict[str, Any]]) -> str:
-    """wl-135: full-page render behind /admin/attention — same rows as the
-    Overview panel, unlimited, plus a per-kind breakdown line."""
-    if not items:
-        return _task_card(
-            "Waiting on founder",
-            "<div class='pulse-empty'>&#10003; Nothing waiting on you across any store.</div>",
+# Decision-board kind order: what You can act on first, embargoes last.
+_ATTENTION_KIND_RANK = {
+    "founder_decision": 0,
+    "in_review": 1,
+    "stalled": 2,
+    "human_gate": 3,
+    "embargo": 4,
+}
+_ATTENTION_KIND_BLURB = {
+    "founder_decision": "Needs a yes/no or direction from You",
+    "in_review": "Work finished — waiting on Your sign-off",
+    "stalled": "In flight with no update (stale claim)",
+    "human_gate": "Parked behind a human gate (often deferred / external)",
+    "embargo": "Date-gated — not actionable until the date",
+}
+
+
+def _sort_attention_for_decisions(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Decisions first, then priority, then oldest wait."""
+    return sorted(
+        items,
+        key=lambda it: (
+            _ATTENTION_KIND_RANK.get(it.get("kind") or "", 9),
+            int(it.get("priority") or 3),
+            -(int(it.get("age_minutes") or 0)),
+            str(it.get("id") or ""),
+        ),
+    )
+
+
+def _render_attention_decision_card(it: Dict[str, Any]) -> str:
+    """One scannable decision row — full note, age, product, open action."""
+    kind = it.get("kind") or "other"
+    tag, color = _ATTENTION_KIND_META.get(kind, (kind, "#64748b"))
+    age = (
+        _fmt_minutes(it["age_minutes"])
+        if it.get("age_minutes") is not None
+        else "—"
+    )
+    pri = int(it.get("priority") or 3)
+    note = (it.get("note") or "").strip()
+    title = it.get("title") or "(untitled)"
+    prod = it.get("product") or ""
+    tid = it.get("id") or "?"
+    href = it.get("url") or f"/admin/desk?open={tid}"
+    until = it.get("gate_until") or ""
+    until_bit = (
+        f"<span class='you-until'>until {_esc(str(until)[:10])}</span>"
+        if until
+        else ""
+    )
+    note_html = (
+        f"<div class='you-card-note'>{_esc(note)}</div>" if note else ""
+    )
+    return (
+        f"<article class='you-card kind-{_esc(kind)}' data-kind='{_esc(kind)}' "
+        f"data-product='{_esc(prod)}' data-priority='{pri}' "
+        f"data-age='{int(it.get('age_minutes') or 0)}' data-id='{_esc(tid)}'>"
+        f"<div class='you-card-top'>"
+        f"<span class='you-card-tag' style='color:{color};border-color:{color};'>{_esc(tag)}</span>"
+        f"<a class='you-card-id' href='{_esc(href)}'>{_esc(tid)}</a>"
+        f"<span class='you-card-pri'>P{pri}</span>"
+        f"<span class='you-card-prod'>{_esc(prod)}</span>"
+        f"<span class='you-card-age' title='how long waiting on You'>{_esc(age)}</span>"
+        f"{until_bit}"
+        f"</div>"
+        f"<a class='you-card-title' href='{_esc(href)}'>{_esc(title)}</a>"
+        f"{note_html}"
+        f"<div class='you-card-actions'>"
+        f"<a class='you-card-open' href='{_esc(href)}'>Open on Desk →</a>"
+        f"</div>"
+        f"</article>"
+    )
+
+
+def _render_attention_snooze_banner(
+    snoozes: List[Dict[str, Any]],
+    snoozed_items: List[Dict[str, Any]],
+) -> str:
+    """Active focus mutes + undo controls (not ticket gates)."""
+    if not snoozes and not snoozed_items:
+        return ""
+    bits: List[str] = []
+    for s in snoozes:
+        scope = s.get("scope") or "product"
+        until = (s.get("until") or "")[:16].replace("T", " ")
+        if scope == "product":
+            label = s.get("product") or "?"
+        elif scope == "kind":
+            label = "kind:" + (s.get("kind") or "?")
+        else:
+            label = "everything"
+        n = sum(
+            1
+            for it in snoozed_items
+            if (scope == "all")
+            or (
+                scope == "product"
+                and (it.get("product") or "").lower() == (s.get("product") or "")
+            )
+            or (
+                scope == "kind"
+                and (it.get("kind") or "") == (s.get("kind") or "")
+            )
         )
-    by_kind: Dict[str, int] = {}
-    for it in items:
-        by_kind[it["kind"]] = by_kind.get(it["kind"], 0) + 1
-    summary = " &middot; ".join(
-        f"{by_kind[k]} {_ATTENTION_KIND_META.get(k, (k, ''))[0]}"
-        for k in by_kind
+        bits.append(
+            f"<span class='you-snooze-pill' data-scope='{_esc(scope)}' "
+            f"data-product='{_esc(s.get('product') or '')}' "
+            f"data-kind='{_esc(s.get('kind') or '')}'>"
+            f"<b>{_esc(label)}</b> snoozed"
+            + (f" · {n} hidden" if n else "")
+            + (f" until {_esc(until)} UTC" if until else "")
+            + f" <button type='button' class='you-unsnooze' "
+            f"data-product='{_esc(s.get('product') or '')}' "
+            f"data-kind='{_esc(s.get('kind') or '')}' "
+            f"data-scope='{_esc(scope)}'>undo</button>"
+            f"</span>"
+        )
+    return (
+        f"<div class='you-snooze-banner' id='you-snooze-banner'>"
+        f"<div class='you-snooze-banner-label'>Focus mutes (not ticket gates)</div>"
+        f"<div class='you-snooze-pills'>{''.join(bits)}</div>"
+        f"</div>"
     )
-    rows_html = _render_founder_attention_rows(items)
-    return _task_card(
-        f"Waiting on founder — {len(items)}",
-        f"<div class='dim' style='margin-bottom:10px; font-size:12px;'>{summary}</div>{rows_html}",
+
+
+def _render_attention_page_body(
+    items: List[Dict[str, Any]],
+    *,
+    snoozed: Optional[List[Dict[str, Any]]] = None,
+    snoozes: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Full-page decision board for /admin/attention (wl-135).
+
+    Not a dump of side-panel rows — grouped for triage: decisions → review →
+    stalled → human gates (by product) → embargoes. Filters client-side.
+    Persona law: human is You. Snoozes mute attention, not workflow gates.
+    """
+    snoozed = snoozed or []
+    snoozes = snoozes or []
+    if not items:
+        empty_msg = (
+            "<div class='pulse-empty'>&#10003; Nothing waiting on You"
+            + (" (some items are snoozed — see banner)." if snoozed else " across any store.")
+            + "</div>"
+        )
+        banner = _render_attention_snooze_banner(snoozes, snoozed)
+        return _task_card("Waiting on You", banner + empty_msg)
+
+    ordered = _sort_attention_for_decisions(items)
+    by_kind: Dict[str, List[Dict[str, Any]]] = {}
+    by_prod: Dict[str, int] = {}
+    for it in ordered:
+        by_kind.setdefault(it["kind"], []).append(it)
+        p = it.get("product") or "—"
+        by_prod[p] = by_prod.get(p, 0) + 1
+
+    # KPI tiles — kind order
+    tiles = ""
+    for kind in sorted(by_kind.keys(), key=lambda k: _ATTENTION_KIND_RANK.get(k, 9)):
+        tag, color = _ATTENTION_KIND_META.get(kind, (kind, "#64748b"))
+        n = len(by_kind[kind])
+        blurb = _ATTENTION_KIND_BLURB.get(kind, "")
+        tiles += (
+            f"<button type='button' class='you-kpi' data-filter-kind='{_esc(kind)}' "
+            f"style='--kpi:{color};' title='{_esc(blurb)}'>"
+            f"<span class='you-kpi-n'>{n}</span>"
+            f"<span class='you-kpi-l'>{_esc(tag)}</span>"
+            f"</button>"
+        )
+    tiles = (
+        f"<button type='button' class='you-kpi on' data-filter-kind='all'>"
+        f"<span class='you-kpi-n'>{len(ordered)}</span>"
+        f"<span class='you-kpi-l'>all</span></button>"
+        + tiles
     )
+
+    prod_chips = "".join(
+        f"<button type='button' class='you-pchip' data-filter-product='{_esc(p)}'>"
+        f"{_esc(p)} <b>{n}</b></button>"
+        for p, n in sorted(by_prod.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
+    prod_chips = (
+        "<button type='button' class='you-pchip on' data-filter-product='all'>"
+        "all stores</button>" + prod_chips
+    )
+
+    # Sections by kind (decision order)
+    sections = ""
+    for kind in sorted(by_kind.keys(), key=lambda k: _ATTENTION_KIND_RANK.get(k, 9)):
+        tag, color = _ATTENTION_KIND_META.get(kind, (kind, "#64748b"))
+        blurb = _ATTENTION_KIND_BLURB.get(kind, "")
+        group = by_kind[kind]
+        # human_gate: subgroup by product so 40 tradeos gates aren't a wall
+        if kind == "human_gate" and len(group) > 6:
+            by_p: Dict[str, List[Dict[str, Any]]] = {}
+            for it in group:
+                by_p.setdefault(it.get("product") or "—", []).append(it)
+            inner = ""
+            for prod in sorted(by_p.keys(), key=lambda x: (-len(by_p[x]), x)):
+                cards = "".join(_render_attention_decision_card(it) for it in by_p[prod])
+                inner += (
+                    f"<details class='you-prod-group' open data-product='{_esc(prod)}'>"
+                    f"<summary><b>{_esc(prod)}</b> · {len(by_p[prod])} gated</summary>"
+                    f"<div class='you-card-grid'>{cards}</div></details>"
+                )
+            body = inner
+        else:
+            body = (
+                f"<div class='you-card-grid'>"
+                + "".join(_render_attention_decision_card(it) for it in group)
+                + "</div>"
+            )
+        sections += (
+            f"<section class='you-section' data-section-kind='{_esc(kind)}'>"
+            f"<header class='you-section-h' style='--kpi:{color};'>"
+            f"<h3>{_esc(tag)} <span class='you-section-n'>{len(group)}</span></h3>"
+            f"<p class='you-section-blurb'>{_esc(blurb)}</p>"
+            f"</header>{body}</section>"
+        )
+
+    css = """
+<style>
+/* City-boundary board — suite daylight tokens (SUITE_PERIMETER pc-162). */
+.you-board {
+  --page: #faf6ec;
+  --paper: #e2d9c2;
+  --paper-top: #efe8d5;
+  --card: #fffdf8;
+  --line: #c4b8a4;
+  --ink: #2a241c;
+  --dim: #6b6154;
+  --verd: #3d7a6a;
+  --fire: #a33327;
+  --gold: #c99212;
+  --ok: #2e7d4f;
+  max-width: 1100px;
+  margin: 0 auto;
+  color: var(--ink);
+  font-family: Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif;
+}
+.you-city-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  margin: 0 0 14px; padding: 8px 12px;
+  background: linear-gradient(180deg, var(--paper-top), var(--paper));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.you-city-strip .yc-here { font-weight: 700; color: var(--ink); letter-spacing: .04em; }
+.you-city-strip .yc-bench {
+  color: var(--fire); background: color-mix(in srgb, var(--gold) 18%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
+  padding: 2px 8px; border-radius: 999px; letter-spacing: .03em;
+}
+.you-city-strip .yc-dim { color: var(--dim); }
+.you-city-strip a {
+  color: var(--verd); font-weight: 700; text-decoration: none;
+  border: 1px solid var(--line); background: var(--card);
+  padding: 4px 10px; border-radius: 8px;
+}
+.you-city-strip a:hover { border-color: var(--verd); }
+.you-board-lead {
+  font-size: 14px; color: var(--dim); margin: 0 0 10px; line-height: 1.5;
+}
+.you-board-lead b { color: var(--ink); }
+.you-howto {
+  font-size: 12.5px; color: var(--dim); margin: 0 0 14px; line-height: 1.45;
+}
+.you-kpis {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.you-kpi {
+  display: flex; flex-direction: column; align-items: flex-start;
+  min-width: 76px; padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--ink); font: inherit;
+  box-shadow: 0 1px 0 #2a241c12;
+}
+.you-kpi.on, .you-kpi:hover {
+  border-color: var(--verd);
+  box-shadow: 0 0 0 1px var(--verd);
+}
+.you-kpi-n {
+  font-size: 22px; font-weight: 700; line-height: 1.1;
+  color: var(--kpi, var(--ink));
+  font-variant-numeric: tabular-nums;
+}
+.you-kpi-l {
+  font-size: 11px; color: var(--dim); text-transform: lowercase; margin-top: 2px;
+  letter-spacing: .02em;
+}
+.you-toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+  margin-bottom: 14px; padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.you-prods { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.you-pchip {
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--dim); border-radius: 999px; padding: 4px 11px;
+  font-size: 12px; cursor: pointer; font: inherit;
+}
+.you-pchip.on, .you-pchip:hover {
+  border-color: var(--verd); color: var(--verd); font-weight: 600;
+}
+.you-pchip b { font-weight: 700; margin-left: 2px; color: var(--ink); }
+.you-search {
+  min-width: 200px; flex: 0 1 260px; padding: 7px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--ink); font: inherit; font-size: 13px;
+}
+.you-search::placeholder { color: var(--dim); }
+.you-section { margin: 0 0 22px; }
+.you-section.is-hidden { display: none; }
+.you-section-h {
+  border-left: 3px solid var(--kpi, var(--verd)); padding: 0 0 0 10px; margin: 0 0 10px;
+}
+.you-section-h h3 {
+  margin: 0; font-size: 16px; font-weight: 700; text-transform: capitalize;
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: Georgia, "Palatino Linotype", Palatino, serif;
+  letter-spacing: .02em;
+}
+.you-section-n {
+  font-size: 12px; font-weight: 600; color: var(--dim);
+  background: var(--paper-top); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 8px;
+}
+.you-section-blurb { margin: 4px 0 0; font-size: 12.5px; color: var(--dim); }
+.you-card-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+.you-card {
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); padding: 11px 12px;
+  box-shadow: 0 1px 0 #2a241c10;
+}
+.you-card.is-hidden { display: none; }
+.you-card-top {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px;
+  font-size: 11px; color: var(--dim);
+  font-family: ui-monospace, Menlo, "SF Mono", monospace;
+}
+.you-card-tag {
+  border: 1px solid; border-radius: 999px; padding: 1px 7px;
+  font-weight: 700; text-transform: lowercase; font-size: 10px;
+  background: var(--paper-top);
+}
+.you-card-id {
+  color: var(--verd); font-weight: 700; text-decoration: none;
+}
+.you-card-id:hover { text-decoration: underline; }
+.you-card-pri { font-weight: 700; color: var(--ink); }
+.you-card-age { margin-left: auto; }
+.you-until {
+  color: var(--dim); border: 1px dashed var(--line); border-radius: 4px; padding: 0 5px;
+}
+.you-card-title {
+  font-size: 14.5px; font-weight: 700; line-height: 1.35;
+  color: var(--ink); text-decoration: none;
+  font-family: Georgia, "Palatino Linotype", Palatino, serif;
+}
+.you-card-title:hover { color: var(--verd); }
+.you-card-note {
+  font-size: 12.5px; line-height: 1.45; color: var(--dim);
+  border-left: 2px solid var(--paper);
+  padding-left: 8px;
+  max-height: 4.6em; overflow: hidden;
+}
+.you-card-note:hover, .you-card-note:focus {
+  max-height: none; overflow: visible;
+  background: var(--paper-top);
+}
+.you-card-actions { margin-top: auto; padding-top: 4px; }
+.you-card-open {
+  font-size: 12px; font-weight: 700; color: var(--verd); text-decoration: none;
+}
+.you-card-open:hover { text-decoration: underline; }
+.you-prod-group {
+  border: 1px solid var(--line); border-radius: 8px;
+  margin-bottom: 10px; padding: 0 10px 10px;
+  background: var(--page);
+}
+.you-prod-group > summary {
+  cursor: pointer; padding: 10px 4px; font-size: 13px; color: var(--ink);
+  list-style: none; font-weight: 600;
+}
+.you-prod-group > summary::-webkit-details-marker { display: none; }
+.you-empty-filter {
+  display: none; padding: 20px; text-align: center; color: var(--dim);
+  font-size: 13px;
+}
+.you-empty-filter.show { display: block; }
+.you-snooze-banner {
+  border: 1px solid #c4a35a88; background: linear-gradient(180deg, #fff6dc, #f5e6b8);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+  color: var(--ink);
+}
+.you-snooze-banner-label {
+  font-size: 11px; font-weight: 700; color: var(--gold); margin-bottom: 6px;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.you-snooze-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.you-snooze-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--ink);
+}
+.you-unsnooze {
+  border: 0; background: transparent; color: var(--verd);
+  cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
+  text-decoration: underline;
+}
+.you-focus-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin: 0 0 14px; padding: 8px 12px;
+  border: 1px dashed var(--line); border-radius: 8px;
+  background: var(--card);
+}
+.you-focus-label { font-size: 12px; color: var(--dim); margin-right: 4px; }
+.you-snooze-prod {
+  border: 1px solid #c4a35a88; background: #fff6dc;
+  color: #6a5010; border-radius: 999px; padding: 4px 10px;
+  font-size: 12px; cursor: pointer; font: inherit; font-weight: 600;
+}
+.you-snooze-prod:hover { background: #ffe7a8; border-color: var(--gold); }
+.tos-card:has(.you-board) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.tos-card:has(.you-board) > .tos-card-header {
+  border-bottom: 1px solid #c4b8a4;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+}
+.tos-card:has(.you-board) .tos-card-title {
+  font-family: Georgia, "Palatino Linotype", Palatino, serif;
+  letter-spacing: .04em;
+}
+</style>
+
+"""
+
+    js = """
+<script>
+(function(){
+  var kind = 'all', product = 'all', q = '';
+  function apply(){
+    var cards = document.querySelectorAll('.you-card');
+    var nShow = 0;
+    cards.forEach(function(c){
+      var okK = (kind === 'all' || c.getAttribute('data-kind') === kind);
+      var okP = (product === 'all' || c.getAttribute('data-product') === product);
+      var hay = ((c.getAttribute('data-id')||'') + ' ' + (c.textContent||'')).toLowerCase();
+      var okQ = !q || hay.indexOf(q) >= 0;
+      var on = okK && okP && okQ;
+      c.classList.toggle('is-hidden', !on);
+      if(on) nShow++;
+    });
+    document.querySelectorAll('.you-section').forEach(function(sec){
+      var k = sec.getAttribute('data-section-kind');
+      var any = false;
+      sec.querySelectorAll('.you-card').forEach(function(c){
+        if(!c.classList.contains('is-hidden')) any = true;
+      });
+      /* When filtering to one kind, hide other sections entirely. */
+      if(kind !== 'all' && k !== kind) any = false;
+      sec.classList.toggle('is-hidden', !any);
+      /* Collapse empty product groups inside human_gate */
+      sec.querySelectorAll('.you-prod-group').forEach(function(g){
+        var gAny = false;
+        g.querySelectorAll('.you-card').forEach(function(c){
+          if(!c.classList.contains('is-hidden')) gAny = true;
+        });
+        g.style.display = gAny ? '' : 'none';
+      });
+    });
+    var empty = document.getElementById('you-empty-filter');
+    if(empty) empty.classList.toggle('show', nShow === 0);
+  }
+  document.querySelectorAll('[data-filter-kind]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      kind = btn.getAttribute('data-filter-kind') || 'all';
+      document.querySelectorAll('[data-filter-kind]').forEach(function(b){
+        b.classList.toggle('on', b === btn);
+      });
+      apply();
+    });
+  });
+  document.querySelectorAll('[data-filter-product]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      product = btn.getAttribute('data-filter-product') || 'all';
+      document.querySelectorAll('[data-filter-product]').forEach(function(b){
+        b.classList.toggle('on', b === btn);
+      });
+      apply();
+    });
+  });
+  var search = document.getElementById('you-search');
+  if(search){
+    search.addEventListener('input', function(){
+      q = (search.value || '').trim().toLowerCase();
+      apply();
+    });
+  }
+
+  function postJSON(url, body){
+    return fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify(body || {})
+    }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.detail||j.error||r.status); return j; }); });
+  }
+  document.querySelectorAll('.you-snooze-prod').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var prod = btn.getAttribute('data-product') || '';
+      if(!prod || prod === '__custom__') return;
+      if(!confirm('Snooze all ' + prod + ' items from Waiting on You until tomorrow?\n\nThis does NOT clear ticket gates — it only mutes the attention feed so you can focus elsewhere.')) return;
+      btn.disabled = true;
+      postJSON('/api/dev/attention/snooze', {product: prod, until: 'today', reason: 'focus elsewhere'})
+        .then(function(){ window.location.reload(); })
+        .catch(function(e){ alert('Snooze failed: ' + e.message); btn.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.you-unsnooze').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var body = {
+        product: btn.getAttribute('data-product') || '',
+        kind: btn.getAttribute('data-kind') || '',
+        scope: btn.getAttribute('data-scope') || ''
+      };
+      btn.disabled = true;
+      postJSON('/api/dev/attention/unsnooze', body)
+        .then(function(){ window.location.reload(); })
+        .catch(function(e){ alert('Undo failed: ' + e.message); btn.disabled = false; });
+    });
+  });
+})();
+</script>
+"""
+    # Decision-first lead copy
+    n_dec = len(by_kind.get("founder_decision", []))
+    n_rev = len(by_kind.get("in_review", []))
+    n_gate = len(by_kind.get("human_gate", []))
+    n_emb = len(by_kind.get("embargo", []))
+    lead = (
+        f"<p class='you-board-lead'><b>{len(ordered)}</b> items waiting on You"
+        + (f" · <b>{len(snoozed)}</b> snoozed" if snoozed else "")
+        + f" across {len(by_prod)} store{'s' if len(by_prod) != 1 else ''} in this view. "
+        f"This page is the Desk <b>in-tray</b> (decision board) — the living "
+        f"<a href='/admin/desk' style='color:var(--verd);font-weight:700'>top-down Desk room</a> "
+        f"is separate. "
+        f"Start with <b>decisions</b> ({n_dec}) and <b>review</b> ({n_rev}); "
+        f"human gates ({n_gate}) are often deferred/external; "
+        f"embargoes ({n_emb}) are date-locked.</p>"
+        f"<p class='you-howto'>Tip: click a KPI tile or store chip to filter. "
+        f"Snooze a whole store when you are not working it today — that mutes "
+        f"<em>notifications</em>, it does not clear ticket gates. "
+        f"Hover a note to expand. Open a card when you are ready to act.</p>"
+    )
+    banner = _render_attention_snooze_banner(snoozes, snoozed)
+    # Per-product snooze controls for products present on the board
+    snooze_btns = "".join(
+        f"<button type='button' class='you-snooze-prod' data-product='{_esc(p)}' "
+        f"title='Hide {_esc(p)} from Waiting on You until tomorrow'>"
+        f"Snooze {_esc(p)} today</button>"
+        for p in sorted(by_prod.keys())
+    )
+    if by_prod:
+        snooze_bar = (
+            f"<div class='you-focus-bar'>"
+            f"<span class='you-focus-label'>Not working a store today?</span>"
+            f"{snooze_btns}"
+            f"<button type='button' class='you-snooze-prod' data-product='__custom__' hidden></button>"
+            f"</div>"
+        )
+    else:
+        snooze_bar = ""
+    city_strip = (
+        "<div class='you-city-strip'>"
+        "<span class='yc-here'>CITY</span>"
+        "<span class='yc-dim'>·</span>"
+        "<a href='http://127.0.0.1:8796/' title='Office foyer'>Office</a>"
+        "<a href='http://127.0.0.1:8797/' title='Roster — WorkForce (who is working)'>Roster</a>"
+        "<a href='/admin/desk' title='Desk Home — top-down work-order room (WorkLane D0)'>Desk</a>"
+        "<span class='yc-here yc-bench'>Waiting on You</span>"
+        "<span class='yc-dim'>· Desk in-tray (D1) · not the top-down floor</span>"
+        "</div>"
+    )
+    body = (
+        f"<div class='you-board' id='you-board'>"
+        f"{city_strip}"
+        f"{banner}"
+        f"{lead}"
+        f"{snooze_bar}"
+        f"<div class='you-kpis'>{tiles}</div>"
+        f"<div class='you-toolbar'>"
+        f"<div class='you-prods'>{prod_chips}</div>"
+        f"<input type='search' class='you-search' id='you-search' "
+        f"placeholder='Filter by id, title, note…' autocomplete='off' />"
+        f"</div>"
+        f"<div class='you-empty-filter' id='you-empty-filter'>No items match this filter.</div>"
+        f"{sections}"
+        f"</div>"
+        f"{css}{js}"
+    )
+    return _task_card(f"Waiting on You — {len(ordered)}", body)
 
 
 def _render_flow_panel(
@@ -3536,7 +4270,9 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
     # wl-135: founder-attention feed is always all-store — a store-scoped
     # Pulse page still shows the full "waiting on you" picture, matching the
     # header chip and /admin/attention.
-    founder_attention_items = _collect_founder_attention_items(now=now)
+    founder_attention_all = _collect_founder_attention_items(now=now)
+    founder_attention_items, _hid, _sn = _partition_attention_items(
+        founder_attention_all, now=now)
     founder_attention_html = _render_founder_attention_rows(founder_attention_items, limit=8)
     # wl-89: former cockpit analytics, re-homed as themed panels.
     breakdown_html, breakdown_meta, activity14_html = _render_breakdown_panels(
@@ -4286,7 +5022,7 @@ router = APIRouter()
 # signed with this identity that also claims ownership of a *different*
 # agent (an Owner: marker in the comment body) means the caller's launcher
 # never exported WL_AGENT_ID (wl-39) and is silently mis-signing writes.
-DEFAULT_AGENT_ID = "founder-terminal"
+DEFAULT_AGENT_ID = "founder"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -4344,6 +5080,156 @@ def _product_next_id(spec: ProductSpec, tracker: Any) -> str:
             conn.close()
     except Exception:
         return "—"
+
+
+def _render_settings_page(body: str) -> str:
+    """Settings in the suite daylight shell (wl-188 item #2).
+
+    Parallel to _render_report_page() — self-contained daylight HTML,
+    no ops D1 shell (data-ops-shell / data-perimeter=d1 / Board·Table nav).
+    """
+    if _BRAND_MODE == "city":
+        h1 = "SETTINGS <span class='fn'>&#xb7; Desk</span>"
+        epithet = "ProtocolCity &#xb7; projects &#xb7; prefixes &#xb7; numbering &#xb7; service"
+    else:
+        h1 = "SETTINGS <span class='fn'>&#xb7; WorkLane</span>"
+        epithet = "projects &#xb7; prefixes &#xb7; numbering &#xb7; service"
+    # Bridge CSS: map ops-shell token names (_task_server_extra_css uses these)
+    # to the daylight palette already declared by _REPORT_CSS.
+    _bridge = """
+/* wl-188: bridge — ops-shell token aliases → daylight palette */
+:root,[data-theme="light"]{
+  --bg:var(--paper);--fg:var(--ink);--border:var(--line);
+  --bg2:var(--paper-top);--card:var(--paper);--raised:var(--paper-top);
+  --hover-tint:color-mix(in srgb,var(--line) 12%,transparent);
+  --neon:var(--verd);--green:var(--verd);--red:var(--stamp);
+  --accent:var(--verd);--muted:var(--dim);
+  --code-bg:var(--paper-top);
+  --font-sans:"IBM Plex Sans",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,monospace;
+  --fs-xs:11px;--fs-sm:13px;--fs-base:15px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;
+  --text-badge:11px;
+  --r-sm:3px;--r-md:4px;--r-lg:8px;--r-pill:999px;
+  --sp-xs:4px;--sp-sm:6px;--sp-md:10px;--sp-lg:16px;--sp-xl:22px;
+  --mode-color:var(--verd);
+  --mode-color-bg:color-mix(in srgb,var(--verd) 8%,transparent);
+}
+[data-theme="dark"]{
+  --bg:var(--paper);--fg:var(--ink);--border:var(--line);
+  --bg2:var(--paper-top);--card:var(--paper);--raised:var(--paper-top);
+  --hover-tint:color-mix(in srgb,var(--line) 12%,transparent);
+  --neon:var(--verd);--green:var(--verd);--red:var(--stamp);
+  --accent:var(--verd);--muted:var(--dim);--code-bg:var(--paper-top);
+  --mode-color:var(--verd);
+  --mode-color-bg:color-mix(in srgb,var(--verd) 8%,transparent);
+}
+/* Settings daylight chrome */
+main.stg-sheet{flex:1;overflow:auto;padding:18px 22px 36px;}
+.ts-ops-page{max-width:1100px;}
+.tos-card{background:var(--paper);border:1px solid var(--line);border-radius:4px;
+  padding:14px 18px;margin-bottom:18px;box-shadow:0 1px 4px #2a241c0a;}
+.tos-card-header{border-bottom:1px solid var(--rule);margin-bottom:10px;padding-bottom:8px;}
+.tos-card-title{font:700 10px/1 "IBM Plex Sans",system-ui,sans-serif;letter-spacing:.18em;
+  color:var(--dim);text-transform:uppercase;margin:0;}
+.tos-card-body code{font-family:"IBM Plex Mono",monospace;font-size:13px;
+  background:var(--paper-top);border:1px solid var(--rule);border-radius:3px;padding:1px 5px;}
+.tos-table{border-collapse:collapse;width:100%;}
+.tos-table th{text-align:left;font:700 9px/1 "IBM Plex Sans",system-ui,sans-serif;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  padding:8px 10px 6px;border-bottom:1px solid var(--line);}
+.tos-table td{padding:8px 10px;border-bottom:1px solid var(--rule);
+  font-size:13px;vertical-align:middle;}
+.tos-table tr:last-child td{border-bottom:none;}
+.tos-table tr:hover td{background:var(--paper-top);}
+.btn{display:inline-flex;align-items:center;padding:5px 14px;
+  border-radius:var(--r-md,4px);border:1px solid var(--line);background:var(--paper);
+  color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;
+  transition:border-color .12s;}
+.btn:hover{border-color:var(--ink);}
+.btn-sm{font-size:12px;padding:3px 10px;}
+.btn.go{border-color:var(--verd);color:var(--verd);}
+.btn.go:hover{background:color-mix(in srgb,var(--verd) 8%,transparent);}
+.dim{color:var(--dim);}
+/* Toast for showToast() */
+.toast-container{position:fixed;bottom:24px;right:22px;z-index:9000;
+  display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--paper);border:1px solid var(--line);border-radius:4px;
+  padding:8px 14px;font-size:13px;font-family:"IBM Plex Sans",system-ui,sans-serif;
+  box-shadow:0 2px 10px #2a241c18;transition:opacity .3s;}
+.toast.success{border-color:var(--verd);color:var(--verd);}
+.toast.error{border-color:var(--stamp);color:var(--stamp);}
+.toast.out{opacity:0;}
+/* Theme toggle button */
+#stgThemeBtn{background:none;border:1px solid var(--line);border-radius:4px;
+  color:var(--dim);cursor:pointer;font-size:16px;padding:3px 9px;
+  font-family:inherit;line-height:1;}
+#stgThemeBtn:hover{color:var(--ink);border-color:var(--ink);}
+"""
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · {_esc(_BRAND_NAME)}</title>
+<style>{_REPORT_CSS}{_bridge}</style>
+<script>
+(function(){{
+  var K='protocolcity-theme';
+  try{{
+    var leg=localStorage.getItem('wl-theme');
+    if(leg&&!localStorage.getItem(K))
+      localStorage.setItem(K,leg==='dark'?'dark':'light');
+    var t=localStorage.getItem(K)||'light';
+    if(t!=='dark'&&t!=='light')t='light';
+    document.documentElement.setAttribute('data-theme',t);
+  }}catch(e){{ document.documentElement.setAttribute('data-theme','light'); }}
+}})();
+function showToast(msg,type,duration){{
+  type=type||'success'; duration=duration||2500;
+  if(!window._tc){{
+    var c=document.createElement('div');c.className='toast-container';
+    document.body.appendChild(c);window._tc=c;
+  }}
+  var t=document.createElement('div');t.className='toast '+type;t.textContent=msg;
+  window._tc.appendChild(t);
+  setTimeout(function(){{t.classList.add('out');}},duration);
+  setTimeout(function(){{t.remove();}},duration+350);
+}}
+function stgToggleTheme(){{
+  var K='protocolcity-theme';
+  var cur=localStorage.getItem(K)||'light';
+  var next=cur==='dark'?'light':'dark';
+  try{{localStorage.setItem(K,next);localStorage.setItem('wl-theme',next);}}catch(e){{}}
+  document.documentElement.setAttribute('data-theme',next);
+  var b=document.getElementById('stgThemeBtn');
+  if(b){{b.textContent=next==='dark'?'☀':'☽';
+    b.title=next==='dark'?'Switch to light theme':'Switch to dark theme';}}
+}}
+document.addEventListener('DOMContentLoaded',function(){{
+  var cur=localStorage.getItem('protocolcity-theme')||'light';
+  var b=document.getElementById('stgThemeBtn');
+  if(b){{b.textContent=cur==='dark'?'☀':'☽';
+    b.title=cur==='dark'?'Switch to light theme':'Switch to dark theme';}}
+}});
+</script>
+</head><body>
+<header class="nameplate">
+  <a class="room-back" href="/admin/desk">← Desk</a>
+  <div>
+    <h1>{h1}</h1>
+    <div class="epithet">{epithet}</div>
+  </div>
+  <div class="badges">
+    <button type="button" id="stgThemeBtn" onclick="stgToggleTheme()"
+            title="Switch to dark theme" aria-label="Toggle dark or light theme">&#9789;</button>
+  </div>
+</header>
+<main class="stg-sheet">
+{body}
+</main>
+<footer class="bar">
+  <div>Settings · <a href="/admin/desk">← Desk</a>
+    <a href="/admin/overview">Overview</a>
+    <a class="quiet" href="/admin/tickets/all">Board (power)</a></div>
+</footer>
+</body></html>"""
 
 
 @router.get("/admin/settings", response_class=HTMLResponse)
@@ -4622,7 +5508,7 @@ def admin_settings() -> str:
         + _task_server_extra_css()
         + settings_js
     )
-    return _task_page("Settings", body, nav_active="settings")
+    return _render_settings_page(body)
 
 
 # Docs surface (wl-27): read-only render of the repo's own truth files.
@@ -5238,8 +6124,8 @@ async def api_create_product(request: Request) -> JSONResponse:
     if hoods is not None and slug not in hoods:
         warning = (
             f"store created, but no neighborhood folder named {slug!r} exists "
-            "at the city root — city hall won't show a building until one "
-            "does (the slug must equal the folder name, lowercased)"
+            "at the city root — the ProtocolCity map won't show a building "
+            "until one does (the slug must equal the folder name, lowercased)"
         )
     return JSONResponse(
         {
@@ -6002,6 +6888,47 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             {"ok": False, "error": "gate_until is required when gate_type is 'timer'"},
             status_code=400,
         )
+    # wl-205: human-gate hard stop — max 3 per author per 2h rolling window.
+    # bulk_gate_ok=true bypasses the cap but requires ticket_ids + authorizing_ticket.
+    if gate_type == "human":
+        gate_author = actor or "cli-update"
+        bulk_gate_ok = bool(payload.get("bulk_gate_ok"))
+        if not bulk_gate_ok:
+            since_iso = (
+                datetime.now(timezone.utc) - timedelta(hours=2)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if hasattr(tracker, "count_human_gate_sets_since"):
+                recent = tracker.count_human_gate_sets_since(gate_author, since_iso)
+                if recent >= 3:
+                    return JSONResponse(
+                        {
+                            "ok": False,
+                            "error": (
+                                f"Human-gate hard stop: {gate_author!r} has already set "
+                                f"{recent} human gates in the last 2 hours (limit 3). "
+                                "Pass bulk_gate_ok=true with ticket_ids and "
+                                "authorizing_ticket to override."
+                            ),
+                            "human_gate_count": recent,
+                            "window_hours": 2,
+                            "limit": 3,
+                        },
+                        status_code=429,
+                    )
+        else:
+            ticket_ids = payload.get("ticket_ids")
+            authorizing_ticket = payload.get("authorizing_ticket")
+            if not ticket_ids or not authorizing_ticket:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": (
+                            "bulk_gate_ok requires ticket_ids (list) "
+                            "and authorizing_ticket"
+                        ),
+                    },
+                    status_code=400,
+                )
     if title is not None or description is not None or priority_raw is not None or gate_type is not None:
         priority: Optional[int] = None
         if priority_raw is not None:
@@ -6020,6 +6947,7 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             gate_type=gate_type,
             gate_until=str(gate_until) if gate_until is not None else None,
             gate_note=str(gate_note) if gate_note is not None else None,
+            actor=actor,
         )
         if updated is None:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
@@ -6106,11 +7034,11 @@ def _misattributed_owner(author: str, body: str) -> Optional[str]:
     """wl-50 guard: default-identity write claiming a different Owner:.
 
     Returns the mismatched agent id when a comment signed with the default
-    identity (``founder-terminal``) carries an ``Owner: <agent>`` marker for
+    identity (``DEFAULT_AGENT_ID``) carries an ``Owner: <agent>`` marker for
     a *different* agent — the signature the wl-39 misconfiguration produces
     (launcher never exported ``WL_AGENT_ID``, so an autonomous agent's
     writes fall back to the default and silently mis-sign). Returns None for
-    normal interactive founder-terminal use.
+    normal interactive use of the default identity.
     """
     if author != DEFAULT_AGENT_ID:
         return None
@@ -6821,38 +7749,177 @@ def api_dev_allocation(window_days: int = 7, scope: str = "all"):
 
 
 @router.get("/api/dev/attention")
-def api_dev_attention():
-    """wl-135: the founder-attention feed — everything blocked on the
-    founder, always all stores (like board-summary's scope=all; there is no
-    ``scope`` param here, this view has no per-store variant). Same shape
-    convention as /api/dev/board-summary so other dashboards (Workers,
-    Projects) and reporting sessions can consume it directly.
+def api_dev_attention(include_snoozed: int = 0):
+    """wl-135: the founder-attention feed — everything blocked on You,
+    always all stores. Same shape as /api/dev/board-summary consumers.
+
+    Snoozes (product/kind focus mutes) filter the default feed without
+    changing ticket gates. Pass ``include_snoozed=1`` for the full set;
+    response always includes ``snoozed_count`` and ``snoozes``.
     """
     now = datetime.now(timezone.utc)
-    items = _collect_founder_attention_items(now=now)
+    all_items = _collect_founder_attention_items(now=now)
+    visible, hidden, snoozes = _partition_attention_items(all_items, now=now)
+    items = all_items if include_snoozed else visible
+    # wl-205: human-gate activity for the last 24h across all local stores.
+    since_24h = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    gate_stats: Dict[str, int] = {}
+    for _spec, tr in product_trackers():
+        if hasattr(tr, "human_gate_stats_since"):
+            for row in tr.human_gate_stats_since(since_24h):
+                a = str(row["author"])
+                gate_stats[a] = gate_stats.get(a, 0) + int(row["count"])
+    human_gate_stats = [
+        {"author": a, "count": c}
+        for a, c in sorted(gate_stats.items(), key=lambda x: -x[1])
+    ]
     resp = JSONResponse({
         "ok": True,
-        "count": len(items),
+        "count": len(items) if include_snoozed else len(visible),
         "items": items,
+        "visible_count": len(visible),
+        "snoozed_count": len(hidden),
+        "snoozes": snoozes,
         "stale_minutes": _claim_stale_minutes(),
         "updated_at": now.isoformat(),
+        "human_gate_stats": human_gate_stats,
+        "human_gate_stats_window_hours": 24,
     })
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
 
 
+@router.post("/api/dev/attention/snooze")
+async def api_dev_attention_snooze(request: Request):
+    """Mute product/kind from Waiting on You until `until` (not a ticket gate).
+
+    Body JSON: ``{ "product": "tradeos", "until": "today"|"1d"|"1w"|ISO,
+    "reason": "optional" }`` or ``{ "kind": "embargo", "until": "1w" }``
+    or ``{ "scope": "all", "until": "today" }``.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    now = datetime.now(timezone.utc)
+    product = str(body.get("product") or "").strip().lower()
+    kind = str(body.get("kind") or "").strip().lower()
+    scope = str(body.get("scope") or "").strip().lower()
+    if not scope:
+        if product:
+            scope = "product"
+        elif kind:
+            scope = "kind"
+        else:
+            raise HTTPException(400, "product, kind, or scope=all required")
+    if scope == "product" and not product:
+        raise HTTPException(400, "product required for product snooze")
+    if scope == "kind" and not kind:
+        raise HTTPException(400, "kind required for kind snooze")
+    until_raw = body.get("until") or "today"
+    try:
+        until = _parse_until_iso(str(until_raw), now=now)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    reason = str(body.get("reason") or "").strip()
+    prefs = _load_attention_prefs()
+    snoozes = [s for s in (prefs.get("snoozes") or []) if isinstance(s, dict)]
+    # replace matching scope key
+    def _same(s: dict) -> bool:
+        if (s.get("scope") or "product") != scope:
+            return False
+        if scope == "product":
+            return (s.get("product") or "").lower() == product
+        if scope == "kind":
+            return (s.get("kind") or "").lower() == kind
+        return scope == "all"
+    snoozes = [s for s in snoozes if not _same(s)]
+    entry = {
+        "scope": scope,
+        "product": product if scope == "product" else "",
+        "kind": kind if scope == "kind" else "",
+        "until": until.isoformat(),
+        "reason": reason,
+        "created_at": now.isoformat(),
+    }
+    snoozes.append(entry)
+    prefs["snoozes"] = snoozes
+    _save_attention_prefs(prefs)
+    all_items = _collect_founder_attention_items(now=now)
+    visible, hidden, active = _partition_attention_items(all_items, now=now)
+    return JSONResponse({
+        "ok": True,
+        "snooze": entry,
+        "visible_count": len(visible),
+        "snoozed_count": len(hidden),
+        "snoozes": active,
+    })
+
+
+@router.post("/api/dev/attention/unsnooze")
+async def api_dev_attention_unsnooze(request: Request):
+    """Clear a product/kind/all snooze. Body: ``{ "product": "tradeos" }``
+    or ``{ "kind": "embargo" }`` or ``{ "scope": "all" }`` or ``{ "clear": true }``.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    now = datetime.now(timezone.utc)
+    prefs = _load_attention_prefs()
+    snoozes = [s for s in (prefs.get("snoozes") or []) if isinstance(s, dict)]
+    if body.get("clear") is True or str(body.get("scope") or "").lower() == "all" and body.get("clear_all"):
+        prefs["snoozes"] = []
+        _save_attention_prefs(prefs)
+    else:
+        product = str(body.get("product") or "").strip().lower()
+        kind = str(body.get("kind") or "").strip().lower()
+        scope = str(body.get("scope") or "").strip().lower()
+        if not scope:
+            scope = "product" if product else ("kind" if kind else "")
+        if scope == "all" or body.get("clear") is True:
+            prefs["snoozes"] = []
+        else:
+            def _drop(s: dict) -> bool:
+                sc = s.get("scope") or "product"
+                if scope and sc != scope:
+                    return False
+                if product and (s.get("product") or "").lower() == product:
+                    return True
+                if kind and (s.get("kind") or "").lower() == kind:
+                    return True
+                return False
+            prefs["snoozes"] = [s for s in snoozes if not _drop(s)]
+        _save_attention_prefs(prefs)
+    all_items = _collect_founder_attention_items(now=now)
+    visible, hidden, active = _partition_attention_items(all_items, now=now)
+    return JSONResponse({
+        "ok": True,
+        "visible_count": len(visible),
+        "snoozed_count": len(hidden),
+        "snoozes": active,
+    })
+
+
 @router.get("/admin/attention", response_class=HTMLResponse)
 def admin_attention() -> Any:
-    """wl-135: the full "waiting on founder" list — the standalone page
-    behind the header chip and the Overview panel's "view all". Always all
-    stores; this view has no scope concept (PROTOCOL.md §5 review gate,
-    needs:founder-decision/founder-decision labels, gate_type=human,
-    stalled in-flight, date-gated embargoes).
+    """wl-135: decision board for everything waiting on You — header chip
+    and Overview "view all". Always all stores (PROTOCOL.md §5 review,
+    needs:founder-decision, gate_type=human, stalled in-flight, embargoes).
+    Persona law: page title is You, not founder. Respects attention snoozes.
     """
     now = datetime.now(timezone.utc)
-    items = _collect_founder_attention_items(now=now)
-    body = _render_attention_page_body(items) + _task_server_extra_css()
-    return _task_page("Waiting on founder", body, nav_active="attention")
+    all_items = _collect_founder_attention_items(now=now)
+    visible, hidden, snoozes = _partition_attention_items(all_items, now=now)
+    body = (
+        _render_attention_page_body(visible, snoozed=hidden, snoozes=snoozes)
+        + _task_server_extra_css()
+    )
+    return _task_page("Waiting on You", body, nav_active="attention")
 
 
 @router.get("/api/admin/overview/summary")
@@ -7183,12 +8250,36 @@ def _task_server_extra_js() -> str:
       var j = await resp.json();
       var el = document.getElementById('ts-attention-badge');
       if (!el) return;
-      if ((j.count || 0) > 0) {
-        el.textContent = 'waiting on founder: ' + j.count;
+      var n = j.count || 0;
+      if (n > 0) {
+        /* Persona law: human is "You" on shipped surfaces (pc-198). */
+        el.textContent = n + ' for You';
         el.hidden = false;
+        el.title = n + ' waiting on You (human gates · review · decisions) · open attention';
         el.onclick = function() { window.location.href = '/admin/attention'; };
+        /* Optional browser notify — same pref key as Office/Roster (pc_you_notify). */
+        try {
+          var prev = window._tsYouAttnCount;
+          window._tsYouAttnCount = n;
+          var pref = localStorage.getItem('pc_you_notify') || '';
+          if (prev != null && n > prev && pref !== 'off'
+              && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            var top = (j.items && j.items[0]) || null;
+            var body = top
+              ? ((top.id || '') + ' · ' + String(top.title || top.note || '').slice(0, 90))
+              : (n + ' waiting on You');
+            var note = new Notification(n + ' for You · Protocol City', {
+              body: body, tag: 'pc-you-attention', renotify: true
+            });
+            note.onclick = function() {
+              window.location.href = '/admin/attention';
+              note.close();
+            };
+          }
+        } catch (e2) { /* ignore */ }
       } else {
         el.hidden = true;
+        window._tsYouAttnCount = 0;
       }
     } catch (e) { /* silent */ }
   }
@@ -7677,7 +8768,7 @@ def _identity_config_path() -> Path:
 
 
 def _identity_config() -> Dict[str, str]:
-    cfg = {"founder_id": "founder-terminal", "founder_alias": ""}
+    cfg = {"founder_id": "founder", "founder_alias": ""}
     try:
         raw = json.loads(_identity_config_path().read_text(encoding="utf-8"))
         if isinstance(raw, dict):
@@ -7976,9 +9067,9 @@ a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underli
 .paper-line { position:relative; flex:none;
   background:linear-gradient(180deg,var(--paper-top),var(--paper));
   border-bottom:1px solid var(--line); box-shadow:0 2px 6px #0001;
-  padding:10px 22px 12px; }
+  padding:10px 22px 12px; overflow-x:auto; }
 .pl-rail { display:flex; align-items:flex-end; justify-content:center; gap:4px;
-  max-width:900px; margin:0 auto; position:relative; z-index:1; }
+  max-width:900px; margin:0 auto; position:relative; z-index:1; min-width:min-content; }
 .pl-station.on { border-color:var(--blue); background:color-mix(in srgb, var(--blue) 12%, transparent); box-shadow:0 0 0 1px var(--blue); }
 .pl-station { flex:1; min-width:0; max-width:200px; background:transparent;
   border:1px solid transparent; border-radius:4px; cursor:pointer;
@@ -8077,7 +9168,7 @@ h1 .fn { color:var(--verd); }
 .settings-gear:hover,
 .theme-toggle:hover { border-color:var(--verd); color:var(--verd); }
 .settings-gear.on { color:var(--ink); border-color:var(--verd); }
-@media (max-width:720px) {
+@media (max-width:860px) {
   header.nameplate { grid-template-columns:1fr auto; }
   .nameplate .chrome-mast { grid-column:1; }
   .nameplate .chrome-right { grid-column:2; }
@@ -8259,7 +9350,7 @@ footer.bar a { margin-right:14px; }
 /* Cabinet skim — ledgers are the nav; no tray-corner dropdown */
 .blotter-head { display:flex; align-items:baseline; justify-content:space-between;
   gap:10px; flex-wrap:wrap; margin-bottom:10px; }
-.blotter-head h2 { margin:0; flex:1; min-width:0; }
+.blotter-head h2 { margin:0; flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .blotter-hint { font-size:12px; color:var(--dim); font-style:italic; margin:0; }
 .skim-chip { display:inline-flex; align-items:center; gap:8px; flex:none;
   border:1px solid var(--blue); background:#eef3fb; color:var(--blue);
@@ -8443,7 +9534,7 @@ function formHtml(it,slip){
     '<div class="t">'+esc(it.title)+'</div>'+sit+'</div>';}
 /* City DNA (pc-40 / CITY_DNA.md): identity registry shared with the plat
    and dispatch — same hash, same palette, same little person everywhere.
-   founder-terminal and non-roster authors wear the gold founder chip. */
+   The local founder identity and non-roster authors wear the gold founder chip. */
 var DNA_PALETTE=["#3d7a6a","#a8842c","#4a6fa5","#7d5185","#a35b3a","#5f7d3a"];
 function dnaHash(s){var h=0,i;for(i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))|0;return Math.abs(h);}
 function spriteChip(author){
@@ -8803,7 +9894,7 @@ function pickDeskSearch(ix){
 /* ── the work-order drawer (wl-145): tickets open ON the desk ── */
 var WO_ID=null, WO_TASK=null;
 var FD_LABELS={"needs:founder-decision":1,"founder-decision":1};
-function founderAuthor(){return (window.FOUNDER&&FOUNDER.founder_id)||"founder-terminal";}
+function founderAuthor(){return (window.FOUNDER&&FOUNDER.founder_id)||"founder";}
 function stampForStatus(st){
   if(st==="backlog")return {txt:"FILED",cls:""};
   if(st==="in_progress")return {txt:"CLAIMED",cls:"amber"};
@@ -9392,7 +10483,7 @@ def api_report() -> JSONResponse:
     oldest.sort(key=lambda e: -e["age_days"])
     urgent.sort(key=lambda e: -e["age_days"])
     prune.sort(key=lambda e: -e["quiet_days"])
-    waiting_on_you = len(_collect_founder_attention_items(now=now))
+    waiting_on_you = len(_partition_attention_items(_collect_founder_attention_items(now=now), now=now)[0])
     ready_total = sum(s["ready"] for s in stores)
     payload = {
         "ok": True,

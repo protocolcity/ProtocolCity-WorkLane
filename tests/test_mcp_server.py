@@ -44,6 +44,7 @@ class HandlersTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_PROJECT",
                 "WL_PRODUCT",
             )
         }

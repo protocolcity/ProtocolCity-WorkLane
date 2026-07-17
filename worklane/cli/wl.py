@@ -26,8 +26,8 @@ Usage:
     wl doctor [--path PATH] [--project SLUG] [--json]
 
 Base URL:  WL_BASE_URL env var, default http://127.0.0.1:8799
-Project:   --project flag, default WL_PRODUCT env var, else server default
-           (--product remains a silent back-compat alias for --project, wl-64)
+Project:   --project flag, default WL_PROJECT env var, else server default
+           (--product / WL_PRODUCT remain silent back-compat aliases, wl-64)
 Signing:   --author flag or WL_AGENT_ID env var (PROTOCOL.md §3.8) — required
            for `comment` (the API rejects unsigned writes with a 400)
 """
@@ -143,7 +143,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         sys.exit(1)
     product = _resolve_project_flag(args)
     if not product:
-        print("Error: --project is required (or set WL_PRODUCT)", file=sys.stderr)
+        print("Error: --project is required (or set WL_PROJECT)", file=sys.stderr)
         sys.exit(1)
 
     body: Dict[str, Any] = {
@@ -170,7 +170,7 @@ def cmd_list(args: argparse.Namespace) -> None:
             "status": args.status,
             "label": args.label,
             "priority": args.priority,
-            "product": _resolve_project_flag(args),
+            "project": _resolve_project_flag(args),
             "limit": args.limit,
         },
     )
@@ -443,8 +443,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--description", default="")
     p_create.add_argument(
         "--project",
-        default=None,
-        help="Ticket surface/project slug (required; canonical name, wl-64)",
+        default=os.environ.get("WL_PROJECT"),
+        help="Ticket surface/project slug (required; canonical name, wl-64; or set WL_PROJECT)",
     )
     p_create.add_argument(
         "--product",
@@ -459,7 +459,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--status", choices=_STATUS_CHOICES)
     p_list.add_argument("--label")
     p_list.add_argument("--priority", type=int, choices=[1, 2, 3, 4])
-    p_list.add_argument("--project", default=None, help="Canonical name for --product (wl-64)")
+    p_list.add_argument("--project", default=os.environ.get("WL_PROJECT"), help="Canonical project slug (wl-64; or set WL_PROJECT)")
     p_list.add_argument("--product", default=os.environ.get("WL_PRODUCT", ""))
     p_list.add_argument("--limit", type=int)
     p_list.add_argument("--json", action="store_true")
@@ -545,8 +545,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.add_argument(
         "--project",
-        default=None,
-        help="Project slug to check for a registered store (default: guessed from --path)",
+        default=os.environ.get("WL_PROJECT"),
+        help="Project slug to check for a registered store (default: guessed from --path; or set WL_PROJECT)",
     )
     p_doctor.add_argument(
         "--product",
@@ -561,8 +561,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_export.add_argument(
         "--project",
-        default=None,
-        help="Project slug (required; canonical name, wl-64)",
+        default=os.environ.get("WL_PROJECT"),
+        help="Project slug (required; canonical name, wl-64; or set WL_PROJECT)",
     )
     p_export.add_argument(
         "--product",
@@ -578,8 +578,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("file", help="JSONL file to import")
     p_import.add_argument(
         "--project",
-        default=None,
-        help="Destination project slug (required; canonical name, wl-64)",
+        default=os.environ.get("WL_PROJECT"),
+        help="Destination project slug (required; canonical name, wl-64; or set WL_PROJECT)",
     )
     p_import.add_argument(
         "--product",

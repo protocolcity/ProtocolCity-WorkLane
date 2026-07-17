@@ -23,15 +23,16 @@ from worklane.products import (
 from worklane.trackers.protocol import Task, TaskStatus
 from worklane.trackers.sqlite import SQLiteTracker
 
-# Terminal safety-net when a tool omits ``product``, no WL_PRODUCT/
-# WL_DEFAULT_PRODUCT env or products.json default is set, and nothing is
+# Terminal safety-net when a tool omits ``project``, no WL_PROJECT/
+# WL_DEFAULT_PROJECT env or products.json default is set, and nothing is
 # discovered on disk yet. Deliberately the literal "tradeos", not config-
 # driven: trackers/sqlite.py's legacy SQLiteTracker always resolves *some*
 # tradeos.db store (see its DEFAULT_DB_PATH fallback chain), and
 # products.product_tracker() routes slug == "tradeos" to that guaranteed
 # store for the same reason — see its docstring for why comparing against
 # the *configured* default here instead would risk a silent collision.
-_DEFAULT_PRODUCT = "tradeos"
+_DEFAULT_PROJECT = "tradeos"
+_DEFAULT_PRODUCT = _DEFAULT_PROJECT  # back-compat alias for external callers
 
 
 class ToolError(Exception):
@@ -56,9 +57,10 @@ class TPHandlers:
         self.default_product = (
             (
                 default_product
+                or os.environ.get("WL_PROJECT")
                 or os.environ.get("WL_PRODUCT")
                 or default_product_slug()
-                or _DEFAULT_PRODUCT
+                or _DEFAULT_PROJECT
             )
             .strip()
             .lower()
@@ -68,10 +70,10 @@ class TPHandlers:
 
     def _resolve_product(self, product: Optional[str]) -> str:
         slug = (
-            product or self.default_product or default_product_slug() or _DEFAULT_PRODUCT
+            product or self.default_product or default_product_slug() or _DEFAULT_PROJECT
         ).strip().lower()
         if not slug:
-            slug = default_product_slug() or _DEFAULT_PRODUCT
+            slug = default_product_slug() or _DEFAULT_PROJECT
         # "all" is list/ready only; other tools need a concrete store.
         if slug == "all":
             return "all"
@@ -848,7 +850,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "Project store slug (e.g. tradeos, worklane) — canonical "
             "name (wl-64). 'product' is a silent back-compat alias for this "
             "same field; passing both with different values is an error. "
-            "Omit to use connect-time default (WL_PRODUCT or tradeos). "
+            "Omit to use connect-time default (WL_PROJECT or tradeos). "
             "wl_list/wl_ready/wl_mine/wl_counts also accept 'all'."
         ),
     }

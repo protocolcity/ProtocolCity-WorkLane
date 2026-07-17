@@ -27,7 +27,7 @@ This installs the `worklane` package plus three console scripts:
 | --- | --- |
 | `worklane` | starts the FastAPI/uvicorn service |
 | `worklane-mcp` | starts the stdio MCP server for agent clients |
-| `wl` | host-neutral HTTP CLI (`wl list` / `show` / `comment` / `status` / `label`) — see below |
+| `tk` | ticket CLI (`tk list` / `show` / `comment` / `status` / `label`) — see below; `worklane`, `wl`, and `wl` are installed aliases |
 
 Requires Python 3.9+ (see `pyproject.toml`).
 
@@ -48,7 +48,7 @@ For a first-run board that already has tickets across backlog / in_progress /
 in_review / done (so an agent can claim one immediately):
 
 ```bash
-wl demo
+tk demo
 # or seed then start in one shot:
 worklane --demo
 ```
@@ -108,7 +108,7 @@ Once the store exists, it gets its own scope tab (Board/Table views) at
 first ticket:
 
 ```bash
-wl comment --help   # confirm the CLI is on PATH first
+tk --help   # confirm the CLI is on PATH first
 
 curl -s -X POST http://localhost:8799/api/admin/tasks \
   -H 'Content-Type: application/json' \
@@ -128,18 +128,18 @@ Three ways to read/write tickets, in order of preference:
    `python -m worklane.mcp --author <agent-id>` — see
    [README.md#mcp-server-agent-native-access](README.md#mcp-server-agent-native-access)
    for the full 16-tool catalog and a sample client config.
-2. **The `wl` CLI** (best for shell scripts / non-MCP hosts): installed by
-   step 2 above.
+2. **The `tk` CLI** (best for shell scripts / non-MCP hosts): installed by
+   step 2 above (`wl` and `worklane` are aliases).
 
    ```bash
    export WL_BASE_URL=http://localhost:8799   # default if unset
    export WL_AGENT_ID=you                     # signs comments (PROTOCOL.md §3.8)
 
-   wl list --project myproject --status backlog
-   wl show wl-1
-   wl comment wl-1 "starting work" --author you
-   wl status wl-1 in_progress
-   wl label wl-1 --add area:backend
+   tk list --project myproject --status backlog
+   tk show wl-1
+   tk comment wl-1 "starting work" --author you
+   tk status wl-1 in_progress
+   tk label wl-1 --add area:backend
    ```
 
    This CLI only speaks HTTP (`urllib`, stdlib-only) — no

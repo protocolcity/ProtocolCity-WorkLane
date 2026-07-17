@@ -264,7 +264,7 @@ class OverviewScopeTest(unittest.TestCase):
         # wl-148: default identity, alias PATCH roundtrip, desk injection
         j = self.client.get("/api/admin/identity").json()
         self.assertTrue(j["ok"])
-        self.assertEqual(j["founder_id"], "founder-terminal")
+        self.assertEqual(j["founder_id"], "founder")
         self.assertEqual(j["founder_alias"], "")
         r = self.client.patch("/api/admin/identity",
                               json={"founder_alias": "The Mayor"})
@@ -279,7 +279,7 @@ class OverviewScopeTest(unittest.TestCase):
         body = self.client.get("/admin/desk").text
         self.assertIn("var FOUNDER=", body)
         self.assertIn("The Mayor", body)
-        self.assertIn("founder-terminal", body)
+        self.assertIn('"founder"', body)
         # wl-150: the desk signs for the founder — no author box, ever
         self.assertNotIn('id="woAuthor"', body)
         self.assertIn('id="woSignAs"', body)
@@ -287,10 +287,10 @@ class OverviewScopeTest(unittest.TestCase):
         # wl-149: the classic ticket page renders the alias the same way
         t = self.beta.create_task(title="alias render", description="x")
         self.beta.add_comment(
-            t.id, "Intake: filed by founder-terminal", author="founder-terminal")
+            t.id, "Intake: filed by founder", author="founder")
         page = self.client.get(f"/admin/tasks/beta-{t.id}").text
         self.assertIn("The Mayor", page)
-        self.assertIn("(founder-terminal)", page)
+        self.assertIn("(founder)", page)
 
     def test_api_scene_shape(self) -> None:
         j = self.client.get("/api/scene").json()

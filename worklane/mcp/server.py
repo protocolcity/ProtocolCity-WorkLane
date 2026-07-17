@@ -15,7 +15,7 @@ Claude Desktop / Cursor config example::
         "command": "python",
         "args": ["-m", "worklane.mcp", "--author", "cursor"],
         "env": {
-          "WL_PRODUCT": "tradeos",
+          "WL_PROJECT": "tradeos",
           "WORKLANE_RUNTIME_DIR": "/path/to/worklane/local"
         }
       }
@@ -247,9 +247,14 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
         help="Canonical agent id for signed writes (or set WL_AGENT_ID)",
     )
     p.add_argument(
+        "--project",
+        default=(os.environ.get("WL_PROJECT") or os.environ.get("WL_PRODUCT") or default_product_slug()),
+        help="Default project store when tools omit project (or set WL_PROJECT)",
+    )
+    p.add_argument(
         "--product",
-        default=os.environ.get("WL_PRODUCT") or default_product_slug(),
-        help="Default product store when tools omit product (or set WL_PRODUCT)",
+        default="",
+        help="Back-compat alias for --project (or set WL_PRODUCT)",
     )
     return p.parse_args(argv)
 
@@ -262,13 +267,14 @@ def main(argv: Optional[list] = None) -> None:
             "Error: author identity required at connect time.\n"
             "  python -m worklane.mcp --author <agent-id>\n"
             "  or set WL_AGENT_ID=<agent-id>\n"
-            "Canonical ids: work-pool, founder-terminal, cursor, grok, "
+            "Canonical ids: work-pool, founder, cursor, grok, "
             "cowork, wl-pool (PROTOCOL.md §5.2).",
             file=sys.stderr,
         )
         sys.exit(2)
+    project_slug = (args.project or args.product or "").strip()
     try:
-        handlers = TPHandlers(author=author, default_product=args.product)
+        handlers = TPHandlers(author=author, default_product=project_slug)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
@@ -276,7 +282,7 @@ def main(argv: Optional[list] = None) -> None:
     # Log identity to stderr only — stdout is reserved for MCP JSON-RPC.
     print(
         f"worklane MCP ready author={handlers.author!r} "
-        f"product={handlers.default_product!r}",
+        f"project={handlers.default_product!r}",
         file=sys.stderr,
     )
     server = MCPServer(handlers)

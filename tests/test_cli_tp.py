@@ -37,10 +37,11 @@ def _ok_response(payload: dict):
 class RequestBuildingTest(unittest.TestCase):
     def setUp(self) -> None:
         self._env_before = {
-            k: os.environ.get(k) for k in ("WL_BASE_URL", "WL_AGENT_ID", "WL_PRODUCT")
+            k: os.environ.get(k) for k in ("WL_BASE_URL", "WL_AGENT_ID", "WL_PROJECT", "WL_PRODUCT")
         }
         os.environ.pop("WL_BASE_URL", None)
         os.environ.pop("WL_AGENT_ID", None)
+        os.environ.pop("WL_PROJECT", None)
         os.environ.pop("WL_PRODUCT", None)
 
     def tearDown(self) -> None:
@@ -71,7 +72,8 @@ class RequestBuildingTest(unittest.TestCase):
         self.assertEqual(sent_req.get_method(), "GET")
         self.assertIn("/api/admin/tasks?", sent_req.full_url)
         self.assertIn("status=backlog", sent_req.full_url)
-        self.assertIn("product=worklane", sent_req.full_url)
+        # wl-196: wire key is now "project=" (back-compat: server also accepts "product=")
+        self.assertIn("project=worklane", sent_req.full_url)
 
     @mock.patch("urllib.request.urlopen")
     def test_show_quotes_task_id(self, mock_urlopen) -> None:
@@ -403,6 +405,57 @@ class RequestBuildingTest(unittest.TestCase):
         args = parser.parse_args(["show", "wl-1"])
         with self.assertRaises(wl_cli.ApiError):
             wl_cli.cmd_show(args)
+
+
+class EnvVarProjectAliasTest(unittest.TestCase):
+    """wl-196: WL_PROJECT canonical; WL_PRODUCT back-compat for CLI."""
+
+    def setUp(self) -> None:
+        self._env_before = {
+            k: os.environ.get(k) for k in ("WL_PROJECT", "WL_PRODUCT", "WL_BASE_URL", "WL_AGENT_ID")
+        }
+        for k in ("WL_PROJECT", "WL_PRODUCT", "WL_BASE_URL", "WL_AGENT_ID"):
+            os.environ.pop(k, None)
+
+    def tearDown(self) -> None:
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    @mock.patch("urllib.request.urlopen")
+    def test_create_falls_back_to_tp_project_env(self, mock_urlopen) -> None:
+        os.environ["WL_PROJECT"] = "worklane"
+        mock_urlopen.return_value = _ok_response(
+            {"ok": True, "task": {"id": "wl-99", "title": "t"}}
+        )
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["create", "--title", "t", "--description", "d", "--author", "wl-pool"]
+        )
+        wl_cli.cmd_create(args)
+        sent_body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(sent_body["surface"], "worklane")
+
+    @mock.patch("urllib.request.urlopen")
+    def test_list_sends_project_wire_key(self, mock_urlopen) -> None:
+        mock_urlopen.return_value = _ok_response({"ok": True, "tasks": []})
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(["list", "--project", "worklane"])
+        wl_cli.cmd_list(args)
+        sent_req = mock_urlopen.call_args[0][0]
+        self.assertIn("project=worklane", sent_req.full_url)
+
+    @mock.patch("urllib.request.urlopen")
+    def test_list_tp_project_env_resolves(self, mock_urlopen) -> None:
+        os.environ["WL_PROJECT"] = "worklane"
+        mock_urlopen.return_value = _ok_response({"ok": True, "tasks": []})
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(["list"])
+        wl_cli.cmd_list(args)
+        sent_req = mock_urlopen.call_args[0][0]
+        self.assertIn("project=worklane", sent_req.full_url)
 
 
 if __name__ == "__main__":

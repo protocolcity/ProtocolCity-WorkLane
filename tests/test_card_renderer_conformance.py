@@ -27,6 +27,8 @@ def _make_env(tmp: Path) -> None:
     os.environ.pop("TRADEOS_TRACKER_DB", None)
     os.environ["TRADEOS_TICKETS_SOURCE"] = "sqlite"
     os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+    os.environ.pop("WL_DEFAULT_PROJECT", None)
+    os.environ.pop("WL_PROJECT", None)
     os.environ.pop("WL_PRODUCT", None)
 
 
@@ -56,7 +58,9 @@ class CardRendererConformanceTest(unittest.TestCase):
                 "WORKLANE_DB",
                 "TRADEOS_TRACKER_DB",
                 "TRADEOS_TICKETS_SOURCE",
+                "WL_DEFAULT_PROJECT",
                 "WL_DEFAULT_PRODUCT",
+                "WL_PROJECT",
                 "WL_PRODUCT",
             )
         }
