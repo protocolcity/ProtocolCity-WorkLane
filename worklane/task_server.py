@@ -428,7 +428,7 @@ def _task_page(
         <span id="ts-stalled-badge" class="ts-stalled-badge" hidden
               title="In-progress/in-review tickets with no update in over 90 minutes (PROTOCOL.md §4)."></span>
         <span id="ts-attention-badge" class="ts-attention-badge" hidden
-              title="Everything waiting on the founder, across every store: in review, founder-decision, human-gated, stalled, embargoed."></span>
+              title="Everything waiting on You, across every store: in review, needs-your-decision, human-gated, stalled, embargoed."></span>
         <span id="ts-last-updated" class="ts-last-updated dim"></span>
 """
         )
@@ -4527,7 +4527,7 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
           <div class='pulse-panel' data-panel-id='founder_attention' data-default-col='side'>
             <div class='pulse-panel-head'>
               {_PANEL_DRAG_HANDLE}
-              <span class='pulse-panel-title'>Waiting on founder</span>
+              <span class='pulse-panel-title'>needs You</span>
               <span class='pulse-panel-meta'><a href='/admin/attention' class='dim'>{len(founder_attention_items) or 'clear'} &rarr;</a></span>
               {_PANEL_CONTROLS}
             </div>

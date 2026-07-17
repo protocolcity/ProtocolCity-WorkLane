@@ -218,10 +218,10 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | Agent id | Who |
 | --- | --- |
 | `morgan` | Morgan · Lead Developer. Succeeds the original host-dispatch lane (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Host-repo generalist desk. |
-| `founder-terminal` | Founder-driven Claude terminal sessions |
-| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis`. Was: Cursor editor lane (§6.1). History retained. |
+| `founder-terminal` | **You present** — founder-driven interactive sessions on any host (Claude Desktop/Code, Grok Build/TUI, Cursor chat, Codex interactive, etc.). The AI product is the **hand**, not the actor. See §5.2.1. |
+| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis`. Was: Cursor editor lane (§6.1). History retained. **Do not** use as MCP author for founder-present Cursor chat (that is `founder-terminal`). |
 | `ellis` | Ellis · Technical Writer. Succeeds `cursor` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Lane-labeled / `worker:ellis` tickets; contract at the host repo (Cursor lane papers until cutover). |
-| `grok` | **RETIRED 2026-07-14** — succeeded by `kai`. Was: Grok CLI lane (§6.2). History retained. |
+| `grok` | **RETIRED 2026-07-14** — succeeded by `kai`. Was: Grok CLI lane (§6.2). History retained. **Do not** use as MCP author for founder-present Grok sessions (that is `founder-terminal`). |
 | `kai` | Kai · Software Engineer. Succeeds `grok` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Lane-labeled / `worker:kai` tickets; contract at the host repo (Grok lane papers until cutover). |
 | `cowork` | Claude cowork sessions |
 | `claude-worklane` | **RETIRED 2026-07-14** — succeeded by `tess`. Was: Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11). History retained. |
@@ -240,6 +240,36 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `wren` | Wren (new hire 2026-07-14 — no predecessor). Specialist / future desk; papers when armed. |
 | `city-steward` | City Steward — cross-store stewardship patrol (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/city-steward/. |
 | `founder-brief` | Founder Brief — daily city reporting job (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/founder-brief/. |
+
+#### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
+
+**If You are in the loop, the ticket author is `founder-terminal`.** The chat
+product (Grok, Claude, Cursor, …) is the **hand**, not the person. Signing a
+founder decision, human-gate clear, or `FOUNDER ·` close-out as `grok` /
+`kai` / `riley` / `cursor` makes the board look like a worker self-approved
+a human gate.
+
+| Situation | Author field (`--author` / `WL_AGENT_ID`) | Optional body line |
+| --- | --- | --- |
+| You + any AI: decisions, gates, registry law, publish packets | `founder-terminal` | `Hand: grok-build` / `Hand: claude-desktop` / … |
+| Autonomous worker shift (roster / launchd) | persona id (`tess`, `kai`, `riley`, …) | model in `Owner:` per §5 |
+| Patrol / report job | job id (`city-steward`, `founder-brief`, …) | — |
+
+**MCP connect-time identity** is the stamp on every write. Founder-present
+host configs (interactive Grok/Claude/Cursor) must set
+`WL_AGENT_ID=founder-terminal` or `--author founder-terminal` — never a
+retired vendor id (`grok`, `cursor`, `codex`) and never a worker persona
+unless that persona is actually running unattended.
+
+**Human gates:** only founder-present authors clear `gate_type: human` /
+`FOUNDER ·` tickets in practice. Workers may stage evidence and file the
+gate; they do not impersonate You on the byline.
+
+**History:** do not rewrite past bylines. Optional clarifying comment as
+`founder-terminal` if a mis-sign confuses an audit.
+
+Related: city `AGENTS.md` (human entry points); pc-213 (persona → git);
+pc-198 (You on surfaces); connector (tabled multi-citizen ids).
 
 #### SUCCESSION (2026-07-14, wl-169 / STAFFING.md)
 
