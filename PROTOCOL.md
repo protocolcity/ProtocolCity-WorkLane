@@ -232,6 +232,7 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `codex` | **RETIRED 2026-07-14** — succeeded by `carl`. Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
 | `carl` | Carl · Web Designer. Succeeds `codex` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Visuals/content production; contract at the host repo (Codex lane papers until cutover). |
 | `riley` | Riley · City Hall Desk. Succeeds `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). ProtocolCity docs/planning desk. |
+| `drew` | Drew · Software Engineer (new hire 2026-07-21 — no predecessor). ProtocolCity code lane — suite/citylens/CLI packaging; papers at `ProtocolCity/workers/drew/`. |
 | `claude-socials` | **RETIRED 2026-07-14** — succeeded by `iris`. Was: Claude CLI lane, socials drafting desk (added 2026-07-14). History retained. |
 | `iris` | Iris · Content Writer. Succeeds `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Socials drafts-only (posting is founder-only). |
 | `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto`. Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
@@ -281,6 +282,7 @@ them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
 | Persona id | Display | Succeeds |
 | --- | --- | --- |
 | `riley` | Riley · City Hall Desk | `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `drew` | Drew · Software Engineer | — (new hire 2026-07-21, no predecessor) |
 | `morgan` | Morgan · Lead Developer | the original host-dispatch lane (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
 | `kai` | Kai · Software Engineer | `grok` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
 | `ellis` | Ellis · Technical Writer | `cursor` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |

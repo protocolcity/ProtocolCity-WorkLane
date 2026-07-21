@@ -4,6 +4,28 @@ This walks a new host ("I found WL on GitHub, I want ticket tracking for my
 own project") from a bare clone to agents filing and working tickets. It
 assumes no existing host.
 
+## Quick install (package / suite dependency)
+
+If WorkLane is delivered as a wheel — Homebrew formula, `pip install`, or
+as a suite dependency — no source checkout is required:
+
+```bash
+pip install protocolcity-worklane
+worklane          # start the server → http://127.0.0.1:8799
+worklane-mcp      # MCP server for agent clients
+tk --help         # ticket CLI (wl is a short alias)
+```
+
+No source checkout or separate host venv required. Runtime state (SQLite
+stores, config) lives under `~/.worklane/`; override with
+`WORKLANE_RUNTIME_DIR`. Skip to **§4** to bootstrap your first
+project.
+
+---
+
+The sections below walk the source-checkout path — for hosts that want to
+pin a specific commit, run the test suite, or contribute to the protocol.
+
 ## 1. Clone
 
 ```bash
@@ -16,10 +38,13 @@ WL is self-contained: no other repo, service, or database is required.
 ## 2. Install
 
 ```bash
-python3 -m venv .venv        # optional but recommended
+python3 -m venv .venv        # required for launchd / ./ticketing on this host
 source .venv/bin/activate
 pip install -e .
 ```
+
+Package deps are only FastAPI + uvicorn — **no host venv or separate service
+is required**.
 
 This installs the `worklane` package plus three console scripts:
 
