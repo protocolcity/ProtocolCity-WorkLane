@@ -1,7 +1,33 @@
 # WorkLane
 
+> **Pre-release (0.1.x).** Part of the **ProtocolCity** suite with
+> [WorkForce](https://github.com/protocolcity/ProtocolCity-WorkForce) and
+> [BluePrint](https://github.com/protocolcity/ProtocolCity-BluePrint).
+> Expect sharp edges; file issues.
+
 **A local-first work queue for multi-agent teams — the coordination layer that
 keeps your AI agents from stepping on each other.**
+
+## Install the whole suite (recommended)
+
+One command — BluePrint CLI + WorkLane + WorkForce engines:
+
+```bash
+brew install protocolcity/tap/protocolcity
+protocolcity found ~/my-city
+protocolcity serve --with-engines
+# → http://127.0.0.1:8801/  (Map · Desk · Roster)
+```
+
+Or PyPI: `pip install protocolcity protocolcity-worklane protocolcity-workforce`
+
+## WorkLane alone
+
+```bash
+pip install protocolcity-worklane
+worklane          # server + board UI → http://127.0.0.1:8799
+tk --help         # ticket CLI (wl is a short alias)
+```
 
 You have Claude Code working your backlog. Then you add Cursor. Then a
 scheduled agent that runs every hour. Suddenly two agents are editing the same
@@ -20,10 +46,10 @@ server so agents get native tools, a stdlib-only CLI, and per-project SQLite
 stores.
 
 It isn't a demo. It was extracted from a working system where a scheduled
-Claude Code pool, founder-driven terminals, Cursor, and Grok have worked a
+Claude Code pool, operator-driven terminals, Cursor, and Grok have worked a
 shared backlog daily for months.
 
-## Quickstart
+## Quickstart (from this repo)
 
 ```bash
 git clone https://github.com/protocolcity/ProtocolCity-WorkLane && cd ProtocolCity-WorkLane
