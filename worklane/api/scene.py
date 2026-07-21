@@ -178,9 +178,7 @@ def api_desk_scene() -> JSONResponse:
     /api/dev/activity only carries new_status, not old→new pairs.
     Birth filings use event_type=created (empty from_status → backlog).
     """
-    # Local import avoids module-level circular dependency (wl-222 Phase A):
-    # task_server imports this module; defer importing back until call time.
-    from worklane.task_server import (  # noqa: PLC0415
+    from worklane.server_helpers import (  # noqa: PLC0415
         _collect_founder_attention_items,
         _merged_ready_count,
         _merged_scope_tasks_for_filters,

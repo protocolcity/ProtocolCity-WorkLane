@@ -828,7 +828,7 @@ class SurfaceRoutingTest(unittest.TestCase):
 
     def test_default_identity_owner_mismatch_logs_warning(self) -> None:
         tid = self._mk_task()
-        with self.assertLogs("worklane.task_server", level="WARNING") as cm:
+        with self.assertLogs("worklane.api.tasks", level="WARNING") as cm:
             r = self.client.post(
                 f"/api/admin/tasks/{tid}/comments",
                 json={
@@ -844,7 +844,7 @@ class SurfaceRoutingTest(unittest.TestCase):
     def test_default_identity_normal_use_stays_silent(self) -> None:
         tid = self._mk_task()
         with self.assertRaises(AssertionError):
-            with self.assertLogs("worklane.task_server", level="WARNING"):
+            with self.assertLogs("worklane.api.tasks", level="WARNING"):
                 r = self.client.post(
                     f"/api/admin/tasks/{tid}/comments",
                     json={"body": "just a note", "author": "founder"},
@@ -854,7 +854,7 @@ class SurfaceRoutingTest(unittest.TestCase):
     def test_non_default_identity_owner_marker_stays_silent(self) -> None:
         tid = self._mk_task()
         with self.assertRaises(AssertionError):
-            with self.assertLogs("worklane.task_server", level="WARNING"):
+            with self.assertLogs("worklane.api.tasks", level="WARNING"):
                 r = self.client.post(
                     f"/api/admin/tasks/{tid}/comments",
                     json={
