@@ -28,7 +28,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # product needs zero code here.
 _KNOWN_PRODUCT_META: Dict[str, Tuple[str, str]] = {
     "tradeos": ("tradeOS", "t"),
+    # wl-207: canonical host store is worklane (wl-); wl- resolves via legacy_prefixes
     "worklane": ("WorkLane", "wl"),
+    "worklane": ("WorkLane", "wl"),  # legacy slug only if old .db still present
 }
 
 # Legacy stores that are not product surfaces. ``ops_tickets`` is the

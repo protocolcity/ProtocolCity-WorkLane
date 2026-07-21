@@ -153,19 +153,47 @@ def parse_wq_priority(raw: Optional[str]) -> Optional[int]:
     return v if v in (1, 2, 3, 4) else None
 
 
+# Product aliases (wl-207 cutover: store is worklane; old slug still resolves).
+# Unknown explicit slugs must NOT expand to multi (wl-219 fail-closed).
+_PRODUCT_ALIASES = {
+    "trade_os": "tradeos",
+    "ops": "ops",
+    "op": "ops",
+    # wl-207: store slug is worklane; legacy slug keeps resolving
+    "worklane": "worklane",
+    "wl": "worklane",  # rare: slug passed as prefix name
+}
+
+
 def parse_wq_product(raw: Optional[str]) -> str:
+    """Resolve product scope. Empty string = multi/all.
+
+    Known aliases map (worklane→worklane). **Unknown explicit
+    slugs also return \"\" for back-compat** — prefer
+    :func:`resolve_wq_product` on new list paths so callers can fail closed
+    (wl-219).
+    """
+    prod, _ok = resolve_wq_product(raw)
+    return prod or ""
+
+
+def resolve_wq_product(raw: Optional[str]) -> tuple:
+    """Return ``(product_or_empty, ok)``.
+
+    * ``(\"\", True)`` — omitted / all (multi-store).
+    * ``(\"tradeos\", True)`` — known store or alias.
+    * ``(\"\", False)`` — client **explicitly** passed an unknown slug
+      (must not silently become multi — wl-219).
+    """
     if raw is None:
-        return ""
+        return "", True
     s = str(raw).strip().lower()
     if s in ("", "all"):
-        return ""
-    if s == "trade_os":
-        return "tradeos"
-    if s in ("ops", "op"):
-        return "ops"
-    if s in product_slugs():
-        return s
-    return ""
+        return "", True
+    s = _PRODUCT_ALIASES.get(s, s)
+    if s in product_slugs() or s == "ops":
+        return s, True
+    return "", False
 
 
 def product_scope_from_list_path(list_path: str) -> str:

@@ -1,0 +1,426 @@
+<style>
+  /* ── Clickable label links ───────────────────────────────────────── */
+  .af-label-link { text-decoration:none; cursor:pointer; }
+  .af-label-link:hover .badge { filter:brightness(1.3); }
+  .af-label-link:hover .label-chip { color: var(--accent); text-decoration-color: var(--accent); }
+
+  /* ── Elapsed timer badge ─────────────────────────────────────────── */
+  .tb-elapsed {
+    font-family:var(--font-mono, monospace);
+    font-size:10px; color:var(--neon);
+    font-weight:600; letter-spacing:.03em;
+    background:color-mix(in srgb, var(--neon) 10%, transparent);
+    border-radius:3px; padding:1px 5px;
+    margin-left:auto;
+  }
+
+  /* ── Layout overrides: tighter cards, prominent counts ───────────── */
+  .tb-card-head { margin-bottom:2px; }
+  .tb-col-head h3 { font-size:13px !important; }
+  .tb-card-meta .badge { font-size:var(--text-badge, 11px); padding:1px 5px; }
+
+  /* More prominent column count badges */
+  .tb-col-count {
+    font-size:11px !important; font-weight:700 !important;
+    color:var(--neon) !important;
+    background:color-mix(in srgb, var(--neon) 10%, transparent);
+    border:1px solid color-mix(in srgb, var(--neon) 28%, transparent) !important;
+    padding:0 8px !important;
+    min-width:22px; text-align:center;
+  }
+
+  /* Horizontal scroll when columns overflow */
+  .tb-board { overflow-x:auto; }
+
+  /* Ticketing Protocol landing + work queue shell */
+  .page.page-full .tos-card { margin-bottom: 12px; }
+  /* Workspace = scope & filters + detail (one dependent module); see docs/operations/ui-chrome.md */
+  .ops-workspace {
+    min-width: 0;
+  }
+  .ops-wq-dispatch-hygiene {
+    margin-top: var(--ops-module-gap, 12px);
+  }
+  .ops-wq-dispatch-summary {
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--fs-sm, 13px);
+    padding: 8px 0;
+  }
+  .ops-wq-dispatch-summary::-webkit-details-marker { display: none; }
+  .ops-wq-dispatch-details-body {
+    padding-top: 4px;
+  }
+  .ops-dev-browser-tools .tb-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .ops-dq-wq-chart {
+    font-size: 11px;
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  }
+  .ops-dq-wq-chart:hover {
+    color: var(--neon);
+    border-color: color-mix(in srgb, var(--neon) 35%, var(--border));
+  }
+  .ops-dev-hygiene-h {
+    font-size: clamp(0.8125rem, 1.45vw, 0.9375rem);
+    font-weight: 600;
+    margin: 0 0 10px 0;
+    letter-spacing: 0.02em;
+    color: var(--fg);
+  }
+  .ts-ops-lead { margin: 0 0 8px; font-size: var(--fs-sm, 13px); line-height: 1.5; max-width: 52rem; }
+  .ts-plugin-tag {
+    display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--dim); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; margin-right: 8px; vertical-align: middle;
+  }
+  .devq-stat-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; align-items: stretch; }
+  .devq-stat-chip {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+    text-decoration: none; color: inherit; min-width: 64px; padding: 6px 10px;
+    border-radius: 6px; background: var(--bg); border: 1px solid var(--border);
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .devq-stat-chip:hover { border-color: var(--neon); color: var(--neon); }
+  .devq-stat-num { font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1.2; }
+  .devq-stat-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin-top: 2px; }
+  .ts-ticket-strip-lead { margin: 0 0 4px; font-size: var(--fs-sm, 13px); line-height: 1.5; max-width: 52rem; }
+  .ts-ticket-mod-foot { margin: 8px 0 0; font-size: var(--fs-sm, 13px); }
+  .ts-ticket-recent td:first-child { max-width: min(420px, 70vw); overflow: hidden; text-overflow: ellipsis; }
+  .ts-tw-meta { margin: 0 0 10px; font-size: var(--fs-sm, 13px); line-height: 1.45; }
+  .ts-tw-offline { margin: 0; font-size: var(--fs-sm, 14px); line-height: 1.55; max-width: 48rem; }
+  .ts-tw-stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; margin-bottom: 12px;
+  }
+  .ts-tw-stat {
+    background: var(--bg, #17140f); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+  }
+  .ts-tw-stat-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 4px;
+  }
+  .ts-tw-stat-value { font-size: var(--fs-lg, 18px); font-weight: 600; color: var(--fg); }
+  .ts-tw-stat-sub { font-size: var(--fs-sm, 12px); font-weight: 400; margin-left: 4px; }
+  .ts-tw-pill {
+    display: inline-block; font-size: var(--fs-sm, 12px); font-weight: 700;
+    letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+  }
+  .ts-tw-pill--green { color: var(--green, #4caf7d); border-color: rgba(76, 175, 125, 0.45); background: rgba(76, 175, 125, 0.08); }
+  .ts-tw-pill--yellow { color: var(--yellow, #d9a441); border-color: rgba(217, 164, 65, 0.45); background: rgba(217, 164, 65, 0.08); }
+  .ts-tw-pill--red { color: var(--red, #ff3b3b); border-color: rgba(255, 59, 59, 0.45); background: rgba(255, 59, 59, 0.08); }
+  .ts-tw-pill--muted { color: var(--dim); }
+  .ts-tw-split {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px; align-items: start;
+  }
+  .ts-tw-panel-title { font-size: var(--fs-md, 15px); font-weight: 600; margin: 0 0 8px 0; }
+  .ts-tw-table td { font-size: var(--fs-sm, 12px); }
+
+  /* ── Command bar (tp-36): counts + jump + filters + view, one row ── */
+  .wq-cmdbar-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    min-height: 28px;
+    padding: 0 0 2px;
+  }
+  .wq-cmdbar-spacer { flex: 1 1 auto; }
+  .wq-jump-form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    flex-wrap: nowrap;
+  }
+  .wq-jump-form { position: relative; }
+  .wq-jump-form label { font-size: var(--fs-sm, 12px); }
+  .wq-jump-input {
+    max-width: 108px;
+    height: 28px;
+    box-sizing: border-box;
+    font-variant-numeric: tabular-nums;
+  }
+  /* display:flex would otherwise beat the hidden attribute's UA
+     display:none — keep the empty popover invisible (tp-82). */
+  .wq-jump-ambiguous[hidden] { display: none; }
+  .wq-jump-ambiguous {
+    position: absolute;
+    top: 32px;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 220px;
+    max-width: 360px;
+    background: var(--card, #fff);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    padding: 4px;
+  }
+  .wq-jump-ambiguous a {
+    padding: 6px 8px;
+    font-size: var(--fs-sm, 12px);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wq-jump-ambiguous a:hover { background: var(--raised, rgba(0, 0, 0, 0.06)); }
+  .wq-adv-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 11px;
+    font-size: var(--fs-sm, 12px);
+    font-weight: 500;
+    color: var(--muted);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 6px);
+    cursor: pointer;
+    transition: border-color .12s, color .12s;
+  }
+  .wq-adv-toggle:hover { border-color: var(--neon); color: var(--fg); }
+  .wq-adv-toggle--open {
+    color: var(--neon);
+    border-color: color-mix(in srgb, var(--neon) 40%, transparent);
+    background: color-mix(in srgb, var(--neon) 8%, transparent);
+  }
+  .wq-adv-caret { font-size: 9px; }
+  .wq-adv-toggle--open .wq-adv-caret { transform: rotate(180deg); }
+  .wq-advanced-panel {
+    border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--bg2) 94%, transparent);
+    margin-bottom: 8px;
+  }
+
+  /* Status count chips — one-line: count then label */
+  .wq-buckets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
+  .wq-bucket {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: var(--r-md, 6px);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .wq-bucket:hover { border-color: var(--neon); color: inherit; }
+  .wq-bucket--active {
+    border-color: var(--neon);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--neon) 24%, transparent);
+    background: color-mix(in srgb, var(--neon) 8%, transparent);
+  }
+  .wq-bucket-val {
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+  .wq-bucket-lbl {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--dim);
+    line-height: 1.2;
+  }
+  .wq-bucket--all .wq-bucket-val { color: var(--fg); }
+  .wq-bucket--backlog .wq-bucket-val { color: var(--muted); }
+  .wq-bucket--progress .wq-bucket-val { color: var(--neon); }
+  .wq-bucket--review .wq-bucket-val { color: var(--yellow); }
+  .wq-bucket--done .wq-bucket-val { color: var(--green); }
+  .wq-bucket--canceled { opacity: .92; }
+  .wq-bucket--canceled .wq-bucket-val { color: var(--dim); }
+
+  /* Work Queue tables — same density as Dev Queue batch tables */
+  .ts-wq-shell .tos-table {
+    font-size: clamp(12px, 1.35vw, 13px);
+  }
+  .ts-wq-shell .tos-table th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--dim);
+    font-weight: 600;
+    padding: 8px 10px;
+  }
+  .ts-wq-shell .tos-table td {
+    padding: 8px 10px;
+    vertical-align: top;
+  }
+
+  /* View toggle lives in the command bar (tp-36) — 28px row height */
+  .ts-wq-shell .tb-view-toggle {
+    border-radius: var(--r-md, 6px);
+    margin-bottom: 0;
+  }
+  .ts-wq-shell .tb-view-btn {
+    padding: 4px 12px;
+    font-size: var(--fs-sm, 12px);
+    font-weight: 500;
+    min-height: 28px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .wq-advanced-panel { padding: 12px 12px 10px; }
+  .wq-advanced-hint { margin: 10px 0 0; font-size: 11px; line-height: 1.4; }
+
+  .wq-filter .wq-advanced-form.ts-filter-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px 14px;
+    align-items: end;
+  }
+  .wq-filter .ts-filter-actions label { visibility: hidden; }
+  .wq-filter-actions { min-height: 32px; }
+  .wq-filter-chips {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .wq-chip-group { display: flex; flex-direction: column; gap: 5px; }
+  .wq-chip-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .wq-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .notif-filter-chip.active {
+    border-color: var(--neon) !important;
+    background: rgba(0, 245, 255, 0.12) !important;
+    color: var(--neon) !important;
+  }
+
+  /* tp-10: facet chip groups — top-N visible, overflow + "other" collapsed
+     behind a toggle; search box expands and filters everything live. */
+  .wq-chip-search { margin-bottom: 2px; }
+  .wq-chip-search-input { width: 100%; max-width: 320px; }
+  .wq-chip-group[data-collapsed="1"] .wq-chip--overflow { display: none; }
+  .wq-chip-group--other[data-collapsed="1"] .notif-filter-chip { display: none; }
+  .wq-chip-more {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--dim);
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-md, 6px);
+    cursor: pointer;
+  }
+  .wq-chip-more:hover { color: var(--neon); border-color: var(--neon); }
+  .wq-filter-chips.wq-chips-searching .wq-chip-more { display: none; }
+  .notif-filter-chip.wq-chip-search-hidden { display: none !important; }
+
+  /* Settings: editable products (tp-17) */
+  .ts-settings-input {
+    width: 100%; min-width: 100px; padding: 4px 8px;
+    border: 1px solid var(--border); border-radius: var(--r-md, 4px);
+    background: var(--bg); color: var(--fg); font-size: var(--fs-sm);
+    font-family: inherit;
+  }
+  .ts-settings-input--narrow { width: 80px; min-width: 60px; }
+  .ts-settings-add-row {
+    display: flex; gap: 8px; align-items: center; margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .ts-settings-add-row .ts-settings-input { width: auto; flex: 1 1 160px; }
+
+  /* tp-23: archived ticket detail is read-only */
+  .ts-archive-banner {
+    margin: 0 0 12px 0; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--r-md, 4px);
+    background: rgba(255, 193, 7, 0.08); color: var(--fg);
+    font-size: var(--fs-sm);
+  }
+
+  /* tp-38: Table view as a Dispatch timetable — dense row grid. */
+  .ts-timetable { overflow-x: auto; }
+  .ts-timetable-table {
+    table-layout: fixed; width: 100%; border-collapse: collapse;
+  }
+  .ts-timetable-table th {
+    text-align: left; text-transform: uppercase; letter-spacing: .16em;
+    font-size: var(--fs-xs); font-weight: 600; color: var(--dim);
+    padding: 6px 8px; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .ts-timetable-table th[data-tt-key] { cursor: pointer; user-select: none; }
+  .ts-timetable-table th[data-tt-key]:hover { color: var(--fg); }
+  .ts-timetable-table th[data-tt-key][aria-sort] { color: var(--accent); }
+  .ts-timetable-table th[data-tt-key][aria-sort]::after {
+    display: inline-block; margin-left: 4px; letter-spacing: 0;
+  }
+  .ts-timetable-table th[data-tt-key][aria-sort="ascending"]::after { content: "\\2191"; }
+  .ts-timetable-table th[data-tt-key][aria-sort="descending"]::after { content: "\\2193"; }
+  .ts-timetable-table td {
+    padding: 0 8px; height: 29px; border-bottom: 1px solid var(--border);
+    font-size: var(--fs-sm); vertical-align: middle; overflow: hidden;
+  }
+  .ts-timetable-table tbody tr.tt-row { cursor: pointer; }
+  .ts-timetable-table tbody tr.tt-row:nth-child(even) { background: var(--bg2); }
+  .ts-timetable-table tbody tr.tt-row:hover { background: var(--hover-tint); }
+  .ts-timetable-table .tt-c-age, .ts-timetable-table .tt-c-no {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ts-timetable-table th.tt-c-age, .ts-timetable-table td.tt-c-age { width: 84px; }
+  .ts-timetable-table th.tt-c-no, .ts-timetable-table td.tt-c-no { width: 96px; }
+  .ts-timetable-table th.tt-c-status, .ts-timetable-table td.tt-c-status { width: 110px; }
+  .ts-timetable-table th.tt-c-pri, .ts-timetable-table td.tt-c-pri { width: 90px; text-align: right; }
+  .ts-timetable-table td.tt-c-pri { text-align: right; }
+  .ts-timetable-table .tt-c-ticket, .ts-timetable-table .tt-c-labels {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ts-timetable-table .tt-c-ticket a {
+    color: var(--fg); text-decoration: none; font-weight: 500;
+  }
+  .ts-timetable-table .tt-c-ticket a:hover { color: var(--accent); }
+  .ts-timetable-table .tt-c-labels { font-family: var(--font-mono); color: var(--dim); }
+  .ts-timetable-table .tt-c-labels .label-chip { color: inherit; text-decoration-color: var(--border); }
+  /* Owner column (tp-104): same byline/claim-age/stale markup as Board cards. */
+  .ts-timetable-table th.tt-c-owner, .ts-timetable-table td.tt-c-owner { width: 170px; }
+  .ts-timetable-table .tt-c-owner {
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+    letter-spacing: .03em; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;
+  }
+</style>

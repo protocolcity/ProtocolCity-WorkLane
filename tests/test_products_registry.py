@@ -85,7 +85,7 @@ class ProductRegistryTest(unittest.TestCase):
         self.assertEqual(slugs, ["tradeos", "worklane"])
         spec = products.get_product("worklane")
         assert spec is not None
-        self.assertEqual(spec.display, "WorkLane")
+        self.assertEqual(spec.display, "WorkLane")  # wl-207: slug kept, display unified
         self.assertEqual(spec.prefix, "wl")
 
     def test_unknown_slug_gets_default_meta(self) -> None:
