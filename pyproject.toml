@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "protocolcity-worklane"
-version = "0.1.2"
+version = "0.1.3"
 description = "Local-first work queue for multi-agent teams — claims, lanes, and verified closeouts over SQLite"
 requires-python = ">=3.9"
 dependencies = [
@@ -23,4 +23,11 @@ where = ["."]
 include = ["worklane*"]
 
 [tool.setuptools.package-data]
-worklane = ["py.typed", "static/fonts/*"]
+# wl-230: surfaces assets must ship — task_server.py reads desk-scene.css/.js
+# at import time; a wheel without them dies with FileNotFoundError.
+worklane = [
+    "py.typed",
+    "static/fonts/*",
+    "surfaces/desk/*.css",
+    "surfaces/desk/*.js",
+]
