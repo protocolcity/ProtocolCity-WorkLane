@@ -22,6 +22,7 @@ consistency.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -47,7 +48,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from worklane.devqueue import (
     BlockedTask,
@@ -7660,6 +7661,139 @@ def api_events(since: int = 0, project: str = "", limit: int = 200) -> JSONRespo
     events = tracker.list_events(since=max(0, int(since)), limit=limit)
     cursor = events[-1]["id"] if events else since
     return JSONResponse({"events": events, "cursor": cursor})
+
+
+_SSE_HIGH_VALUE_TYPES: frozenset = frozenset({"status_change", "labels_changed"})
+
+
+@router.get("/api/events/stream")
+async def api_events_stream(
+    request: Request,
+    project: str = "",
+    since: int = 0,
+    interval: float = 1.5,
+) -> StreamingResponse:
+    """SSE stream of high-value ticket transition events (wl-218 · LIVE-C2).
+
+    Streams ``status_change`` and ``labels_changed`` events as they occur.
+    Payload is minimal — ``id``, ``task_id``, ``event_type``, ``status``,
+    ``labels``, ``created_at`` — never full task bodies. Does not replace
+    the generation-token pulse bus (Layer B); supplements it for clients
+    that want immediate notification of individual transitions.
+
+    ``project`` scopes to one store (same convention as ``/api/events``).
+    ``since`` is the last event id the client already saw (0 for tail-from-now).
+    ``interval`` controls the internal poll cadence in seconds (default 1.5).
+
+    The endpoint disconnects cleanly when the client closes. Recommended
+    client-side pattern::
+
+        const es = new EventSource('/api/events/stream?project=worklane');
+        es.onmessage = ev => {
+            const t = JSON.parse(ev.data);
+            // trigger targeted refetch of t.task_id card
+        };
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) es.close();
+        });
+    """
+    tracker = product_tracker(project) if project else get_default_tracker()
+    poll_secs = max(0.5, min(float(interval), 10.0))
+
+    async def _event_generator():
+        yield "retry: 2000\n\n"
+        cursor = max(0, int(since))
+        while True:
+            if await request.is_disconnected():
+                break
+            if tracker is not None and hasattr(tracker, "list_events"):
+                try:
+                    events = await asyncio.to_thread(
+                        tracker.list_events, since=cursor, limit=50
+                    )
+                except Exception:
+                    events = []
+                for ev in events:
+                    if ev.get("event_type") not in _SSE_HIGH_VALUE_TYPES:
+                        cursor = max(cursor, ev["id"])
+                        continue
+                    payload = json.dumps({
+                        "id": ev["id"],
+                        "task_id": ev["task_id"],
+                        "event_type": ev["event_type"],
+                        "status": ev.get("status"),
+                        "labels": ev.get("labels"),
+                        "created_at": ev.get("created_at"),
+                    })
+                    yield "id: %d\ndata: %s\n\n" % (ev["id"], payload)
+                    cursor = max(cursor, ev["id"])
+            await asyncio.sleep(poll_secs)
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/api/generation")
+@router.get("/api/pulse")
+def api_generation(project: str = "") -> JSONResponse:
+    """Generation token(s) for suite live-shell Layer B (wl-217).
+
+    Tokens only — no task bodies. ``project`` scopes to one store; empty
+    returns a city-wide composite of every registered product tracker so
+    suite Desk can cheaply detect any ticket movement.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    prod = (project or "").strip().lower()
+    if prod and prod not in ("", "all"):
+        try:
+            tracker = product_tracker(prod)
+        except Exception:
+            tracker = None
+        if tracker is None or not hasattr(tracker, "generation_token"):
+            return JSONResponse(
+                {"ok": False, "error": "unknown project or no token support",
+                 "token": "0", "ts": now},
+                status_code=404,
+            )
+        gen = tracker.generation_token()
+        resp = JSONResponse({
+            "ok": True,
+            "token": gen.get("token") or "0",
+            "ts": now,
+            "project": prod,
+            "detail": gen,
+        })
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
+
+    parts: List[str] = []
+    by_project: Dict[str, Any] = {}
+    for spec, tracker in product_trackers():
+        if not hasattr(tracker, "generation_token"):
+            continue
+        try:
+            gen = tracker.generation_token()
+        except Exception:
+            gen = {"token": "err"}
+        slug = getattr(spec, "slug", "?")
+        tok = str(gen.get("token") or "0")
+        by_project[slug] = tok
+        parts.append("%s=%s" % (slug, tok))
+    composite = "|".join(parts) if parts else "0"
+    resp = JSONResponse({
+        "ok": True,
+        "token": composite,
+        "ts": now,
+        "by_project": by_project,
+    })
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @router.get("/api/dev/board-summary")

@@ -698,6 +698,39 @@ class SQLiteTracker(ProjectTracker):
             })
         return events
 
+    def generation_token(self) -> dict:
+        """Cheap freshness token for suite pulse bus (wl-217 / LIVE-B1).
+
+        Advances when task_events, task_comments, or tasks.updated_at move.
+        Tokens only — never task bodies.
+        """
+        with self._connect() as conn:
+            max_ev = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(id), 0) FROM task_events"
+                ).fetchone()[0]
+                or 0
+            )
+            max_c = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(id), 0) FROM task_comments"
+                ).fetchone()[0]
+                or 0
+            )
+            max_u = (
+                conn.execute(
+                    "SELECT COALESCE(MAX(updated_at), '') FROM tasks"
+                ).fetchone()[0]
+                or ""
+            )
+        token = "e%d-c%d-%s" % (max_ev, max_c, max_u)
+        return {
+            "token": token,
+            "events": max_ev,
+            "comments": max_c,
+            "updated_at": max_u,
+        }
+
     # ── helpers ──────────────────────────────────────────────────────
 
     @staticmethod
