@@ -1,5 +1,5 @@
 <script>
-  /* tp-9: clickable on-card label/priority filters lived only on the JS
+  /* wl-9: clickable on-card label/priority filters lived only on the JS
      card renderer (poll path). Cards are server-rendered now; filter via
      the command-bar chips instead. */
 
@@ -43,7 +43,7 @@
     }
 
     /* Forward every arg — the wrapped fn takes (tasks, columnCounts) and
-       dropping the counts clobbers the tp-47 header totals. */
+       dropping the counts clobbers the wl-47 header totals. */
     if (_origAdminBoardRebuild) _origAdminBoardRebuild(tasks, columnCounts);
 
     /* Animate cards that moved columns */
@@ -104,8 +104,8 @@
     }
   }, 30000);
 
-  /* ── Header pills: ready / in flight / stalled (tp-28) ─────────────
-     tp-85: pills honor the page's declared scope (body[data-ops-scope])
+  /* ── Header pills: ready / in flight / stalled (wl-28) ─────────────
+     wl-85: pills honor the page's declared scope (body[data-ops-scope])
      and their click-throughs land on the same scope's Board. */
   async function tsFetchBoardSummary() {
     try {
@@ -152,7 +152,7 @@
     } catch (e) { /* silent */ }
   }
 
-  /* tp-120: per-scope ready/stalled badges in the scope switcher pills
+  /* wl-120: per-scope ready/stalled badges in the scope switcher pills
      ("All" + each discovered store, plus overflow "More" rows) — one batch
      request populates every data-scope-badge element on the page. */
   async function tsFetchScopeNavCounts() {
@@ -188,7 +188,7 @@
     } catch (e) { /* silent */ }
   }
 
-  /* tp-135: founder-attention chip — always all-store, unlike the
+  /* wl-135: founder-attention chip — always all-store, unlike the
      scope-aware pills above (no ?scope= — same "all stores" convention as
      board-summary's scope=all). */
   async function tsFetchAttentionSummary() {

@@ -4,14 +4,14 @@
 (function(){
   var KEY='protocolcity-theme';
   function theme(){
-    try{ var t=localStorage.getItem(KEY)||localStorage.getItem('tp-theme')||'light';
+    try{ var t=localStorage.getItem(KEY)||localStorage.getItem('wl-theme')||'light';
       return t==='dark'?'dark':'light'; }
     catch(e){ return 'light'; }
   }
   function apply(t){
     t=(t==='dark')?'dark':'light';
     document.documentElement.setAttribute('data-theme', t);
-    try{ localStorage.setItem(KEY,t); localStorage.setItem('tp-theme',t); }catch(e){}
+    try{ localStorage.setItem(KEY,t); localStorage.setItem('wl-theme',t); }catch(e){}
     var btn=document.getElementById('theme-toggle');
     if(btn){
       btn.textContent = t==='dark' ? '\\u2600' : '\\u263D';
@@ -39,7 +39,7 @@ function sheets(n,cap){var out="",m=Math.min(n,cap||12);
 function pile(cls,label,n){
   return '<div class="pile '+cls+'"><div class="sheets">'+sheets(n)+'</div>'+
     '<div class="n">'+esc(n)+'</div><div class="l">'+esc(label)+'</div></div>';}
-/* tp-168: paper-line stations — status → station id for counts & flyers */
+/* wl-168: paper-line stations — status → station id for counts & flyers */
 var PL_STATUS={backlog:"plFiled",in_progress:"plClaimed",in_review:"plSignoff",done:"plSigned"};
 var PL_SEEN={}, PL_ACTIVE=0, PL_MAX=6, PL_MS=1500, firstPlPoll=true;
 function plCounts(d){
@@ -121,7 +121,7 @@ function flyPaper(tr){
     if(p>=1){clearInterval(iv); if(el.parentNode)el.parentNode.removeChild(el); PL_ACTIVE--;}
   },32);}
 function stampFor(kind){
-  /* Attention stamps + station-skim stamps (tp-186 film from Office counts). */
+  /* Attention stamps + station-skim stamps (wl-186 film from Office counts). */
   if(kind==="in_review"||kind==="signoff")return {txt:"SIGN-OFF DUE",cls:""};
   if(kind==="founder_decision")return {txt:"AWAITING SIGNATURE",cls:""};
   if(kind==="human_gate")return {txt:"AT THE WINDOW",cls:"amber"};
@@ -133,7 +133,7 @@ function stampFor(kind){
 function formHtml(it,slip){
   /* Title-first slips: id · priority · stamp · title (+ sitting age).
      Long reason text belongs in the drawer, not on the tray.
-     Whole slip opens the work-order drawer (tp-145); id link remains
+     Whole slip opens the work-order drawer (wl-145); id link remains
      the cmd-click escape hatch to the full record. */
   var st=stampFor(it.kind);
   var sit=it.waiting_since?'<div class="meta sit">sitting '+esc(ago(it.waiting_since))+'</div>':'';
@@ -158,7 +158,7 @@ function spriteChip(author){
     '<line x1="2" y1="-4" x2="2" y2="0" stroke="#4a3f2c" stroke-width="2"/>'+
     '<rect x="-4" y="-14" width="8" height="11" rx="2.5" fill="'+col+'"/>'+
     '<circle cx="0" cy="-18" r="4.2" fill="#d9b98c" stroke="#4a3f2c" stroke-width=".7"/></svg>';}
-/* tp-186 / suite Click ladder: cabinet + status skim live in the URL so
+/* wl-186 / suite Click ladder: cabinet + status skim live in the URL so
    Office Work-rail counts can land on the filtered film. */
 var TRAY_F="all", STATUS_F="";
 var STATUS_LABEL={backlog:"filed",in_progress:"claimed",in_review:"sign-off",done:"signed"};
@@ -193,7 +193,7 @@ function bootFiltersFromQuery(){
   var cab=q.get("cabinet")||q.get("store")||"";
   var st=q.get("status")||"";
   if(cab) TRAY_F=normalizeCabinet(cab, null);
-  else TRAY_F=localStorage.getItem("tp_desk_tray_filter")||"all";
+  else TRAY_F=localStorage.getItem("wl_desk_tray_filter")||"all";
   if(st&&STATUS_LABEL[st]) STATUS_F=st;
   else STATUS_F="";
 }
@@ -406,7 +406,7 @@ function poll(){
   }).catch(function(){
     $("liveChip").className="hold"; $("liveChip").textContent=SCENE?"HOLDING":"NO SIGNAL";});}
 poll(); setInterval(poll,15000);
-/* tp-179: wall clock only — plat sky/sun band retired with the cabinet pivot. */
+/* wl-179: wall clock only — plat sky/sun band retired with the cabinet pivot. */
 setInterval(function(){
   var n=new Date();
   $("clock").textContent=n.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
@@ -504,12 +504,12 @@ function pickDeskSearch(ix){
   });
 })();
 
-/* ── the work-order drawer (tp-145): tickets open ON the desk ── */
+/* ── the work-order drawer (wl-145): tickets open ON the desk ── */
 var WO_ID=null, WO_TASK=null;
 var FD_LABELS={"needs:founder-decision":1,"founder-decision":1};
 function founderAuthor(){return (window.FOUNDER&&FOUNDER.founder_id)||"founder";}
 
-/* ── tp-154: front window intake + take-a-number claim ── */
+/* ── wl-154: front window intake + take-a-number claim ── */
 var TN_READY=null;
 function fwAuthor(){
   return (window.FOUNDER&&(FOUNDER.founder_id||FOUNDER.author||FOUNDER.identity))
@@ -662,7 +662,7 @@ function tnClaim(){
        method:"POST",
        headers:{"Content-Type":"application/json"},
        body:JSON.stringify({
-         body:"Owner: "+author+"\\nWorkdir: desk-take-number\\nStart: "+new Date().toISOString()+"\\nPlan:\\n- claimed from desk front window (tp-154)",
+         body:"Owner: "+author+"\\nWorkdir: desk-take-number\\nStart: "+new Date().toISOString()+"\\nPlan:\\n- claimed from desk front window (wl-154)",
          author:author
        })
      }).then(function(){
@@ -788,7 +788,7 @@ function renderWO(t){
   $("woSignAs").innerHTML='SIGNED AS '+signer(founderAuthor());
   $("woErr").textContent="";}
 function signer(a){
-  /* tp-148: aliases are paint, ids are identity — the alias renders,
+  /* wl-148: aliases are paint, ids are identity — the alias renders,
      the canonical signed id stays visible */
   if(window.FOUNDER&&a===FOUNDER.founder_id&&FOUNDER.founder_alias)
     return esc(FOUNDER.founder_alias)+' <span class="dim">('+esc(a)+')</span>';
@@ -859,7 +859,7 @@ function runWoAct(act){
   setWoBusy(false);}
 function signWO(){
   if(!WO_ID)return;
-  /* tp-150: the desk signs for the founder — whoever clicked IS the founder;
+  /* wl-150: the desk signs for the founder — whoever clicked IS the founder;
      other identities sign via MCP/CLI, never this chair */
   var body=$("woNote").value.trim(), b=$("woSignBtn");
   if(!body){$("woErr").textContent="nothing to file \\u2014 write the note first";return;}
@@ -926,7 +926,7 @@ document.addEventListener("click",function(e){
     if(fid){ e.preventDefault(); openWO(fid); }
   }});
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeWO();});
-/* Office / deep-link: ?open=<id> drawer; ?cabinet=&status= skim (tp-186). */
+/* Office / deep-link: ?open=<id> drawer; ?cabinet=&status= skim (wl-186). */
 (function bootOpenFromQuery(){
   try{
     var id=(deskQuery().get("open")||"");
@@ -935,13 +935,13 @@ document.addEventListener("keydown",function(e){if(e.key==="Escape")closeWO();})
 })();
 function clearDeskSkim(){
   TRAY_F="all"; STATUS_F=""; STATUS_SKIM=null; STATUS_SKIM_KEY="";
-  localStorage.setItem("tp_desk_tray_filter","all");
+  localStorage.setItem("wl_desk_tray_filter","all");
   syncDeskQuery(); render();
 }
 function setTrayFilter(v, opts){
   opts=opts||{};
   TRAY_F=v||"all";
-  localStorage.setItem("tp_desk_tray_filter",TRAY_F);
+  localStorage.setItem("wl_desk_tray_filter",TRAY_F);
   /* Default: cabinet toggle keeps STATUS_F (Office inbound film + pile drills).
      Pass clearStatus:true to drop the station filter. */
   if(opts.clearStatus) STATUS_F="";
@@ -955,7 +955,7 @@ function setStatusFilter(st){
   STATUS_SKIM=null; STATUS_SKIM_KEY="";
   syncDeskQuery(); render();
 }
-/* tp-186: station click filters Desk D0 (Board remains via ledger "board" link). */
+/* wl-186: station click filters Desk D0 (Board remains via ledger "board" link). */
 document.querySelectorAll(".pl-station").forEach(function(btn){
   btn.addEventListener("click",function(){
     var st=btn.getAttribute("data-status")||"";
