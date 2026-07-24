@@ -6,17 +6,44 @@ body:
     id: version
     attributes:
       label: WorkLane version
-      description: The release tag you're running (e.g. v0.1.0) — from `pip show worklane` or the tag you cloned.
-      placeholder: v0.1.0
+      description: "`pip show protocolcity-worklane` → Version field, or the release tag you cloned."
+      placeholder: v0.1.3
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - pip install protocolcity-worklane
+        - macOS service installer (install-macos-service.sh)
+        - Clone + editable install (pip install -e .)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      description: "`python3 --version`"
+      placeholder: "3.11.9"
     validations:
       required: true
   - type: textarea
     id: what
     attributes:
       label: What happened?
-      description: What did you do, what did you expect, and what happened instead? Server logs or CLI/MCP output welcome.
+      description: Steps to reproduce, what you expected, and what happened instead.
     validations:
       required: true
+  - type: textarea
+    id: server_logs
+    attributes:
+      label: Server startup output
+      description: Paste the output of `worklane` (or `wl server start`) from launch through the first request or crash. Redact any personal paths.
+      render: text
+    validations:
+      required: false
   - type: textarea
     id: setup
     attributes:
