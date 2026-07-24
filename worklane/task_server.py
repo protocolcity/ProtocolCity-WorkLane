@@ -5924,57 +5924,7 @@ def admin_desk() -> str:
   </div>
   <div class="pl-flyers" id="plFlyers" aria-hidden="true"></div>
 </div>
-<!-- wl-154: front window (intake) + take-a-number (claim) — desk furniture, not a bolted form panel -->
-<section class="front-window" id="frontWindow" aria-label="front window · file a work order">
-  <div class="fw-intake">
-    <div class="fw-head">
-      <h2>Front window · file a work order</h2>
-      <p class="fw-hint">Counter intake — signs as You. Board stays a dense power view.</p>
-    </div>
-    <form id="fwForm" class="fw-form" onsubmit="return fwSubmit(event)">
-    <label class="fw-field">
-      <span>Store</span>
-      <select id="fwStore" name="project" required></select>
-    </label>
-    <label class="fw-field fw-grow">
-      <span>Title</span>
-      <input id="fwTitle" name="title" required maxlength="200"
-             placeholder="what needs doing" autocomplete="off">
-    </label>
-    <label class="fw-field fw-prio">
-      <span>Priority</span>
-      <select id="fwPriority" name="priority">
-        <option value="1">1 urgent</option>
-        <option value="2">2 high</option>
-        <option value="3" selected>3 normal</option>
-        <option value="4">4 low</option>
-      </select>
-    </label>
-    <label class="fw-field fw-full">
-      <span>Description</span>
-      <textarea id="fwBody" name="description" rows="2" required
-                placeholder="problem + expected outcome (PROCESS §5 intake)"></textarea>
-    </label>
-    <label class="fw-field fw-full">
-      <span>Labels</span>
-      <input id="fwLabels" name="labels" placeholder="optional, comma-separated (e.g. ship-cut, worker:riley)">
-    </label>
-    <div class="fw-actions">
-      <button type="submit" class="fw-btn" id="fwSubmitBtn">File at the window</button>
-      <span class="fw-status" id="fwStatus" aria-live="polite"></span>
-    </div>
-    </form>
-  </div>
-  <div class="take-number" id="takeNumber">
-    <h2>Now serving · take a number</h2>
-    <p class="fw-hint">Oldest ready work (city-wide or filtered cabinet). Claims with your Owner marker.</p>
-    <div class="tn-row">
-      <div class="tn-slip" id="tnSlip"><span class="empty-note">Waiting for ready work…</span></div>
-      <button type="button" class="fw-btn tn-btn" id="tnClaimBtn" disabled onclick="tnClaim()">Claim this work order</button>
-    </div>
-    <div class="fw-status" id="tnStatus" aria-live="polite"></div>
-  </div>
-</section>
+<!-- wl-154 front window + take-a-number retired — file/claim via AI / MCP / tk -->
 <main class="surface">
   <div>
     <div class="tray"><div class="tray-head">
@@ -6007,7 +5957,7 @@ def admin_desk() -> str:
   </div>
 </main>
 <footer class="bar">
-  <div>File &amp; claim live at the front window ·
+  <div>File &amp; claim via AI / MCP / <code>tk</code> ·
     <a href="/admin/tickets/all">Board (power view)</a>
     <a href="/admin/overview">Overview</a>
     <a href="/admin/settings">Settings</a>
