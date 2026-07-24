@@ -6430,7 +6430,7 @@ def _render_report_page() -> str:
 
 def create_app():
     """Build the standalone task-board FastAPI app."""
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.staticfiles import StaticFiles
 
     app = FastAPI(
@@ -6439,6 +6439,52 @@ def create_app():
         docs_url="/api/docs",
         redoc_url=None,
     )
+    # ONE DOOR: default API-only — citizen UI is suite :8801/desk.
+    # Opt out for host debug: WORKLANE_API_ONLY=0 (or WL_API_ONLY=0).
+    _api_raw = (
+        os.environ.get("WORKLANE_API_ONLY")
+        or os.environ.get("WL_API_ONLY")
+        or "1"
+    ).strip().lower()
+    api_only = _api_raw not in ("0", "false", "no", "off")
+    suite_url = (os.environ.get("SUITE_URL") or "http://127.0.0.1:8801").rstrip("/")
+
+    if api_only:
+
+        @app.middleware("http")
+        async def _api_only_gate(request: Request, call_next):  # type: ignore[no-untyped-def]
+            path = request.url.path or "/"
+            # Keep APIs, OpenAPI, and static assets for API clients.
+            if (
+                path.startswith("/api/")
+                or path.startswith("/static/")
+                or path in ("/openapi.json", "/docs", "/redoc", "/health")
+            ):
+                return await call_next(request)
+            accept = (request.headers.get("accept") or "").lower()
+            suite = suite_url + "/desk"
+            if "application/json" in accept and "text/html" not in accept:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "worklane HTML retired (WORKLANE_API_ONLY); "
+                        "open suite at %s" % suite,
+                        "api": "/api/scene",
+                        "suite": suite,
+                    },
+                    status_code=404,
+                )
+            # Soft land: small HTML pointer (not a maintained product page).
+            body = (
+                "<!doctype html><meta charset='utf-8'>"
+                "<title>WorkLane API</title>"
+                "<p>WorkLane HTML is retired — open the suite: "
+                f"<a href='{suite}'>{suite}</a></p>"
+                "<p>This port serves <code>/api/*</code> only. "
+                "Set <code>WORKLANE_API_ONLY=0</code> for legacy desk HTML.</p>"
+            )
+            return HTMLResponse(body, status_code=200)
+
     app.include_router(router)
     # Self-hosted IBM Plex (wl-37) — no CDN, must render identically offline.
     static_dir = Path(__file__).resolve().parent / "static"
