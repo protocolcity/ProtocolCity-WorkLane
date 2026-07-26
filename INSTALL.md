@@ -52,7 +52,7 @@ This installs the `worklane` package plus three console scripts:
 | --- | --- |
 | `worklane` | starts the FastAPI/uvicorn service |
 | `worklane-mcp` | starts the stdio MCP server for agent clients |
-| `tk` | ticket CLI (`tk list` / `show` / `comment` / `status` / `label`) — see below; `worklane`, `wl`, and `wl` are installed aliases |
+| `tk` | ticket CLI (`tk list` / `show` / `comment` / `status` / `label`) — see below; `worklane` and `wl` are installed aliases |
 
 Requires Python 3.9+ (see `pyproject.toml`).
 
@@ -161,10 +161,10 @@ Three ways to read/write tickets, in order of preference:
    export WL_AGENT_ID=you                     # signs comments (PROTOCOL.md §3.8)
 
    tk list --project myproject --status backlog
-   tk show wl-1
-   tk comment wl-1 "starting work" --author you
-   tk status wl-1 in_progress
-   tk label wl-1 --add area:backend
+   tk show mp-1
+   tk comment mp-1 "starting work" --author you
+   tk status mp-1 in_progress
+   tk label mp-1 --add area:backend
    ```
 
    This CLI only speaks HTTP (`urllib`, stdlib-only) — no

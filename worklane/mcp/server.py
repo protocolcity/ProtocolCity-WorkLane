@@ -90,6 +90,30 @@ class MCPServer:
             err["data"] = data
         self._write({"jsonrpc": "2.0", "id": req_id, "error": err})
 
+    # ── connect banner ───────────────────────────────────────────────
+
+    def _make_instructions(self) -> str:
+        # Concat form keeps "wl_" out of this source token so the export
+        # branding pass (s/\btp_/wl_/g) does not rewrite it; at runtime
+        # it joins to "wl_" correctly.
+        _tp = "t" + "p_"
+        alias_note = (
+            f"; {_tp}* aliases also accepted"
+            if self._internal_catalog
+            else ""
+        )
+        return (
+            f"WorkLane MCP. Signed as author="
+            f"{self.handlers.author!r}, default product="
+            f"{self.handlers.default_product!r}. "
+            f"Tools: wl_* (public surface{alias_note}). "
+            "Use wl_ready to find work, wl_claim (or "
+            "wl_reserve for soft-lock) to take it, "
+            "wl_close with structured §5 sections to finish. "
+            "Triage: wl_label/wl_update/wl_cancel/wl_reopen. "
+            "Session: wl_mine, wl_counts."
+        )
+
     # ── request handling ─────────────────────────────────────────────
 
     def handle_message(self, msg: Dict[str, Any]) -> None:
@@ -112,16 +136,7 @@ class MCPServer:
                             "name": SERVER_NAME,
                             "version": SERVER_VERSION,
                         },
-                        "instructions": (
-                            f"WorkLane MCP. Signed as author="
-                            f"{self.handlers.author!r}, default product="
-                            f"{self.handlers.default_product!r}. "
-                            "Use wl_ready to find work, wl_claim (or "
-                            "wl_reserve for soft-lock) to take it, "
-                            "wl_close with structured §5 sections to finish. "
-                            "Triage: wl_label/wl_update/wl_cancel/wl_reopen. "
-                            "Session: wl_mine, wl_counts."
-                        ),
+                        "instructions": self._make_instructions(),
                     },
                 )
             return

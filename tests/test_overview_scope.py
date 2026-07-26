@@ -53,6 +53,12 @@ class OverviewScopeTest(unittest.TestCase):
         app.include_router(router)
         self.client = TestClient(app)
 
+        # Bust the module-level /api/scene cache so each test gets a fresh
+        # build regardless of test-suite ordering (wl-243).
+        import worklane.api.scene as _scene_api  # noqa: PLC0415
+        _scene_api._scene_cache_ts = 0.0
+        _scene_api._scene_cache_payload = None
+
     def tearDown(self) -> None:
         for k, v in self._env_before.items():
             if v is None:

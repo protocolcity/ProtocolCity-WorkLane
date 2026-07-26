@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,6 +22,15 @@ _SCENE_TRANSITION_HOURS = _SCENE_WINDOW_HOURS
 # wl-191: window must match _SCENE_WINDOW_HOURS; busy days truncate at this
 # limit (newest first) — the tape links to Desk for the rest.
 _SCENE_TRANSITION_LIMIT = 40
+
+# Suite + WorkForce + citylens all hit /api/scene together. Without a short
+# cache, concurrent sync handlers re-walk every store and pin the process at
+# multi-core CPU — Map bootstrap then hangs (2026-07-25 dogfood).
+_SCENE_CACHE_TTL_S = 2.0
+_scene_lock = threading.Condition()
+_scene_cache_ts = 0.0
+_scene_cache_payload: Optional[Dict[str, Any]] = None
+_scene_inflight = False
 
 
 def _activity_ts_sort_key(raw: object) -> float:
@@ -166,18 +177,8 @@ def _scene_recent_transitions(
     return out[:_SCENE_TRANSITION_LIMIT]
 
 
-@router.get("/api/scene")
-def api_desk_scene() -> JSONResponse:
-    """The desk scene's facts in one call (wl-132): per-store ledger counts,
-    the founder-attention tray (wl-135 collector, unchanged), and the window
-    of FILED receipts. Computed from THIS engine's own stores — the scene
-    never reads the city lens (engines compute their own facts).
-
-    wl-168: also a recent_transitions[] window (task id, from_status,
-    to_status, author, ts) so the paper line can animate status movement —
-    /api/dev/activity only carries new_status, not old→new pairs.
-    Birth filings use event_type=created (empty from_status → backlog).
-    """
+def _build_desk_scene_payload() -> Dict[str, Any]:
+    """Heavy path: per-store counts, attention, filed, transitions."""
     from worklane.server_helpers import (  # noqa: PLC0415
         _collect_founder_attention_items,
         _merged_ready_count,
@@ -219,7 +220,7 @@ def api_desk_scene() -> JSONResponse:
             "ready": _merged_ready_count(spec.slug),
         })
     filed.sort(key=lambda f: _activity_ts_sort_key(f.get("closed_at")), reverse=True)
-    payload = {
+    return {
         "ok": True,
         "generated_at": now.isoformat(),
         "window_hours": _SCENE_WINDOW_HOURS,
@@ -229,6 +230,69 @@ def api_desk_scene() -> JSONResponse:
         "filed": filed[:60],
         "recent_transitions": _scene_recent_transitions(now=now),
     }
+
+
+@router.get("/api/scene")
+def api_desk_scene() -> JSONResponse:
+    """The desk scene's facts in one call (wl-132): per-store ledger counts,
+    the founder-attention tray (wl-135 collector, unchanged), and the window
+    of FILED receipts. Computed from THIS engine's own stores — the scene
+    never reads the city lens (engines compute their own facts).
+
+    wl-168: also a recent_transitions[] window (task id, from_status,
+    to_status, author, ts) so the paper line can animate status movement —
+    /api/dev/activity only carries new_status, not old→new pairs.
+    Birth filings use event_type=created (empty from_status → backlog).
+
+    Short single-flight cache: concurrent suite/WF/citylens callers share one
+    build so the process cannot CPU-spin on overlapping scene walks.
+    """
+    global _scene_cache_ts, _scene_cache_payload, _scene_inflight
+    now_m = time.monotonic()
+    with _scene_lock:
+        if (
+            _scene_cache_payload is not None
+            and (now_m - _scene_cache_ts) < _SCENE_CACHE_TTL_S
+        ):
+            payload = _scene_cache_payload
+            resp = JSONResponse(payload)
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            resp.headers["X-Scene-Cache"] = "hit"
+            return resp
+        while _scene_inflight:
+            _scene_lock.wait(timeout=8.0)
+            now_m = time.monotonic()
+            if (
+                _scene_cache_payload is not None
+                and (now_m - _scene_cache_ts) < _SCENE_CACHE_TTL_S
+            ):
+                payload = _scene_cache_payload
+                resp = JSONResponse(payload)
+                resp.headers["Cache-Control"] = "no-store, max-age=0"
+                resp.headers["X-Scene-Cache"] = "coalesce"
+                return resp
+            # Stale or failed builder — try ourselves
+            if not _scene_inflight:
+                break
+        _scene_inflight = True
+
+    payload: Optional[Dict[str, Any]] = None
+    err: Optional[BaseException] = None
+    try:
+        payload = _build_desk_scene_payload()
+    except BaseException as exc:  # noqa: BLE001 — re-raise after unlock
+        err = exc
+    finally:
+        with _scene_lock:
+            if payload is not None:
+                _scene_cache_payload = payload
+                _scene_cache_ts = time.monotonic()
+            _scene_inflight = False
+            _scene_lock.notify_all()
+    if err is not None:
+        raise err
+    assert payload is not None
     resp = JSONResponse(payload)
     resp.headers["Cache-Control"] = "no-store, max-age=0"
+    resp.headers["X-Scene-Cache"] = "miss"
     return resp
