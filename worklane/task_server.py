@@ -2708,7 +2708,7 @@ _ATTENTION_KIND_BLURB = {
     "founder_decision": "Needs a yes/no or direction from You",
     "in_review": "Work finished — waiting on Your sign-off",
     "stalled": "In flight with no update (stale claim)",
-    "human_gate": "Parked behind a human gate (often deferred / external)",
+    "human_gate": "Needs You now (action-shaped human gate — not deferred/umbrella park)",
     "embargo": "Date-gated — not actionable until the date",
 }
 
@@ -3253,11 +3253,13 @@ def _render_attention_page_body(
         f"<a href='/admin/desk' style='color:var(--verd);font-weight:700'>top-down Desk room</a> "
         f"is separate. "
         f"Start with <b>decisions</b> ({n_dec}) and <b>review</b> ({n_rev}); "
-        f"human gates ({n_gate}) are often deferred/external; "
+        f"human gates ({n_gate}) listed here need a <b>concrete You action</b> "
+        f"(parked deferred/umbrella gates are hidden from this tray — wl-257); "
         f"embargoes ({n_emb}) are date-locked.</p>"
         f"<p class='you-howto'>Tip: click a KPI tile or store chip to filter. "
-        f"Snooze a whole store when you are not working it today — that mutes "
-        f"<em>notifications</em>, it does not clear ticket gates. "
+        f"Snooze mutes notifications without clearing gates. "
+        f"To park work without golding You: human gate + <code>deferred:</code> / "
+        f"<code>umbrella</code> note (ready still blocked). "
         f"Hover a note to expand. Open a card when you are ready to act.</p>"
     )
     banner = _render_attention_snooze_banner(snoozes, snoozed)

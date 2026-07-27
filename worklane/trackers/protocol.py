@@ -62,6 +62,9 @@ class Task:
     gate_type: Optional[str] = None
     gate_until: Optional[str] = None
     gate_note: Optional[str] = None
+    # wl-250: entry channel — how the ticket entered the system.
+    # Values: "mcp", "cli", "api", "agent", "import", "unknown", or None.
+    intake: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -77,6 +80,7 @@ class Task:
             "gate_type": self.gate_type,
             "gate_until": self.gate_until,
             "gate_note": self.gate_note,
+            "intake": self.intake,
         }
 
 

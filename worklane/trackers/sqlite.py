@@ -205,6 +205,7 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         gate_type=(row["gate_type"] or None) if "gate_type" in row_keys else None,
         gate_until=(row["gate_until"] or None) if "gate_until" in row_keys else None,
         gate_note=(row["gate_note"] or None) if "gate_note" in row_keys else None,
+        intake=(row["intake"] or None) if "intake" in row_keys else None,
     )
 
 
@@ -316,7 +317,8 @@ class SQLiteTracker(ProjectTracker):
                         updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
                         gate_type    TEXT,
                         gate_until   TEXT,
-                        gate_note    TEXT
+                        gate_note    TEXT,
+                        intake       TEXT
                     );
                     CREATE INDEX IF NOT EXISTS ix_tasks_status   ON tasks(status);
                     CREATE INDEX IF NOT EXISTS ix_tasks_ext_id   ON tasks(ext_id);
@@ -369,7 +371,7 @@ class SQLiteTracker(ProjectTracker):
                 existing_cols = {
                     r["name"] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()
                 }
-                for col in ("gate_type", "gate_until", "gate_note"):
+                for col in ("gate_type", "gate_until", "gate_note", "intake"):
                     if col not in existing_cols:
                         conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
                 # Scene-feed attribution: the actor column didn't exist when
@@ -440,6 +442,7 @@ class SQLiteTracker(ProjectTracker):
         labels: Optional[List[str]] = None,
         ext_id: Optional[str] = None,
         actor: str = "",
+        intake: Optional[str] = None,
     ) -> Task:
         now = _now_iso()
         merged = self._merge_default_product_label(labels)
@@ -450,11 +453,11 @@ class SQLiteTracker(ProjectTracker):
                     """
                     INSERT INTO tasks
                         (ext_id, title, description, status, priority, labels,
-                         created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         created_at, updated_at, intake)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (ext_id, title, description, status, int(priority),
-                     labels_json, now, now),
+                     labels_json, now, now, intake),
                 )
                 task_pk = cur.lastrowid
                 self._insert_event(

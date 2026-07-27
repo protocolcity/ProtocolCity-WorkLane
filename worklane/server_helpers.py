@@ -460,15 +460,41 @@ def _attention_item(
     }
 
 
+def _human_gate_is_parked(gate_note: Optional[str]) -> bool:
+    """True when human gate withholds ready but is NOT a "You act now" signal.
+
+    City practice (tradeOS north-star deferrals, epic umbrellas): gate_type=human
+    keeps agents off the ticket, but For You / Map gold must not paint deferred
+    tracks as urgent. Convention (PROCESS §3.9): gate_note starts with or
+    contains parked markers — not a blank human gate that still needs a call.
+    """
+    n = (gate_note or "").strip().lower()
+    if not n:
+        return False
+    if n.startswith("deferred:") or n.startswith("umbrella"):
+        return True
+    markers = (
+        "post-northstar",
+        "not claimable",
+        "withheld from ready",
+        "thaw when",
+        "parked:",
+        "far future",
+    )
+    return any(m in n for m in markers)
+
+
 def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
-    """Everything blocked on the founder, all stores (wl-135): in_review
-    (review IS the founder gate), needs:founder-decision/founder-decision
-    labels, gate_type=human, stalled in-flight (§4, >90m — reuses
-    _stale_inflight()), and gate_type=timer embargoes with a machine-readable
-    gate_until. Sorted oldest-first — age is how long the founder has been
-    the blocker. Each open task counts once, first match wins in the order
-    above (an in_review ticket that's also labeled founder-decision shows
-    once, as in_review).
+    """Everything blocked on the founder *now*, all stores (wl-135 / wl-257):
+
+    in_review (sign-off), needs:founder-decision labels, gate_type=human that
+    still needs a concrete You action, stalled in-flight (§4, >90m), and
+    gate_type=timer embargoes. Sorted oldest-first.
+
+    **Not** in the list: parked human gates (deferred:/umbrella/post-northstar
+    etc.) — they still withhold ready, but must not gold-paint For You. Each
+    open task counts once; first match wins (in_review before founder_decision
+    before human_gate).
     """
     items: List[Dict[str, Any]] = []
     counted: set = set()
@@ -498,6 +524,9 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
             items.append(_attention_item(t, prod_slug, "founder_decision", "founder decision needed", since, now))
             counted.add(t.id)
         elif t.gate_type == "human":
+            if _human_gate_is_parked(t.gate_note):
+                # Ready still withheld; For You / Map gold skip (scarce signal law).
+                continue
             items.append(_attention_item(t, prod_slug, "human_gate", t.gate_note or "human gate", since, now))
             counted.add(t.id)
         elif t.gate_type == "timer" and t.gate_until:
@@ -601,6 +630,7 @@ def _active_attention_snoozes(*, now: datetime) -> List[Dict[str, Any]]:
             "scope": s.get("scope") or "product",
             "product": (s.get("product") or "").strip().lower(),
             "kind": (s.get("kind") or "").strip().lower(),
+            "task_id": (s.get("task_id") or "").strip().lower(),
             "until": until.isoformat() if until else None,
             "reason": s.get("reason") or "",
         })
@@ -613,11 +643,14 @@ def _active_attention_snoozes(*, now: datetime) -> List[Dict[str, Any]]:
 def _item_is_snoozed(it: Dict[str, Any], snoozes: List[Dict[str, Any]]) -> bool:
     prod = (it.get("product") or "").strip().lower()
     kind = (it.get("kind") or "").strip().lower()
+    task_id = (it.get("id") or "").strip().lower()
     for s in snoozes:
         scope = s.get("scope") or "product"
         if scope == "product" and s.get("product") and s["product"] == prod:
             return True
         if scope == "kind" and s.get("kind") and s["kind"] == kind:
+            return True
+        if scope == "task" and s.get("task_id") and s["task_id"] == task_id:
             return True
         if scope == "all":
             return True

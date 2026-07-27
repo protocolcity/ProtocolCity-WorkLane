@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -85,6 +88,31 @@ router = APIRouter()
 DEFAULT_AGENT_ID = "founder"
 
 
+def _workforce_workers_for_product(product_slug: str) -> List[str]:
+    """Return lane worker names hired for *product_slug* per the WorkForce roster.
+
+    Queries WL_WORKFORCE_URL/api/workers with a 1-second timeout.  Returns an
+    empty list on any network / parse error — the caller must never block on
+    this (wl-256: soft warning only, never a gate).
+
+    A worker is considered hired for the product when its ``queue_url`` contains
+    ``product=<slug>`` (the convention all current lanes follow).
+    """
+    url = os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797") + "/api/workers"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return []
+    needle = "product=" + product_slug
+    return [
+        "worker:" + w["name"]
+        for w in (data.get("workers") or [])
+        if w.get("kind") == "lane" and needle in (w.get("queue_url") or "")
+    ]
+
+
 def _tracker_db_path(tracker: Any) -> Path:
     """Resolve the SQLite path for a tracker (HTTP-raising variant)."""
     path = getattr(tracker, "_db_path", None)
@@ -94,6 +122,24 @@ def _tracker_db_path(tracker: Any) -> Path:
 
 
 # ── Product management ──────────────────────────────────────────────────────
+
+@router.get("/api/admin/products")
+def api_list_products() -> JSONResponse:
+    """List all registered product stores (wl-253): slug, display, prefix, db_path."""
+    specs = discover_products()
+    return JSONResponse({
+        "ok": True,
+        "products": [
+            {
+                "slug": s.slug,
+                "display": s.display,
+                "prefix": s.prefix,
+                "db_path": str(s.db_path),
+            }
+            for s in specs
+        ],
+    })
+
 
 @router.post("/api/admin/products")
 async def api_create_product(request: Request) -> JSONResponse:
@@ -371,6 +417,7 @@ async def api_create_task(request: Request) -> JSONResponse:
         labels = [str(s).strip() for s in labels_raw if str(s).strip()]
 
     ext_id: Optional[str] = payload.get("ext_id") or None
+    intake_val = str(payload.get("intake") or "").strip() or None
 
     def _sign_intake(tracker: Any, raw_id: Any) -> None:
         """Record the filer on the ticket (tasks have no creator column —
@@ -400,6 +447,21 @@ async def api_create_task(request: Request) -> JSONResponse:
         )
     surface = project_val or legacy_surface_val or default_product_slug()
     surface = str(surface).strip().lower()
+
+    # wl-256: soft routing warning — emitted when the product has hired hands
+    # but no worker:* label was provided.  Never blocks; WorkForce query is
+    # best-effort (1 s timeout, empty list on any error).
+    has_worker_label = any(str(lbl).startswith("worker:") for lbl in labels)
+    routing_warning: Optional[str] = None
+    if not has_worker_label:
+        hired = _workforce_workers_for_product(surface)
+        if hired:
+            routing_warning = (
+                "no worker:* routing label — this product has hired hands: "
+                + ", ".join(hired)
+                + ". Add one to ensure the ticket reaches its queue."
+            )
+
     if surface in ("ops", "op"):
         tracker = get_ops_ticket_tracker()
         prefix = TASK_ID_PREFIX_OPS
@@ -411,11 +473,12 @@ async def api_create_task(request: Request) -> JSONResponse:
             labels=labels,
             ext_id=ext_id,
             actor=author,
+            intake=intake_val,
         )
         _sign_intake(tracker, task.id)
         out = task.to_dict()
         out["id"] = f"{prefix}-{task.id}"
-        return JSONResponse({"ok": True, "task": out})
+        return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
     spec = get_product(surface)
     if spec is None:
@@ -437,11 +500,12 @@ async def api_create_task(request: Request) -> JSONResponse:
             labels=labels,
             ext_id=ext_id,
             actor=author,
+            intake=intake_val,
         )
         _sign_intake(tracker, task.id)
         out = task.to_dict()
         out["id"] = f"{spec.prefix}-{task.id}"
-        return JSONResponse({"ok": True, "task": out})
+        return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
     if _tradeos_tickets_use_http_feed():
         code, data = _request_tradeos_json(
@@ -469,7 +533,7 @@ async def api_create_task(request: Request) -> JSONResponse:
         out = dict(tm) if isinstance(tm, dict) else {}
         rid = str(out.get("id") or "")
         out["id"] = f"{TASK_ID_PREFIX_TRADEOS}-{rid}"
-        return JSONResponse({"ok": True, "task": out})
+        return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
     tracker = get_default_tracker()
     task = tracker.create_task(
@@ -479,11 +543,12 @@ async def api_create_task(request: Request) -> JSONResponse:
         priority=priority,
         labels=labels,
         ext_id=ext_id,
+        intake=intake_val,
     )
     _sign_intake(tracker, task.id)
     out = task.to_dict()
     out["id"] = f"{TASK_ID_PREFIX_TRADEOS}-{task.id}"
-    return JSONResponse({"ok": True, "task": out})
+    return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
 
 @router.get("/api/admin/tasks/ready")
@@ -1531,10 +1596,11 @@ def api_dev_attention(include_snoozed: int = 0) -> JSONResponse:
 
 @router.post("/api/dev/attention/snooze")
 async def api_dev_attention_snooze(request: Request) -> JSONResponse:
-    """Mute product/kind from Waiting on You until `until` (not a ticket gate).
+    """Mute product/kind/task from Waiting on You until `until` (not a ticket gate).
 
     Body JSON: ``{ "product": "tradeos", "until": "today"|"1d"|"1w"|ISO,
     "reason": "optional" }`` or ``{ "kind": "embargo", "until": "1w" }``
+    or ``{ "task_id": "so-2", "until": "1d" }``
     or ``{ "scope": "all", "until": "today" }``.
     """
     try:
@@ -1546,14 +1612,19 @@ async def api_dev_attention_snooze(request: Request) -> JSONResponse:
     now = datetime.now(timezone.utc)
     product = str(body.get("product") or "").strip().lower()
     kind = str(body.get("kind") or "").strip().lower()
+    task_id = str(body.get("task_id") or "").strip().lower()
     scope = str(body.get("scope") or "").strip().lower()
     if not scope:
-        if product:
+        if task_id:
+            scope = "task"
+        elif product:
             scope = "product"
         elif kind:
             scope = "kind"
         else:
-            raise HTTPException(400, "product, kind, or scope=all required")
+            raise HTTPException(400, "task_id, product, kind, or scope=all required")
+    if scope == "task" and not task_id:
+        raise HTTPException(400, "task_id required for task snooze")
     if scope == "product" and not product:
         raise HTTPException(400, "product required for product snooze")
     if scope == "kind" and not kind:
@@ -1570,6 +1641,8 @@ async def api_dev_attention_snooze(request: Request) -> JSONResponse:
     def _same(s: Dict[str, Any]) -> bool:
         if (s.get("scope") or "product") != scope:
             return False
+        if scope == "task":
+            return (s.get("task_id") or "").lower() == task_id
         if scope == "product":
             return (s.get("product") or "").lower() == product
         if scope == "kind":
@@ -1579,6 +1652,7 @@ async def api_dev_attention_snooze(request: Request) -> JSONResponse:
     snoozes = [s for s in snoozes if not _same(s)]
     entry: Dict[str, Any] = {
         "scope": scope,
+        "task_id": task_id if scope == "task" else "",
         "product": product if scope == "product" else "",
         "kind": kind if scope == "kind" else "",
         "until": until.isoformat(),
@@ -1601,8 +1675,9 @@ async def api_dev_attention_snooze(request: Request) -> JSONResponse:
 
 @router.post("/api/dev/attention/unsnooze")
 async def api_dev_attention_unsnooze(request: Request) -> JSONResponse:
-    """Clear a product/kind/all snooze. Body: ``{ "product": "tradeos" }``
-    or ``{ "kind": "embargo" }`` or ``{ "scope": "all" }`` or ``{ "clear": true }``.
+    """Clear a product/kind/task/all snooze. Body: ``{ "product": "tradeos" }``
+    or ``{ "kind": "embargo" }`` or ``{ "task_id": "so-2" }``
+    or ``{ "scope": "all" }`` or ``{ "clear": true }``.
     """
     try:
         body = await request.json()
@@ -1619,9 +1694,15 @@ async def api_dev_attention_unsnooze(request: Request) -> JSONResponse:
     else:
         product = str(body.get("product") or "").strip().lower()
         kind = str(body.get("kind") or "").strip().lower()
+        task_id = str(body.get("task_id") or "").strip().lower()
         scope = str(body.get("scope") or "").strip().lower()
         if not scope:
-            scope = "product" if product else ("kind" if kind else "")
+            if task_id:
+                scope = "task"
+            elif product:
+                scope = "product"
+            elif kind:
+                scope = "kind"
         if scope == "all" or body.get("clear") is True:
             prefs["snoozes"] = []
         else:
@@ -1629,6 +1710,8 @@ async def api_dev_attention_unsnooze(request: Request) -> JSONResponse:
                 sc = s.get("scope") or "product"
                 if scope and sc != scope:
                     return False
+                if task_id and (s.get("task_id") or "").lower() == task_id:
+                    return True
                 if product and (s.get("product") or "").lower() == product:
                     return True
                 if kind and (s.get("kind") or "").lower() == kind:

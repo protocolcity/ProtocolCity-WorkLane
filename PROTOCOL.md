@@ -62,11 +62,24 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
 6. **Declare dependencies** — use `Depends on #NNN` in the description so the queue guard can freeze siblings.
 7. **Recommendation-default decisions** (founder-ratified 2026-07-09) — when a ticket hits a decision point, the agent records its recommendation as the decision (`DECISION (recommendation-default): <choice> — <why>` comment) and keeps working; the founder reviews and can veto after the fact. `needs:founder-decision` is reserved for the escalation class only: real-money gates (LIVE flips, risk-limit widening, new broker/credential enablement, moving money, gate bypasses), reversals of ratified ADRs/product direction, and public-facing or expensive-to-reverse actions. Everything else — including strategy-intent on paper/bench plays and exposure-reducing enforcement — proceeds on the recommendation. Decisions must be logged in ticket comments so the veto window is real.
 8. **Sign every comment** (2026-07-10) — pass the author flag (`--author "<agent-id>"` on the CLI, `author` on the API) on every comment you post, using your canonical agent id from §5.2. The `Owner:` line inside the body documents the claim; the author *field* is what the board byline, filters, and ghost-audits key on. The two must carry the same id. An unsigned (empty-author) comment is a process violation, not a default.
-9. **Human-gate hard stop** (2026-07-16) — `gate_type=human` and `needs:founder-decision` feed **Waiting on You**. They are scarce signals, not a parking lot.
-   - **One ticket, one reason.** Every human gate needs a concrete `gate_note` (or decision label) that says why You must act and what clears it.
+9. **Human-gate hard stop** (2026-07-16; For You law clarified 2026-07-27, wl-257) — `gate_type=human` and `needs:founder-decision` feed **Waiting on You / Map gold** only when You must act **now**. They are scarce signals, not a parking lot.
+   - **One ticket, one reason.** Every human gate needs a concrete `gate_note` (or decision label) that says why You must act and what clears it — or, if the gate is only withholding ready, that it is **parked** (see below).
+   - **Parked ≠ For You.** To withhold a ticket from ready **without** gold-painting You: use `gate_type=human` with a **parked** `gate_note` — start with `deferred:` or `umbrella`, or include `post-northstar` / `not claimable` / `withheld from ready` / `parked:` / `thaw when`. Ready stays blocked; attention / Map gold **skip** these. Agents still must not invent mass parks (bulk rule below). True “need You this session” gates keep an action-shaped note (what You decide / clear).
    - **No bulk sweeps.** Agents must not set `gate_type=human` on more than **three** tickets in a single shift unless a ticket they hold explicitly authorizes a named bulk re-gate (ids listed). Mass “park the pool so I look unwedged” is an automatic reject.
    - **Do not re-gate the already gated.** Leave existing human/decision gates; comment if the note is wrong.
-   - **Snooze ≠ clear.** You may snooze a product on Waiting on You to mute attention for a day without changing store gates. Mechanical enforcement: **wl-205**.
+   - **Snooze ≠ clear.** You may snooze a product, kind, task, or all on Waiting on You to mute attention for a day without changing store gates. Snooze scopes: `product | kind | task | all`. Mechanical enforcement: **wl-205** (product/kind/all); **wl-251** adds per-ticket (`task`) scope. Parked gates should not require snooze once wl-257 attention filter is live.
+10. **No cancel without shipping · no mass cancel** (2026-07-26, founder — empty-BL thrash) —
+    - **`wl_cancel` / cancel is rare.** Allowed only when work is **intentionally abandoned as product truth** (duplicate, wrong product forever, explicit founder “drop this”) — **not** as a way to make the board look empty.
+    - **Never cancel to “clear the queue”** or “empty the backlog” before a ship/export. “Empty the BL” means **implement and close**, or **leave open** what still needs work — **not** mass-cancel deferred epics.
+    - **Never cancel without the requested functionality shipping** (or a founder-explicit drop). If the slice is incomplete: leave `backlog` / `in_progress`, post `Blocked:` + `Next step:`, or close only the **completed child** and keep the parent open.
+    - **Mass cancel forbidden** unless You **explicitly** order it (named ids or “cancel all of X”). One cancel needs a one-ticket rationale; bulk needs explicit founder language.
+    - **Wrong cancel → reopen.** If an agent mass-canceled without that order, reopen and restore the board.
+11. **Sticky residual work · board is shared memory** (2026-07-26, founder — invisible close-outs) —
+    The work-order board is how You and agents coordinate. **Closing a ticket hides the work.** Residual work that still needs a return visit must remain **visible as open tickets**, not only as prose in a `Completed:` or `Follow-ups:` note.
+    - **`Follow-ups: none` means none.** Not “tabled in my head,” not “hard-stops listed in the close comment,” not “re-file later.”
+    - **If residual work exists at close:** either (a) **keep the parent open** and comment progress, or (b) **file child tickets first** (imperative titles, parent linked with `blocks:parent` / body “Parent: **id**”), list those ids under `Follow-ups:`, **then** close only the slice that actually shipped.
+    - **Never close a parent epic** while known residual children are still unfinished **unless** those children are **already open on the board**. Invisible residuals are a process violation (same class as empty-BL mass cancel: board looks clean, work is gone).
+    - **You table explicitly.** Only You park work permanently (cancel with founder order, or a child left open under a “tabled” label). Agents do not invent “tabled” as a close-out substitute.
 
 ## 4) Transitions
 
@@ -79,7 +92,7 @@ Allowed moves:
 - `in_progress → backlog` (abandon via `Blocked:` comment)
 - `in_progress → done` (complete via `Completed:` comment)
 - `in_review → done` (bundled completion, rare)
-- `* → canceled` (with rationale)
+- `* → canceled` (with rationale — **§3 rule 10**: rare; never mass-cancel / never cancel to empty the board without founder order)
 
 Auto-transitions (lifecycle guard):
 
@@ -143,7 +156,9 @@ included. A prose headline may follow `Completed:` on the same line, but
 the lifecycle guard (§4) and the close-with-links rule (§3.5) key on those
 exact tokens. `Links:` needs at least one navigable reference (PR URL, commit
 SHA, or repo-relative path); a merge SHA buried in prose ("Merged: abc1234 …")
-does not satisfy it. `Follow-ups:` may be "none".
+does not satisfy it. `Follow-ups:` may be "none" **only when no residual
+work remains** (§3 rule 11). If more work is known, list open ticket ids
+(file them first if needed) — never prose-only “tabled / later / hard-stops.”
 
 **Blocked comment:**
 
@@ -241,6 +256,8 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `wren` | Wren (new hire 2026-07-14 — no predecessor). Specialist / future desk; papers when armed. |
 | `city-steward` | City Steward — cross-store stewardship patrol (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/city-steward/. |
 | `founder-brief` | Founder Brief — daily city reporting job (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/founder-brief/. |
+| `correspondent` | Correspondent — city-wide reporting job (job, not a claiming lane; hired pc-32, armed pc-502 2026-07-26). Signs briefs only; never claims backlog. Canonical papers: `.protocolcity/ops/workers/correspondent/` (pc-461). |
+| `reed` | Reed · Connector Desk (new hire 2026-07-27 — no predecessor). Connector product generalist — design, law, bootstrap; papers at `connector/workers/reed/`. Feed `worker:reed`. |
 
 #### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
 

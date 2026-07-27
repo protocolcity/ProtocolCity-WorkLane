@@ -562,6 +562,34 @@ class SurfaceRoutingTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 400)
 
+    # ── product list GET (wl-253) ────────────────────────────────────────
+
+    def test_list_products_default_registry(self) -> None:
+        r = self.client.get("/api/admin/products")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        slugs = [p["slug"] for p in body["products"]]
+        self.assertIn("tradeos", slugs)
+        for p in body["products"]:
+            self.assertIn("slug", p)
+            self.assertIn("display", p)
+            self.assertIn("prefix", p)
+            self.assertIn("db_path", p)
+
+    def test_list_products_includes_newly_created(self) -> None:
+        self.client.post(
+            "/api/admin/products",
+            json={"slug": "connector", "display": "Connector", "prefix": "cn"},
+        )
+        r = self.client.get("/api/admin/products")
+        self.assertEqual(r.status_code, 200)
+        slugs = [p["slug"] for p in r.json()["products"]]
+        self.assertIn("connector", slugs)
+        match = next(p for p in r.json()["products"] if p["slug"] == "connector")
+        self.assertEqual(match["display"], "Connector")
+        self.assertEqual(match["prefix"], "cn")
+
     # ── product edit (wl-17) ─────────────────────────────────────────────
 
     def test_update_product_renames_display_and_prefix(self) -> None:

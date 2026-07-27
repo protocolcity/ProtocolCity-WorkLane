@@ -1,8 +1,8 @@
 # WorkLane — Agent Instructions
 
-WorkLane (WL) is a **standalone local-first ticketing product**. It is independent of any host repo; the protocol makes no assumptions about the host.
+WorkLane (WL) is a **standalone local-first ticketing product**. It is independent of any host repo. Any city project may connect to the Desk as optional infrastructure; WL makes no assumptions about the host.
 
-This file is the repo's canonical law (ProtocolCity Charter §3 vendor-pointer rule): `CLAUDE.md` (`@AGENTS.md`) and `GROK.md` (symlink) are pointers to it — one law, every vendor reads it. **The normative process rules live in [PROTOCOL.md](PROTOCOL.md) — nothing in this file overrides it.**
+This file is the repo's canonical law (ProtocolCity Charter §3 vendor-pointer rule): `CLAUDE.md` and `GROK.md` are thin `@AGENTS.md` forwards — one law, every vendor reads it. **The normative process rules live in [PROTOCOL.md](PROTOCOL.md) — nothing in this file overrides it.**
 
 Read this file when:
 
@@ -37,7 +37,7 @@ these rows; entries missing here render unmapped.
 - **WL does not render inside host product pages.** UI lives at WL's own port (default 8799).
 - **WL does not depend on host product uptime.** It is a long-lived local service.
 - **WL is not a SaaS dependency.** Everything is file-backed SQLite on the local machine.
-- **Host products consume WL as a client** — via the CLI, the HTTP API, or an in-tree tracker adapter when the host ships one. WL itself never reaches back into the host.
+- **Any city project may connect to WL as a client** — via the CLI or the HTTP API. Connecting is optional city infrastructure; WL never reaches back into the connecting project.
 
 If a change would cross any of these lines, open an issue proposing it first — boundary changes need explicit design sign-off. Don't silently couple.
 

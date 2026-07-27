@@ -264,6 +264,7 @@ class TPHandlers:
         product: Optional[str] = None,
         priority: int = 3,
         labels: Optional[List[str]] = None,
+        intake: Optional[str] = None,
     ) -> Dict[str, Any]:
         """File a ticket with signed intake (PROTOCOL.md §5 / wl-26)."""
         title = (title or "").strip()
@@ -278,6 +279,7 @@ class TPHandlers:
         prio = int(priority if priority is not None else 3)
         if prio not in (1, 2, 3, 4):
             raise ToolError("priority must be 1 (urgent) … 4 (low)")
+        intake_val = str(intake or "").strip() or "mcp"
 
         slug, tr = self._tracker(product)
         task = tr.create_task(
@@ -286,6 +288,7 @@ class TPHandlers:
             priority=prio,
             labels=list(labels or []),
             actor=self.author,
+            intake=intake_val,
         )
         tr.add_comment(
             str(task.id), f"Intake: filed by {self.author}", author=self.author
@@ -965,6 +968,14 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                         "type": "array",
                         "items": {"type": "string"},
                     },
+                    "intake": {
+                        "type": "string",
+                        "description": (
+                            "Entry channel — how the ticket entered the system. "
+                            "Defaults to 'mcp' for MCP callers. "
+                            "Values: mcp | cli | api | agent | import | unknown"
+                        ),
+                    },
                 },
                 "required": ["title", "description"],
             },
@@ -1098,7 +1109,13 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "ticket (triage re-scoping). At least one field required. "
                 "gate_type sets a gate that withholds the ticket from the ready "
                 "queue: '' clears it, 'human' withholds until manually cleared, "
-                "'timer' withholds until gate_until then auto-thaws (wl-21)."
+                "'timer' withholds until gate_until then auto-thaws (wl-21). "
+                "For You / Map gold (wl-257): only action-shaped human gates "
+                "appear there. To park without golding You, set gate_note with "
+                "parked markers (start with 'deferred:' or 'umbrella', or include "
+                "post-northstar / not claimable / withheld from ready / parked: / "
+                "thaw when). Bare human gates with empty notes still gold You — "
+                "PROCESS §3.9 scarce-signal law."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1125,7 +1142,12 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                     },
                     "gate_note": {
                         "type": "string",
-                        "description": "Optional free-text reason for the gate",
+                        "description": (
+                            "Reason for the gate. Required style for human gates: "
+                            "either (a) action-shaped — what You must decide/clear "
+                            "(feeds For You / gold), or (b) parked — deferred:/umbrella "
+                            "prefix etc. (withholds ready, does NOT gold You; wl-257)."
+                        ),
                     },
                 },
                 "required": ["task_id"],
