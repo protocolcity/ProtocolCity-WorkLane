@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.5 — 2026-07-27
+
+- **Desk board filter chips** for gate class: Ready · For You · Deferred (wl-265).
+- **MCP/API deferred first-class** + `wl_list`/`wl_list` gate filter (wl-262).
+- **Migration script** human+parked → `gate_type=deferred` (wl-264).
+- **Identity registry catch-up** for the 12-persona rename slate (wl-267).
+
 ## v0.1.4 — 2026-07-27
 
 - **gate_type=deferred** (wl-261): first-class park — never Ready, never For You gold.
