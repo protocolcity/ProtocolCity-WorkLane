@@ -440,6 +440,54 @@ class HandlersTest(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.h.wl_update(created["task"]["id"], gate_type="bogus")
 
+    def test_update_sets_deferred_gate(self) -> None:
+        created = self.h.wl_create(
+            title="Deferred gate via MCP",
+            description="Problem: no first-class deferred. Expected: gate_type=deferred accepted.",
+        )
+        tid = created["task"]["id"]
+
+        gated = self.h.wl_update(tid, gate_type="deferred", gate_note="thaw when northstar clears")
+        self.assertTrue(gated["ok"])
+        self.assertEqual(gated["task"]["gate_type"], "deferred")
+        self.assertEqual(gated["task"]["gate_note"], "thaw when northstar clears")
+
+        cleared = self.h.wl_update(tid, gate_type="")
+        self.assertNotIn("gate_type", cleared["task"])
+
+    def test_list_gate_type_filter(self) -> None:
+        human = self.h.wl_create(
+            title="Human-gated ticket",
+            description="Problem: list filter. Expected: gate filter returns correct subset.",
+        )
+        human_id = human["task"]["id"]
+        self.h.wl_update(human_id, gate_type="human", gate_note="needs call")
+
+        deferred = self.h.wl_create(
+            title="Deferred ticket",
+            description="Problem: list filter. Expected: gate filter returns correct subset.",
+        )
+        deferred_id = deferred["task"]["id"]
+        self.h.wl_update(deferred_id, gate_type="deferred", gate_note="parked")
+
+        unrelated = self.h.wl_create(
+            title="Ungated ticket",
+            description="Problem: list filter. Expected: gate filter returns correct subset.",
+        )
+        unrelated_id = unrelated["task"]["id"]
+
+        deferred_list = self.h.wl_list(gate_type="deferred")
+        deferred_ids = [t["id"] for t in deferred_list["tasks"]]
+        self.assertIn(deferred_id, deferred_ids)
+        self.assertNotIn(human_id, deferred_ids)
+        self.assertNotIn(unrelated_id, deferred_ids)
+
+        human_list = self.h.wl_list(gate_type="human")
+        human_ids = [t["id"] for t in human_list["tasks"]]
+        self.assertIn(human_id, human_ids)
+        self.assertNotIn(deferred_id, human_ids)
+        self.assertNotIn(unrelated_id, human_ids)
+
     def test_update_product_resolution(self) -> None:
         created = self.h.wl_create(
             title="WL product update",

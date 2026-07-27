@@ -96,6 +96,7 @@ except ImportError:
         product: str,
         limit: int,
         with_preview: bool,
+        gate_type: Optional[str] = None,
     ) -> Tuple[List[Task], Dict[str, Dict[str, str]]]:
         p = (product or "").strip().lower()
         return list_tasks_for_wq_multi(
@@ -104,6 +105,7 @@ except ImportError:
             label=label,
             priority=priority,
             product=p,
+            gate_type=gate_type,
             limit=limit,
         ), {}
 

@@ -397,6 +397,7 @@ class SQLiteTracker(ProjectTracker):
         status: Optional[str] = None,
         label: Optional[str] = None,
         priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[Task]:
         sql = "SELECT * FROM tasks"
@@ -413,6 +414,12 @@ class SQLiteTracker(ProjectTracker):
         if priority is not None:
             clauses.append("priority = ?")
             params.append(int(priority))
+        if gate_type is not None:
+            if gate_type == "":
+                clauses.append("(gate_type IS NULL OR gate_type = '')")
+            else:
+                clauses.append("gate_type = ?")
+                params.append(gate_type)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY updated_at DESC"

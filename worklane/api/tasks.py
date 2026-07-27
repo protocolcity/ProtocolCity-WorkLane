@@ -1254,9 +1254,13 @@ def api_list_tasks(
     project: str = "",
     limit: int = 200,
     with_preview: int = 0,
+    gate: str = "",
 ) -> JSONResponse:
+    from worklane.board import _parse_gate_filter  # noqa: PLC0415
+
     products = product_trackers()
     prio_int = parse_wq_priority(priority)
+    gate_type = _parse_gate_filter(gate)
     # wl-64: ``project`` is the canonical scope param; ``product`` stays a
     # silent back-compat alias for the same field (mirrors the CLI/MCP
     # surfaces). Existing ``product=`` callers keep working unchanged.
@@ -1280,6 +1284,7 @@ def api_list_tasks(
         product=prod,
         limit=limit,
         with_preview=bool(with_preview),
+        gate_type=gate_type,
     )
 
     task_dicts = [t.to_dict() for t in tasks]
@@ -1322,6 +1327,7 @@ def api_list_tasks(
         status=status or None,
         label=label or None,
         priority=prio_int,
+        gate_type=gate_type,
     )
 
     return JSONResponse(

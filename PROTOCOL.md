@@ -271,34 +271,39 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `backlog-snapshot` | Night-auditor patrol job — read-only backlog report; never claims. Function-named; not retired. |
 | `visual-sweep` | Night-inspector patrol job — automated visual sweep; never claims. Function-named; not retired. |
 | `codex` | **RETIRED 2026-07-14** — succeeded by `carl` (itself succeeded by `kayda` 2026-07-27). Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
-| `carl` | **RETIRED 2026-07-27** — succeeded by `kayda` (Web Designer seat). Was: Carl · Web Designer (succeeded `codex` 2026-07-14). History retained — comments signed by `carl` remain valid record. **Note:** slug `carl` is freed for ProtocolCity drew→carl hire (city rename epic). |
+| `carl` | **RETIRED 2026-07-27** for the host product Web Designer seat (succeeded by `kayda`; earlier `codex` 2026-07-14 — history retained). Re-hired 2026-07-27 as Carl · Software Engineer at ProtocolCity (renamed pc-532, succeeds `drew`). Papers at `ProtocolCity/workers/carl/`. Do not use `carl` for the host product. |
 | `kayda` | Kayda · Web Designer. Succeeds `carl` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `codex` also valid history). Visuals/content production; contract at host repo `workers/kayda-lane/`. |
-| `riley` | Riley · City Hall Desk. Succeeds `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). ProtocolCity docs/planning desk. |
-| `drew` | Drew · Software Engineer (new hire 2026-07-21 — no predecessor). ProtocolCity code lane — suite/citylens/CLI packaging; papers at `ProtocolCity/workers/drew/`. |
+| `riley` | **RETIRED 2026-07-27** — succeeded by `trinity`. Was: Riley · City Hall Desk, ProtocolCity docs/planning (succeeded `claude-protocolcity` 2026-07-14). History retained — comments signed by `riley` remain valid record. |
+| `trinity` | Trinity · ProtocolCity. Succeeds `riley` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-protocolcity` also valid history). ProtocolCity docs/planning desk. Papers at `ProtocolCity/workers/trinity/`. |
+| `drew` | **RETIRED 2026-07-27** — succeeded by `carl` (ProtocolCity Software Engineer, pc-532). Was: Drew · Software Engineer, ProtocolCity code lane (new hire 2026-07-21). History retained — comments signed by `drew` remain valid record. |
+| `bryce` | Bryce · Suite Engineer. ProtocolCity suite/citylens/CLI packaging lane (renamed pc-533 2026-07-27; succeeded the ProtocolCity `codex` CLI slot — distinct from the the host product `codex` seat retired 2026-07-14). Papers at `ProtocolCity/workers/bryce/`. |
 | `claude-socials` | **RETIRED 2026-07-14** — succeeded by `iris`. Was: Claude CLI lane, socials drafting desk (added 2026-07-14). History retained. |
-| `iris` | Iris · Content Writer. Succeeds `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Socials drafts-only (posting is founder-only). |
+| `iris` | **RETIRED 2026-07-27** — succeeded by `kenzie`. Was: Iris · Content Writer (succeeded `claude-socials` 2026-07-14). History retained — comments signed by `iris` remain valid record. |
+| `kenzie` | Kenzie · Content Writer. Succeeds `iris` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-socials` also valid history). Socials drafts-only (posting is founder-only). Papers at `socials/workers/kenzie/`. |
 | `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto` (itself succeeded by `melanie` 2026-07-27). Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
 | `otto` | **RETIRED 2026-07-27** — succeeded by `melanie`. Was: Otto · Systems Engineer (succeeded `claude-orchestrator` 2026-07-14). History retained — comments signed by `otto` remain valid record. |
 | `melanie` | Melanie · Systems Engineer. Succeeds `otto` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-orchestrator` also valid history). WorkForce engine/board/schedule; never touches `local/` state, the daemon service, or live dispatches; papers at `workforce/workers/melanie/`. |
-| `neo` | Neo · Market Analyst (new hire 2026-07-14 — no predecessor). Specialist lane; papers when armed. |
+| `neo` | **RETIRED 2026-07-27** — succeeded by `aniya`. Was: Neo · Market Analyst (new hire 2026-07-14, no predecessor). History retained — comments signed by `neo` remain valid record. |
+| `aniya` | Aniya · Market Analyst. Succeeds `neo` (retired 2026-07-27, history retained — comments signed by the old id remain valid record). the host product specialist lane. Papers at `the host product/workers/neo-lane/` (pending rename). |
 | `wren` | Wren (new hire 2026-07-14 — no predecessor). Specialist / future desk; papers when armed. |
 | `city-steward` | City Steward — cross-store stewardship patrol (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/city-steward/. |
 | `founder-brief` | Founder Brief — daily city reporting job (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/founder-brief/. |
 | `correspondent` | Correspondent — city-wide reporting job (job, not a claiming lane; hired pc-32, armed pc-502 2026-07-26). Signs briefs only; never claims backlog. Canonical papers: `.protocolcity/ops/workers/correspondent/` (pc-461). |
-| `reed` | Reed · Connector Desk (new hire 2026-07-27 — no predecessor). Connector product generalist — design, law, bootstrap; papers at `connector/workers/reed/`. Feed `worker:reed`. |
+| `reed` | **RETIRED 2026-07-27** — succeeded by `zach` (conn-7). Was: Reed · Connector Desk (new hire 2026-07-27, no predecessor). History retained — comments signed by `reed` remain valid record. |
+| `zach` | Zach · Connector Desk. Succeeds `reed` (retired 2026-07-27, history retained — comments signed by the old id remain valid record). Connector product generalist — design, law, bootstrap. Papers at `connector/workers/zach/`. Feed `worker:zach`. |
 
 #### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
 
 **If You are in the loop, the ticket author is `founder-terminal`.** The chat
 product (Grok, Claude, Cursor, …) is the **hand**, not the person. Signing a
 founder decision, human-gate clear, or `FOUNDER ·` close-out as `grok` /
-`kc` / `riley` / `cursor` makes the board look like a worker self-approved
+`kc` / `trinity` / `cursor` makes the board look like a worker self-approved
 a human gate.
 
 | Situation | Author field (`--author` / `WL_AGENT_ID`) | Optional body line |
 | --- | --- | --- |
 | You + any AI: decisions, gates, registry law, publish packets | `founder-terminal` | `Hand: grok-build` / `Hand: claude-desktop` / … |
-| Autonomous worker shift (roster / launchd) | persona id (`tierra`, `kc`, `riley`, …) | model in `Owner:` per §5 |
+| Autonomous worker shift (roster / launchd) | persona id (`tierra`, `kc`, `trinity`, …) | model in `Owner:` per §5 |
 | Patrol / report job | job id (`city-steward`, `founder-brief`, …) | — |
 
 **MCP connect-time identity** is the stamp on every write. Founder-present
@@ -326,22 +331,29 @@ them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
 
 | Persona id | Display | Succeeds |
 | --- | --- | --- |
-| `riley` | Riley · City Hall Desk | `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
-| `drew` | Drew · Software Engineer | — (new hire 2026-07-21, no predecessor) |
 | `sincere` | Sincere · Lead Developer | `morgan` (retired 2026-07-27; earlier the original host-dispatch lane 2026-07-14 — history retained) |
 | `kc` | Kc · Software Engineer | `kai` (retired 2026-07-27; earlier `grok` 2026-07-14 — history retained) |
 | `beatriz` | Beatriz · Technical Writer | `ellis` (retired 2026-07-27; earlier `cursor` 2026-07-14 — history retained) |
-| `kayda` | Kayda · Web Designer | `carl` (retired 2026-07-27; earlier `codex` 2026-07-14 — history retained) |
+| `kayda` | Kayda · Web Designer (the host product) | `carl` the host product seat (retired 2026-07-27; earlier `codex` 2026-07-14 — history retained) |
+| `trinity` | Trinity · ProtocolCity | `riley` (retired 2026-07-27; earlier `claude-protocolcity` 2026-07-14 — history retained) |
+| `carl` | Carl · Software Engineer (ProtocolCity) | `drew` (retired 2026-07-27, pc-532 — history retained). Note: the host product `carl` seat separately RETIRED → `kayda`. |
+| `kenzie` | Kenzie · Content Writer | `iris` (retired 2026-07-27; earlier `claude-socials` 2026-07-14 — history retained) |
+| `aniya` | Aniya · Market Analyst | `neo` (retired 2026-07-27, no predecessor before neo — history retained) |
+| `zach` | Zach · Connector Desk | `reed` (retired 2026-07-27, history retained) |
+| `bryce` | Bryce · Suite Engineer (ProtocolCity) | ProtocolCity `codex` CLI slot (renamed pc-533 2026-07-27; distinct from the host product `codex` → `carl` → `kayda` chain) |
+| `tierra` | Tierra · Desk Engineer | `tess` (retired 2026-07-27, history retained — comments signed by the old id remain valid record) |
+| `melanie` | Melanie · Systems Engineer | `otto` (retired 2026-07-27; earlier `claude-orchestrator` 2026-07-14 — history retained) |
 | `morgan` | **RETIRED 2026-07-27** → `sincere` | the original host-dispatch lane (retired 2026-07-14) |
 | `kai` | **RETIRED 2026-07-27** → `kc` | `grok` (retired 2026-07-14) |
 | `ellis` | **RETIRED 2026-07-27** → `beatriz` | `cursor` (retired 2026-07-14) |
-| `carl` | **RETIRED 2026-07-27** → `kayda` | `codex` (retired 2026-07-14) |
-| `tierra` | Tierra · Desk Engineer | `tess` (retired 2026-07-27, history retained — comments signed by the old id remain valid record) |
-| `iris` | Iris · Content Writer | `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `carl` (the host product) | **RETIRED 2026-07-27** → `kayda` (the host product Web Designer); slug re-hired for ProtocolCity (see above) | `codex` (retired 2026-07-14) |
+| `riley` | **RETIRED 2026-07-27** → `trinity` | `claude-protocolcity` (retired 2026-07-14) |
+| `drew` | **RETIRED 2026-07-27** → `carl` (ProtocolCity) | — (new hire 2026-07-21) |
+| `iris` | **RETIRED 2026-07-27** → `kenzie` | `claude-socials` (retired 2026-07-14) |
+| `neo` | **RETIRED 2026-07-27** → `aniya` | — (new hire 2026-07-14) |
+| `reed` | **RETIRED 2026-07-27** → `zach` | — (new hire 2026-07-27) |
 | `otto` | **RETIRED 2026-07-27** → `melanie` | `claude-orchestrator` (retired 2026-07-14) |
-| `melanie` | Melanie · Systems Engineer | `otto` (retired 2026-07-27; earlier `claude-orchestrator` 2026-07-14 — history retained) |
-| `neo` | Neo · Market Analyst | — (new hire, no predecessor) |
-| `wren` | Wren | — (new hire, no predecessor) |
+| `wren` | Wren | — (new hire 2026-07-14, no predecessor; specialist / future desk) |
 | `city-steward` | City Steward | — (new hire, no predecessor; patrol job) |
 | `founder-brief` | Founder Brief | — (new hire, no predecessor; report job) |
 

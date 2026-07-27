@@ -4165,7 +4165,7 @@ def _status_select(task_id: str, current: str) -> str:
 
 
 def _wq_poll_script(
-    status: str, label: str, priority: str, product: str = ""
+    status: str, label: str, priority: str, product: str = "", gate: str = ""
 ) -> str:
     """Board polling must mirror the same filters as the page."""
     tsurf = _ticket_create_surface_from_scope(product or "")
@@ -4175,6 +4175,7 @@ def _wq_poll_script(
             "label": label or "",
             "priority": priority or "",
             "product": product or "",
+            "gate": gate or "",
             "ticket_surface": tsurf,
         }
     )
@@ -4993,6 +4994,7 @@ def tickets_app_page(
     product: str = "",
     dispatched: str = "",
     prompt: str = "",
+    gate: str = "",
 ) -> Any:
     """Tickets app — surface is a first-class path (``all`` \| ``tradeos``)."""
     if surface == "ops":
@@ -5019,6 +5021,7 @@ def tickets_app_page(
         product_query=product,
         dispatched=dispatched,
         prompt=prompt,
+        gate=gate,
     )
 
 
@@ -5033,7 +5036,10 @@ def _tickets_app_html(
     product_query: str,
     dispatched: str,
     prompt: str,
+    gate: str = "",
 ) -> str:
+    from worklane.board import _parse_gate_filter  # noqa: PLC0415
+
     products = product_trackers()
     tracker_tradeos = next(
         (tr for spec, tr in products if spec.slug == live_feed_product_slug()),
@@ -5046,6 +5052,7 @@ def _tickets_app_html(
         view_norm = "board"
 
     prio_int = parse_wq_priority(priority)
+    gate_type = _parse_gate_filter(gate)
     st = (status or "").strip() or None
     prod = (
         product_scope
@@ -5063,6 +5070,7 @@ def _tickets_app_html(
         product=prod,
         limit=500,
         with_preview=want_preview,
+        gate_type=gate_type,
     )
 
     t_shell = _tickets_shell_kwargs(
@@ -5084,6 +5092,7 @@ def _tickets_app_html(
         status=st,
         label=label or None,
         priority=prio_int,
+        gate_type=gate_type,
     )
     # One command bar (wl-36): counts + jump + filters toggle + view toggle.
     # The old "Scope & filters" card, standalone jump row, and page-tools band
@@ -5095,6 +5104,7 @@ def _tickets_app_html(
         label=label,
         priority=prio_int,
         product=prod,
+        gate=gate,
         merged_scope_tasks=merged_scope,
         # wl-90: Board/Table live in the primary header nav — no in-page toggle.
         view_toggle_html="",
@@ -5103,7 +5113,7 @@ def _tickets_app_html(
     extra_css = _task_server_extra_css()
 
     poll_inject = (
-        _wq_poll_script(status, label, priority, prod or "")
+        _wq_poll_script(status, label, priority, prod or "", gate)
         if view_norm == "board"
         else ""
     )

@@ -276,6 +276,7 @@ def list_tasks_for_wq_multi(
     label: Optional[str],
     priority: Optional[int],
     product: str,
+    gate_type: Optional[str] = None,
     limit: int = 500,
 ) -> List[Task]:
     """Tasks across product stores; ``product`` scopes to one slug, "" = all.
@@ -290,7 +291,7 @@ def list_tasks_for_wq_multi(
             continue
         tasks = tracker.list_tasks(
             status=status, label=(label or "").strip() or None,
-            priority=priority, limit=limit,
+            priority=priority, gate_type=gate_type, limit=limit,
         )
         merged.extend(
             replace(t, id=f"{spec.prefix}-{t.id}") for t in tasks
@@ -395,6 +396,7 @@ def _wq_query_for_view(
     *,
     product: str = "",
     list_path: str = "",
+    gate: str = "",
 ) -> str:
     parts: List[Tuple[str, str]] = [("view", view)]
     if status:
@@ -403,6 +405,8 @@ def _wq_query_for_view(
         parts.append(("label", label))
     if priority is not None:
         parts.append(("priority", str(priority)))
+    if gate:
+        parts.append(("gate", gate))
     prod = parse_wq_product(product)
     if prod and _embed_product_query_param(list_path):
         parts.append(("product", prod))
@@ -423,6 +427,7 @@ def _wq_column_counts(
     status: Optional[str] = None,
     label: Optional[str] = None,
     priority: Optional[int] = None,
+    gate_type: Optional[str] = None,
 ) -> Dict[str, int]:
     """Per-status counts of the *filtered* scope — what each board column
     would hold if the page fetch were uncapped. Must mirror the
@@ -438,9 +443,43 @@ def _wq_column_counts(
             continue
         if priority is not None and t.priority != priority:
             continue
+        if gate_type is not None:
+            tgt = t.gate_type or ""
+            if gate_type == "":
+                if tgt:
+                    continue
+            elif tgt != gate_type:
+                continue
         if t.status in counts:
             counts[t.status] += 1
     return counts
+
+
+def _wq_gate_counts(tasks: List[Task]) -> Dict[str, int]:
+    """Count open tickets by gate class across all open statuses."""
+    counts: Dict[str, int] = {"": 0, "human": 0, "deferred": 0}
+    for t in tasks:
+        if t.status in (TaskStatus.DONE, TaskStatus.CANCELED):
+            continue
+        gt = t.gate_type or ""
+        if gt in counts:
+            counts[gt] += 1
+    return counts
+
+
+def _parse_gate_filter(gate: str) -> Optional[str]:
+    """URL gate param → gate_type kwarg for list_tasks/column_counts.
+
+    "" → None (no filter); "none" → "" (ungated/Ready); "human"/"deferred" → exact.
+    """
+    g = (gate or "").strip()
+    if not g:
+        return None
+    if g == "none":
+        return ""
+    if g in ("human", "deferred", "timer"):
+        return g
+    return None
 
 
 def _render_wq_quick_buckets(
@@ -451,6 +490,7 @@ def _render_wq_quick_buckets(
     label: str,
     priority: Optional[int],
     product: str = "",
+    gate: str = "",
     counts: Dict[str, int],
 ) -> str:
     st = (current_status or "").strip()
@@ -459,7 +499,7 @@ def _render_wq_quick_buckets(
     def _href(status_key: str) -> str:
         return (
             f"{list_path}?"
-            f"{_wq_query_for_view(current_view, status_key, label, priority, product=product, list_path=list_path)}"
+            f"{_wq_query_for_view(current_view, status_key, label, priority, product=product, list_path=list_path, gate=gate)}"
         )
 
     specs: List[tuple] = [
@@ -508,6 +548,7 @@ def _render_work_queue_filters(
     label: str,
     priority: Optional[int],
     product: str = "",
+    gate: str = "",
     merged_scope_tasks: Optional[List[Task]] = None,
     view_toggle_html: str = "",
 ) -> str:
@@ -518,6 +559,7 @@ def _render_work_queue_filters(
         tracker = get_default_tracker()
         all_tasks = list_tasks_for_product_scope(tracker, prod, limit=None)
     counts = _wq_status_counts(all_tasks)
+    gate_counts = _wq_gate_counts(all_tasks)
     label_set: Dict[str, int] = {}
     for t in all_tasks:
         for lb in (t.labels or []):
@@ -613,6 +655,7 @@ def _render_work_queue_filters(
         (status or "").strip()
         or label
         or priority is not None
+        or gate
         or (bool(prod) and _embed_product_query_param(list_path))
     )
     reset_html = (
@@ -632,7 +675,37 @@ def _render_work_queue_filters(
         label=label,
         priority=priority,
         product=product,
+        gate=gate,
         counts=counts,
+    )
+
+    # Gate class chips: Ready (ungated) · For You (human) · Deferred/ice
+    open_total = sum(gate_counts.values())
+    _gate_specs: List[Tuple[str, str, int]] = [
+        ("", "All open", open_total),
+        ("none", "Ready", gate_counts.get("", 0)),
+        ("human", "For You", gate_counts.get("human", 0)),
+        ("deferred", "Deferred", gate_counts.get("deferred", 0)),
+    ]
+    gate_chip_parts: List[str] = []
+    for gval, glabel, gcnt in _gate_specs:
+        is_active = gate == gval
+        active_cls = " wq-gate-chip--active" if is_active else ""
+        href = (
+            f"{list_path}?"
+            f"{_wq_query_for_view(current_view, status, label, priority, product=product, list_path=list_path, gate=gval)}"
+        )
+        gate_chip_parts.append(
+            f"<a href='{_esc(href)}' class='wq-gate-chip{active_cls}' "
+            f"title='Show {_esc(glabel)} tickets'>"
+            f"{_esc(glabel)}"
+            f"<span class='wq-gate-chip-count'>{gcnt}</span>"
+            f"</a>"
+        )
+    gate_row = (
+        "<div class='wq-cmdbar-row wq-gate-row' aria-label='Filter by gate class'>"
+        + "".join(gate_chip_parts)
+        + "</div>"
     )
 
     prod_hidden = (
@@ -640,11 +713,17 @@ def _render_work_queue_filters(
         if (prod and _embed_product_query_param(list_path))
         else ""
     )
+    gate_hidden = (
+        f"<input type='hidden' name='gate' value='{_esc(gate)}'/>"
+        if gate
+        else ""
+    )
 
     advanced_body = (
         f"<form method='get' action='{_esc(list_path)}' class='wq-advanced-form ts-filter-form'>"
         f"<input type='hidden' name='view' value='{_esc(current_view)}'/>"
         f"{prod_hidden}"
+        f"{gate_hidden}"
         f"{st_hidden}"
         "<div class='ts-filter-field'>"
         "<label class='dim' for='wq-label'>Label</label>"
@@ -724,6 +803,7 @@ def _render_work_queue_filters(
         + adv_toggle
         + view_toggle_html
         + "</div>"
+        + gate_row
         + f"<div id='wq-advanced-panel' class='wq-advanced-panel'{panel_hidden}>{advanced_body}</div>"
         + "</div>"
     )
@@ -872,9 +952,17 @@ def _render_task_card(
     if task_is_gated(t):
         if t.gate_type == "timer" and t.gate_until:
             gate_label = f"Gated until {t.gate_until[:10]}"
+            gate_tier = "warning"
+        elif t.gate_type == "deferred":
+            gate_label = "Deferred"
+            gate_tier = "neutral"
+        elif t.gate_type == "human":
+            gate_label = "For You"
+            gate_tier = "warning"
         else:
             gate_label = "Gated"
-        gate_html = f"<div class='tb-card-gate'>{_badge(gate_label, 'warning')}</div>"
+            gate_tier = "warning"
+        gate_html = f"<div class='tb-card-gate'>{_badge(gate_label, gate_tier)}</div>"
     # 3-row anatomy (wl-36): [id · priority] / [title, 2-line clamp] /
     # [labels · age]. The whole card toggles the detail; links/controls opt out.
     expand_attr = (
@@ -1269,6 +1357,21 @@ def _board_styles() -> str:
 .tb-toolbar-filter .btn { padding:4px 10px; font-size:var(--fs-xs); height:28px; }
 .tb-toolbar .tb-quick-add { margin-left:auto; }
 
+/* Gate class filter chips (wl-265): Ready · For You · Deferred */
+.wq-gate-row { gap:6px; padding-bottom:4px; border-bottom:1px solid
+               color-mix(in srgb, var(--border) 50%, transparent); margin-bottom:4px; }
+.wq-gate-chip { display:inline-flex; align-items:center; gap:5px;
+                padding:3px 10px; font-size:var(--fs-xs);
+                border:1px solid var(--border); border-radius:999px;
+                color:var(--muted); background:var(--bg2);
+                text-decoration:none; transition:all .12s; white-space:nowrap; }
+.wq-gate-chip:hover { color:var(--fg); border-color:var(--neon); }
+.wq-gate-chip--active { color:var(--neon); border-color:var(--neon);
+                         background:color-mix(in srgb, var(--neon) 10%, transparent);
+                         font-weight:600; }
+.wq-gate-chip-count { font-size:10px; opacity:.7;
+                       font-variant-numeric:tabular-nums; }
+
 /* Quick-add modal (floats over board/table views). */
 .tb-qa-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55);
                  z-index:1000; display:flex; align-items:flex-start;
@@ -1580,6 +1683,7 @@ def _client_js() -> str:
     if (g.label) q.set('label', g.label);
     if (g.priority) q.set('priority', g.priority);
     if (g.product) q.set('product', g.product);
+    if (g.gate) q.set('gate', g.gate);
     return q.toString();
   }
 

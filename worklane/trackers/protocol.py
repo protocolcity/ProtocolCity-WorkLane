@@ -129,6 +129,7 @@ class ProjectTracker(Protocol):
         status: Optional[str] = None,
         label: Optional[str] = None,
         priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[Task]: ...
 

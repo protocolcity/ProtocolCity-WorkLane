@@ -258,13 +258,21 @@ class HttpGateTest(unittest.TestCase):
 
 
 class GateChipRenderTest(unittest.TestCase):
-    def test_gate_chip_rendered_on_gated_card(self) -> None:
+    def test_human_gate_chip_shows_for_you(self) -> None:
         from worklane.board import _render_task_card
 
         gated_task = Task(id="1", title="Gated card", gate_type="human")
         html = _render_task_card(gated_task, preview={})
         self.assertIn("tb-card-gate", html)
-        self.assertIn("Gated", html)
+        self.assertIn("For You", html)
+
+    def test_deferred_gate_chip_shows_deferred(self) -> None:
+        from worklane.board import _render_task_card
+
+        deferred_task = Task(id="2", title="Deferred card", gate_type="deferred")
+        html = _render_task_card(deferred_task, preview={})
+        self.assertIn("tb-card-gate", html)
+        self.assertIn("Deferred", html)
 
     def test_no_gate_chip_on_ungated_card(self) -> None:
         from worklane.board import _render_task_card

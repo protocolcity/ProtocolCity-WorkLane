@@ -181,6 +181,7 @@ def _list_tasks_for_wq_multi_resolved(
     product: str,
     limit: int,
     with_preview: bool,
+    gate_type: Optional[str] = None,
 ) -> Tuple[List[Task], Dict[str, Dict[str, str]]]:
     """Merge tasks across all product stores; the live-feed product's half
     may come from the main app HTTP API when ``TRADEOS_TICKETS_SOURCE`` says
@@ -194,6 +195,7 @@ def _list_tasks_for_wq_multi_resolved(
             label=label,
             priority=priority,
             product=p,
+            gate_type=gate_type,
             limit=limit,
         )
         return tasks, empty_prev
@@ -219,6 +221,7 @@ def _list_tasks_for_wq_multi_resolved(
                 label=label,
                 priority=priority,
                 product=p,
+                gate_type=gate_type,
                 limit=500,
             )
         )

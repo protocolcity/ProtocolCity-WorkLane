@@ -161,6 +161,7 @@ class TPHandlers:
         status: Optional[str] = None,
         label: Optional[str] = None,
         priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
         limit: int = 50,
     ) -> Dict[str, Any]:
         """List tickets for a product (or all products when product='all')."""
@@ -169,13 +170,15 @@ class TPHandlers:
         status_f = (status or "").strip() or None
         label_f = (label or "").strip() or None
         prio = int(priority) if priority is not None else None
+        gate_f: Optional[str] = gate_type  # None = no filter; '' = ungated; 'deferred'/'human'/'timer'
 
         if slug == "all":
             items: List[Dict[str, Any]] = []
             for spec in discover_products():
                 tr = product_tracker(spec.slug)
                 for t in tr.list_tasks(
-                    status=status_f, label=label_f, priority=prio, limit=limit
+                    status=status_f, label=label_f, priority=prio,
+                    gate_type=gate_f, limit=limit,
                 ):
                     items.append(
                         self._task_dict(spec.slug, t, include_description=False)
@@ -185,7 +188,8 @@ class TPHandlers:
 
         _, tr = self._tracker(slug)
         tasks = tr.list_tasks(
-            status=status_f, label=label_f, priority=prio, limit=limit
+            status=status_f, label=label_f, priority=prio,
+            gate_type=gate_f, limit=limit,
         )
         return {
             "product": slug,
@@ -564,8 +568,10 @@ class TPHandlers:
             prio = int(priority)
             if prio not in (1, 2, 3, 4):
                 raise ToolError("priority must be 1 (urgent) … 4 (low)")
-        if gate_type is not None and gate_type not in ("", "human", "timer"):
-            raise ToolError("gate_type must be '' (clear), 'human', or 'timer'")
+        if gate_type is not None and gate_type not in ("", "human", "timer", "deferred"):
+            raise ToolError(
+                "gate_type must be '' (clear), 'human', 'timer', or 'deferred'"
+            )
         if gate_type == "timer" and not gate_until:
             raise ToolError("gate_until is required when gate_type is 'timer'")
 
@@ -893,7 +899,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "name": "wl_list",
             "description": (
                 "List WorkLane tickets. Filter by status, label, "
-                "priority. Returns composite ids."
+                "priority, or gate class. Returns composite ids."
             ),
             "inputSchema": {
                 "type": "object",
@@ -911,6 +917,15 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                         "minimum": 1,
                         "maximum": 4,
                         "description": "1=urgent … 4=low",
+                    },
+                    "gate_type": {
+                        "type": "string",
+                        "enum": ["", "human", "timer", "deferred"],
+                        "description": (
+                            "Filter by gate class: 'deferred' = parked tickets; "
+                            "'human' = act-now gates; 'timer' = embargoed; "
+                            "'' = ungated (no active gate)"
+                        ),
                     },
                     "limit": {
                         "type": "integer",
@@ -1128,15 +1143,14 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "description": (
                 "Edit title, description, priority, and/or gate on an existing "
                 "ticket (triage re-scoping). At least one field required. "
-                "gate_type sets a gate that withholds the ticket from the ready "
-                "queue: '' clears it, 'human' withholds until manually cleared, "
-                "'timer' withholds until gate_until then auto-thaws (wl-21). "
-                "For You / Map gold (wl-257): only action-shaped human gates "
-                "appear there. To park without golding You, set gate_note with "
-                "parked markers (start with 'deferred:' or 'umbrella', or include "
-                "post-northstar / not claimable / withheld from ready / parked: / "
-                "thaw when). Bare human gates with empty notes still gold You — "
-                "PROCESS §3.9 scarce-signal law."
+                "gate_type controls dispatch: '' clears the gate; 'human' withholds "
+                "until manually cleared AND surfaces in For You (act-now); "
+                "'timer' withholds until gate_until then auto-thaws; "
+                "'deferred' parks the ticket — withholds from ready AND never enters "
+                "For You / Map gold (PROCESS §3.9 Deferred class, wl-261). "
+                "Use deferred when work is real but not yet actionable; use human "
+                "only when founder action is needed now. To thaw a deferred ticket, "
+                "call wl_update with gate_type='' (clears the gate)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1154,8 +1168,12 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                     },
                     "gate_type": {
                         "type": "string",
-                        "enum": ["", "human", "timer"],
-                        "description": "'' clears the gate; 'human' or 'timer' sets it",
+                        "enum": ["", "human", "timer", "deferred"],
+                        "description": (
+                            "'' clears the gate; 'human' = act-now (surfaces in For You); "
+                            "'timer' = embargoed until gate_until; "
+                            "'deferred' = parked (withholds ready, never enters For You)"
+                        ),
                     },
                     "gate_until": {
                         "type": "string",
@@ -1164,10 +1182,9 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                     "gate_note": {
                         "type": "string",
                         "description": (
-                            "Reason for the gate. Required style for human gates: "
-                            "either (a) action-shaped — what You must decide/clear "
-                            "(feeds For You / gold), or (b) parked — deferred:/umbrella "
-                            "prefix etc. (withholds ready, does NOT gold You; wl-257)."
+                            "Optional context for the gate. For human gates: "
+                            "describe what decision or action is needed. "
+                            "For deferred gates: describe what condition would thaw it."
                         ),
                     },
                 },
