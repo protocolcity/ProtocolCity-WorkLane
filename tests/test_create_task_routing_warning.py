@@ -1,11 +1,8 @@
-"""wl-256: soft routing warning on POST /api/admin/tasks when worker:* absent.
+"""Create-path routing: stamp needs:routing + soft warning when worker:* absent.
 
-The create endpoint emits a non-blocking ``routing_warning`` string when:
-- the ticket carries no ``worker:*`` label, AND
-- WorkForce reports at least one lane worker hired for the target product.
-
-The warning is omitted when worker:* is present, when WorkForce is unreachable,
-or when no workers are hired for the product.
+2026-07-27: any create without worker:* auto-stamps ``needs:routing`` and
+returns a non-blocking ``routing_warning`` (silent unlabeled ready is a bug
+under WorkForce exclusive feeds). Hired-hand list is appended when known.
 """
 from __future__ import annotations
 
@@ -101,7 +98,7 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
     # ── cases ────────────────────────────────────────────────────────────────
 
     def test_warning_when_no_worker_label_and_hands_hired(self):
-        """Warning appears when no worker:* label and WorkForce has hired hands."""
+        """Warning + needs:routing when no worker:*; hired hands listed."""
         mock_resp = _workforce_response([_worker_entry("tess", "worklane")])
         with patch("urllib.request.urlopen", return_value=mock_resp):
             r = self._post(labels=["intake"])
@@ -109,7 +106,10 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         data = r.json()
         self.assertTrue(data["ok"])
         self.assertIsNotNone(data.get("routing_warning"))
-        self.assertIn("worker:tess", data["routing_warning"])
+        self.assertIn("needs:routing", data["routing_warning"])
+        self.assertIn("tess", data["routing_warning"])
+        labs = data["task"].get("labels") or []
+        self.assertIn("needs:routing", labs)
 
     def test_no_warning_when_worker_label_present(self):
         """No warning when a worker:* label is already provided."""
@@ -120,19 +120,23 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         data = r.json()
         self.assertTrue(data["ok"])
         self.assertIsNone(data.get("routing_warning"))
+        labs = data["task"].get("labels") or []
+        self.assertIn("worker:tess", labs)
+        self.assertNotIn("needs:routing", labs)
 
-    def test_no_warning_when_workforce_unreachable(self):
-        """No warning (and no error) when WorkForce is down."""
+    def test_stamps_needs_routing_when_workforce_unreachable(self):
+        """Still stamps needs:routing when WorkForce is down (no crash)."""
         import urllib.error
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             r = self._post(labels=["intake"])
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data["ok"])
-        self.assertIsNone(data.get("routing_warning"))
+        self.assertIsNotNone(data.get("routing_warning"))
+        self.assertIn("needs:routing", data["task"].get("labels") or [])
 
-    def test_no_warning_when_no_workers_for_product(self):
-        """No warning when WorkForce has workers but none for this product."""
+    def test_stamps_when_no_workers_for_product(self):
+        """Stamp even when hired hands are for another product."""
         other_worker = _worker_entry("carl", "tradeos")
         mock_resp = _workforce_response([other_worker])
         with patch("urllib.request.urlopen", return_value=mock_resp):
@@ -140,20 +144,22 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data["ok"])
-        self.assertIsNone(data.get("routing_warning"))
+        self.assertIsNotNone(data.get("routing_warning"))
+        self.assertIn("needs:routing", data["task"].get("labels") or [])
 
-    def test_no_warning_when_no_labels_and_no_workers(self):
-        """No warning when no labels and no workers hired for the product."""
+    def test_stamps_when_no_labels_and_no_workers(self):
+        """Empty labels still get needs:routing."""
         mock_resp = _workforce_response([])
         with patch("urllib.request.urlopen", return_value=mock_resp):
             r = self._post()
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data["ok"])
-        self.assertIsNone(data.get("routing_warning"))
+        self.assertIsNotNone(data.get("routing_warning"))
+        self.assertIn("needs:routing", data["task"].get("labels") or [])
 
-    def test_job_kind_worker_not_counted_as_hired_hand(self):
-        """Job-kind entries are not counted as hired hands (only lane kind)."""
+    def test_job_kind_not_listed_as_hired_but_still_stamps(self):
+        """Job-kind entries are not listed as hired hands; stamp still applies."""
         job_worker = _worker_entry("clerk", "worklane", kind="job")
         mock_resp = _workforce_response([job_worker])
         with patch("urllib.request.urlopen", return_value=mock_resp):
@@ -161,7 +167,9 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data["ok"])
-        self.assertIsNone(data.get("routing_warning"))
+        self.assertIsNotNone(data.get("routing_warning"))
+        self.assertNotIn("clerk", data["routing_warning"] or "")
+        self.assertIn("needs:routing", data["task"].get("labels") or [])
 
 
 if __name__ == "__main__":

@@ -448,14 +448,26 @@ async def api_create_task(request: Request) -> JSONResponse:
     surface = project_val or legacy_surface_val or default_product_slug()
     surface = str(surface).strip().lower()
 
-    # wl-256: soft routing warning — emitted when the product has hired hands
-    # but no worker:* label was provided.  Never blocks; WorkForce query is
-    # best-effort (1 s timeout, empty list on any error).
-    has_worker_label = any(str(lbl).startswith("worker:") for lbl in labels)
+    # Create-path routing (2026-07-27): stamp needs:routing when no worker:*.
+    # WorkForce schedules only drain labeled feeds — silent unlabeled ready is a bug.
+    from worklane.routing_labels import ensure_create_labels, has_worker_label
+
+    labels, stamped_nr = ensure_create_labels(labels)
     routing_warning: Optional[str] = None
-    if not has_worker_label:
+    if stamped_nr or not has_worker_label(labels):
         hired = _workforce_workers_for_product(surface)
-        if hired:
+        if stamped_nr:
+            routing_warning = (
+                "no worker:* label — stamped needs:routing so unrouted ready "
+                "stays visible"
+            )
+            if hired:
+                routing_warning += (
+                    "; hired hands for this product: " + ", ".join(hired)
+                )
+            routing_warning += ". Add worker:<id> to place on a hand feed."
+        elif hired:
+            # wl-256 residual: worker present path shouldn't hit; keep soft warn
             routing_warning = (
                 "no worker:* routing label — this product has hired hands: "
                 + ", ".join(hired)
@@ -990,9 +1002,9 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             {"ok": False, "error": "gate_type is required when setting gate_until or gate_note"},
             status_code=400,
         )
-    if gate_type is not None and gate_type not in ("", "human", "timer"):
+    if gate_type is not None and gate_type not in ("", "human", "timer", "deferred"):
         return JSONResponse(
-            {"ok": False, "error": "gate_type must be '' (clear), 'human', or 'timer'"},
+            {"ok": False, "error": "gate_type must be '' (clear), 'human', 'timer', or 'deferred'"},
             status_code=400,
         )
     if gate_type == "timer" and not gate_until:

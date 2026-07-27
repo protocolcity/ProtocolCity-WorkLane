@@ -932,9 +932,9 @@ class SQLiteTracker(ProjectTracker):
         ``"timer"`` sets it (wl-21). A timer gate requires ``gate_until``.
         Returns the updated Task, or None if ``task_id`` does not exist.
         """
-        if gate_type is not None and gate_type not in ("", "human", "timer"):
+        if gate_type is not None and gate_type not in ("", "human", "timer", "deferred"):
             raise ValueError(
-                f"gate_type must be '' (clear), 'human', or 'timer', got {gate_type!r}"
+                f"gate_type must be '' (clear), 'human', 'timer', or 'deferred', got {gate_type!r}"
             )
         if gate_type == "timer" and not gate_until:
             raise ValueError("gate_until is required when gate_type is 'timer'")

@@ -57,8 +57,9 @@ class Task:
     created_at: str = ""
     updated_at: str = ""
     # wl-21: gates as data. gate_type is None (no gate), "human" (blocks
-    # the ready queue until manually cleared), or "timer" (blocks until
-    # gate_until, then auto-thaws — see task_is_gated()).
+    # the ready queue until manually cleared; action-shaped note golds For You),
+    # "timer" (blocks until gate_until, then auto-thaws — see task_is_gated()),
+    # or "deferred" (wl-261: parked indefinitely; never enters ready or For You).
     gate_type: Optional[str] = None
     gate_until: Optional[str] = None
     gate_note: Optional[str] = None
@@ -96,7 +97,7 @@ def task_is_gated(task: "Task") -> bool:
     """
     if not task.gate_type:
         return False
-    if task.gate_type == "human":
+    if task.gate_type in ("human", "deferred"):
         return True
     if task.gate_type == "timer":
         if not task.gate_until:

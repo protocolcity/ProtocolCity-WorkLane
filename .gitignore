@@ -6,3 +6,4 @@ tasks.db*
 .venv/
 .local/
 dist/
+dist/

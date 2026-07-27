@@ -57,6 +57,21 @@ class ParkedHumanGateAttentionTest(unittest.TestCase):
                 os.environ[k] = v
         self._tmp.cleanup()
 
+    def test_deferred_gate_not_in_attention(self) -> None:
+        """gate_type=deferred tickets are never gold-painted For You (wl-261)."""
+        act = self.tracker.create_task(title="needs decision", description="pick A or B")
+        self.tracker.update_task(act.id, gate_type="human", gate_note="Need You to pick A or B")
+        deferred = self.tracker.create_task(title="parked epic", description="no hands needed")
+        self.tracker.update_task(deferred.id, gate_type="deferred", gate_note="thaw when north-star clears")
+        j = self.client.get("/api/dev/attention").json()
+        ids = [it["id"] for it in j["items"]]
+        self.assertIn(f"t-{act.id}", ids)
+        self.assertNotIn(f"t-{deferred.id}", ids)
+        # Ready excludes deferred gate
+        ready = self.client.get("/api/admin/tasks/ready?product=tradeos").json()
+        ready_ids = [t["id"] for t in ready.get("tasks") or []]
+        self.assertNotIn(f"t-{deferred.id}", ready_ids)
+
     def test_parked_human_gate_not_in_attention(self) -> None:
         act = self.tracker.create_task(title="need decision", description="pick A or B")
         self.tracker.update_task(act.id, gate_type="human", gate_note="Need You to pick A or B")

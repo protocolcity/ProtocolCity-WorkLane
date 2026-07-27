@@ -54,6 +54,10 @@ class TaskIsGatedTest(unittest.TestCase):
         t = Task(id="1", title="x", gate_type="timer", gate_until="not-a-date")
         self.assertTrue(task_is_gated(t))
 
+    def test_deferred_gate_is_gated(self) -> None:
+        t = Task(id="1", title="x", gate_type="deferred")
+        self.assertTrue(task_is_gated(t))
+
 
 class SQLiteTrackerGateTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -96,6 +100,15 @@ class SQLiteTrackerGateTest(unittest.TestCase):
         self.assertIsNone(cleared.gate_until)
         self.assertIsNone(cleared.gate_note)
 
+    def test_set_deferred_gate(self) -> None:
+        t = self.tracker.create_task(title="Gate me")
+        updated = self.tracker.update_task(
+            t.id, gate_type="deferred", gate_note="umbrella: thaw when northstar clears", actor="wl-pool"
+        )
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.gate_type, "deferred")
+        self.assertEqual(updated.gate_note, "umbrella: thaw when northstar clears")
+
     def test_invalid_gate_type_rejected(self) -> None:
         t = self.tracker.create_task(title="Gate me")
         with self.assertRaises(ValueError):
@@ -133,6 +146,16 @@ class WorkQueueGateTest(unittest.TestCase):
         ready_ids = {t.id for t in wq.ready()}
         self.assertIn(free.id, ready_ids)
         self.assertNotIn(gated.id, ready_ids)
+
+    def test_ready_excludes_deferred_gated(self) -> None:
+        deferred = self.tracker.create_task(title="Deferred ticket")
+        self.tracker.update_task(deferred.id, gate_type="deferred", actor="wl-pool")
+        free = self.tracker.create_task(title="Free ticket")
+
+        wq = WorkQueue(self.tracker)
+        ready_ids = {t.id for t in wq.ready()}
+        self.assertIn(free.id, ready_ids)
+        self.assertNotIn(deferred.id, ready_ids)
 
     def test_ready_includes_expired_timer_gate(self) -> None:
         past = _iso(datetime.now(timezone.utc) - timedelta(days=1))
@@ -195,10 +218,32 @@ class HttpGateTest(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["task"]["gate_type"], "human")
 
+    def test_patch_deferred_gate(self) -> None:
+        t = self.tracker.create_task(title="HTTP deferred gate")
+        r = self.client.patch(
+            f"/api/admin/tasks/{t.id}",
+            json={"gate_type": "deferred", "gate_note": "thaw when epic ships"},
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["task"]["gate_type"], "deferred")
+
     def test_patch_timer_gate_without_until_is_400(self) -> None:
         t = self.tracker.create_task(title="HTTP gate")
         r = self.client.patch(f"/api/admin/tasks/{t.id}", json={"gate_type": "timer"})
         self.assertEqual(r.status_code, 400)
+
+    def test_ready_endpoint_excludes_deferred_gated(self) -> None:
+        deferred = self.tracker.create_task(title="Deferred via HTTP")
+        self.tracker.update_task(deferred.id, gate_type="deferred", actor="wl-pool")
+        free = self.tracker.create_task(title="Free via HTTP deferred")
+
+        r = self.client.get("/api/admin/tasks/ready", params={"product": "tradeos"})
+        self.assertEqual(r.status_code, 200)
+        ids = {row["id"] for row in r.json()["tasks"]}
+        self.assertIn(f"t-{free.id}", ids)
+        self.assertNotIn(f"t-{deferred.id}", ids)
 
     def test_ready_endpoint_excludes_gated(self) -> None:
         gated = self.tracker.create_task(title="Gated via HTTP")

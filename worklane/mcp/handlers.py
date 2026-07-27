@@ -281,21 +281,37 @@ class TPHandlers:
             raise ToolError("priority must be 1 (urgent) … 4 (low)")
         intake_val = str(intake or "").strip() or "mcp"
 
+        from worklane.routing_labels import ensure_create_labels
+
+        labs, stamped_nr = ensure_create_labels(list(labels or []))
         slug, tr = self._tracker(product)
         task = tr.create_task(
             title=title,
             description=description,
             priority=prio,
-            labels=list(labels or []),
+            labels=labs,
             actor=self.author,
             intake=intake_val,
         )
         tr.add_comment(
             str(task.id), f"Intake: filed by {self.author}", author=self.author
         )
+        if stamped_nr:
+            tr.add_comment(
+                str(task.id),
+                "Routing: no worker:<id> on create — stamped needs:routing "
+                "(schedule feeds only drain labeled hands; route with wl_label).",
+                author=self.author,
+            )
         # re-fetch for updated_at after intake comment
         fresh = tr.get_task(str(task.id)) or task
-        return {"ok": True, "task": self._task_dict(slug, fresh)}
+        out = {"ok": True, "task": self._task_dict(slug, fresh)}
+        if stamped_nr:
+            out["routing_warning"] = (
+                "no worker:* label — stamped needs:routing so unrouted ready "
+                "stays visible; add worker:<id> to place on a hand feed"
+            )
+        return out
 
     def wl_claim(
         self,
@@ -967,6 +983,11 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                     "labels": {
                         "type": "array",
                         "items": {"type": "string"},
+                        "description": (
+                            "Prefer include worker:<hand-id> so scheduled hands "
+                            "drain the ticket. If omitted, create stamps "
+                            "needs:routing (visible unrouted ready — not silent)."
+                        ),
                     },
                     "intake": {
                         "type": "string",

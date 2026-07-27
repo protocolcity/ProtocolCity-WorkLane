@@ -43,14 +43,26 @@ Abstract commands — **MCP first** (see §6). CLI remains a legacy shell fallba
 
 Multi-agent routing on WL is a negative-space default, not an explicit gate. This underpins the "Scan" step above and every per-agent profile in §6 — stated here once instead of left implicit across those profiles.
 
-- **Unlabeled = default worker.** Every ticket belongs to the primary/most-capable agent's pool by default, and that pool scans the *full* backlog — not just labeled tickets. A ticket needs no label to be workable; the absence of a `worker:*` label is itself the routing signal.
-- **`worker:*` labels delegate down, they don't gate.** A `worker:ellis` or `worker:kai` label (§6.1, §6.2) narrows a ticket to a specific narrower-scope agent — it signals who should take it first, not who is *allowed* to see it. The default-worker pool still owns the ticket if the narrower worker doesn't act on it.
+- **WorkForce scheduled hands drain labeled feeds only (BluePrint / roster law).**
+  Each hand's `queue_url` filters `worker:<id>`. Unlabeled ready is **not**
+  drained by cron — it shows as Map “No hand” / `needs:routing` until routed.
+  **Create path (MCP / CLI / HTTP):** if no `worker:*` is supplied, the engine
+  **auto-stamps `needs:routing`** so silence cannot hide unrouted work
+  (`routing_labels.ensure_create_labels`, 2026-07-27). Prefer stamping
+  `worker:<id>` at create.
+- **Unlabeled historical note (pre-roster exclusivity).** Older PROCESS text
+  treated unlabeled as “default worker pool scans full backlog.” That remains
+  true only for **manual** `wl_ready` without a label filter — **not** for
+  WorkForce launchd/schedule drains. New cities: always route.
+- **`worker:*` labels are the exclusive hand feed.** A `worker:beatriz` or
+  `worker:kc` label places the ticket on that hand's schedule. Do not put two
+  `worker:*` labels on one ticket.
 - **>24h no-activity demotion.** A `worker:*` label with no activity for more than 24 hours is treated as stale: the default-worker pool may pick the ticket up as if it were unlabeled. Narrower-scope agents don't need to strip the label themselves — the pool's own scan handles the fallback.
 - **Why labels aren't mandatory.** Requiring a worker label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
 
-This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Ellis's `--label worker:ellis`, Kai's `--label worker:kai`) are narrowings of the default-worker pool's scan, never replacements for it.
+This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Beatriz's `--label worker:beatriz`, Kc's `--label worker:kc`) are narrowings of the default-worker pool's scan, never replacements for it.
 
-One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok/Kai) may, when its queue is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-worker pool, and an agent without a self-service clause in its profile (e.g. Cursor/Ellis, §6.1) has none.
+One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok/Kc) may, when its queue is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-worker pool, and an agent without a self-service clause in its profile (e.g. Cursor/Beatriz, §6.1) has none.
 
 ## 3) Rules
 
@@ -62,12 +74,22 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
 6. **Declare dependencies** — use `Depends on #NNN` in the description so the queue guard can freeze siblings.
 7. **Recommendation-default decisions** (founder-ratified 2026-07-09) — when a ticket hits a decision point, the agent records its recommendation as the decision (`DECISION (recommendation-default): <choice> — <why>` comment) and keeps working; the founder reviews and can veto after the fact. `needs:founder-decision` is reserved for the escalation class only: real-money gates (LIVE flips, risk-limit widening, new broker/credential enablement, moving money, gate bypasses), reversals of ratified ADRs/product direction, and public-facing or expensive-to-reverse actions. Everything else — including strategy-intent on paper/bench plays and exposure-reducing enforcement — proceeds on the recommendation. Decisions must be logged in ticket comments so the veto window is real.
 8. **Sign every comment** (2026-07-10) — pass the author flag (`--author "<agent-id>"` on the CLI, `author` on the API) on every comment you post, using your canonical agent id from §5.2. The `Owner:` line inside the body documents the claim; the author *field* is what the board byline, filters, and ghost-audits key on. The two must carry the same id. An unsigned (empty-author) comment is a process violation, not a default.
-9. **Human-gate hard stop** (2026-07-16; For You law clarified 2026-07-27, wl-257) — `gate_type=human` and `needs:founder-decision` feed **Waiting on You / Map gold** only when You must act **now**. They are scarce signals, not a parking lot.
-   - **One ticket, one reason.** Every human gate needs a concrete `gate_note` (or decision label) that says why You must act and what clears it — or, if the gate is only withholding ready, that it is **parked** (see below).
-   - **Parked ≠ For You.** To withhold a ticket from ready **without** gold-painting You: use `gate_type=human` with a **parked** `gate_note` — start with `deferred:` or `umbrella`, or include `post-northstar` / `not claimable` / `withheld from ready` / `parked:` / `thaw when`. Ready stays blocked; attention / Map gold **skip** these. Agents still must not invent mass parks (bulk rule below). True “need You this session” gates keep an action-shaped note (what You decide / clear).
-   - **No bulk sweeps.** Agents must not set `gate_type=human` on more than **three** tickets in a single shift unless a ticket they hold explicitly authorizes a named bulk re-gate (ids listed). Mass “park the pool so I look unwedged” is an automatic reject.
-   - **Do not re-gate the already gated.** Leave existing human/decision gates; comment if the note is wrong.
-   - **Snooze ≠ clear.** You may snooze a product, kind, task, or all on Waiting on You to mute attention for a day without changing store gates. Snooze scopes: `product | kind | task | all`. Mechanical enforcement: **wl-205** (product/kind/all); **wl-251** adds per-ticket (`task`) scope. Parked gates should not require snooze once wl-257 attention filter is live.
+9. **Gate classes — Ready · For You · Deferred** (engine wl-261, 2026-07-27; For You law wl-257, 2026-07-16) — Three attention/ready classes govern how a ticket surfaces to You:
+
+   | Class | How to set | Attention / Map gold | Ready pool |
+   |---|---|---|---|
+   | **Ready** | no gate | — | ✓ claimable |
+   | **For You** | `gate_type=human`, action-shaped note | ✓ In-tray / Map gold | ✗ blocked |
+   | **Deferred** | `gate_type=deferred` | — | ✗ blocked |
+
+   - **Park with `gate_type=deferred`.** To withhold a ticket from ready without painting You: `PATCH gate_type=deferred`. No special note prefix needed. Ready stays blocked; attention / Map gold skip entirely. This is the modern park encoding, superseding the legacy `gate_type=human` + parked `gate_note` workaround for *new* parks (wl-257 dual-read window preserved for existing parked-note gates; see wl-264 for bulk migration).
+   - **`gate_type=human` is scarce — act-now only.** Reserve it for tickets where You must act *now* (decide / clear / approve). Every human gate needs a concrete `gate_note` naming what You must decide and what clears it. Legacy human+parked-note gates (`gate_note` starts with `deferred:` / `umbrella`, or includes `post-northstar` / `not claimable` / `withheld from ready` / `parked:`) still block ready without attention paint — preserved during the migration window; prefer `gate_type=deferred` for new parks.
+   - **Umbrella epics:** `gate_type=deferred` + the `umbrella` label. No human gate unless You are needed today.
+   - **Deferred gates thaw freely.** Any agent or founder may clear a deferred gate (`PATCH gate_type=null`) when the track reopens. Human gates still require founder-present to clear (§5.2.1).
+   - **No bulk sweeps.** Agents must not set any gate type on more than **three** tickets in a single shift unless a ticket they hold explicitly authorizes a named bulk re-gate (ids listed). Mass “park the pool so I look unwedged” is an automatic reject.
+   - **Do not re-gate the already gated.** Leave existing gates; comment if the note is wrong.
+   - **Muted = snooze, not a gate.** You may snooze a product, kind, task, or all on Waiting on You to mute attention for a day without changing store gates. Snooze scopes: `product | kind | task | all`. Mechanical enforcement: **wl-205** (product/kind/all); **wl-251** adds per-ticket (`task`) scope. Snooze is a UI silence only — it does not block ready or change gate state.
+   - **Migration (legacy human+parked → deferred):** `PATCH gate_type=deferred`, drop or repurpose the `gate_note`. Use wl-264's batch script to convert the full pool.
 10. **No cancel without shipping · no mass cancel** (2026-07-26, founder — empty-BL thrash) —
     - **`wl_cancel` / cancel is rare.** Allowed only when work is **intentionally abandoned as product truth** (duplicate, wrong product forever, explicit founder “drop this”) — **not** as a way to make the board look empty.
     - **Never cancel to “clear the queue”** or “empty the backlog” before a ship/export. “Empty the BL” means **implement and close**, or **leave open** what still needs work — **not** mass-cancel deferred epics.
@@ -232,26 +254,32 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 
 | Agent id | Who |
 | --- | --- |
-| `morgan` | Morgan · Lead Developer. Succeeds the original host-dispatch lane (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Host-repo generalist desk. |
+| `morgan` | **RETIRED 2026-07-27** — succeeded by `sincere`. Was: Morgan · Lead Developer (succeeded the original host-dispatch lane 2026-07-14). History retained — comments signed by `morgan` remain valid record. |
+| `sincere` | Sincere · Lead Developer. Succeeds `morgan` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier the original host-dispatch lane also valid history). Host-repo generalist desk. |
 | `founder-terminal` | **You present** — founder-driven interactive sessions on any host (Claude Desktop/Code, Grok Build/TUI, Cursor chat, Codex interactive, etc.). The AI product is the **hand**, not the actor. See §5.2.1. |
-| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis`. Was: Cursor editor lane (§6.1). History retained. **Do not** use as MCP author for founder-present Cursor chat (that is `founder-terminal`). |
-| `ellis` | Ellis · Technical Writer. Succeeds `cursor` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Lane-labeled / `worker:ellis` tickets; contract at the host repo (Cursor lane papers until cutover). |
-| `grok` | **RETIRED 2026-07-14** — succeeded by `kai`. Was: Grok CLI lane (§6.2). History retained. **Do not** use as MCP author for founder-present Grok sessions (that is `founder-terminal`). |
-| `kai` | Kai · Software Engineer. Succeeds `grok` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Lane-labeled / `worker:kai` tickets; contract at the host repo (Grok lane papers until cutover). |
+| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis` (itself succeeded by `beatriz` 2026-07-27). Was: Cursor editor lane (§6.1). History retained. **Do not** use as MCP author for founder-present Cursor chat (that is `founder-terminal`). |
+| `ellis` | **RETIRED 2026-07-27** — succeeded by `beatriz`. Was: Ellis · Technical Writer (succeeded `cursor` 2026-07-14). History retained — comments signed by `ellis` remain valid record. |
+| `beatriz` | Beatriz · Technical Writer. Succeeds `ellis` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `cursor` also valid history). Lane-labeled / `worker:beatriz` tickets; contract at host repo `workers/beatriz-lane/`. |
+| `grok` | **RETIRED 2026-07-14** — succeeded by `kai` (itself succeeded by `kc` 2026-07-27). Was: Grok CLI lane (§6.2). History retained. **Do not** use as MCP author for founder-present Grok sessions (that is `founder-terminal`). |
+| `kai` | **RETIRED 2026-07-27** — succeeded by `kc`. Was: Kai · Software Engineer (succeeded `grok` 2026-07-14). History retained — comments signed by `kai` remain valid record. |
+| `kc` | Kc · Software Engineer. Succeeds `kai` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `grok` also valid history). Lane-labeled / `worker:kc` tickets; contract at host repo `workers/kc-lane/`. |
 | `cowork` | Claude cowork sessions |
 | `claude-worklane` | **RETIRED 2026-07-14** — succeeded by `tess`. Was: Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11). History retained. |
-| `tess` | Tess · Desk Engineer. Succeeds `claude-worklane` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). WL self-host lane; contract at `workers/tess/CONTRACT.md` (legacy papers remain at `ops/claude-worklane/` until cutover). |
+| `tess` | **RETIRED 2026-07-27** — succeeded by `tierra`. Was: Tess · Desk Engineer, WL self-host lane (§8; succeeded `claude-worklane` 2026-07-14). History retained. |
+| `tierra` | Tierra · Desk Engineer. Succeeds `tess` (retired 2026-07-27, history retained — comments signed by the old id remain valid record). WL self-host lane; contract at `workers/tierra/CONTRACT.md`. |
 | `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane). Patrol — function-named; not retired. |
 | `backlog-snapshot` | Night-auditor patrol job — read-only backlog report; never claims. Function-named; not retired. |
 | `visual-sweep` | Night-inspector patrol job — automated visual sweep; never claims. Function-named; not retired. |
-| `codex` | **RETIRED 2026-07-14** — succeeded by `carl`. Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
-| `carl` | Carl · Web Designer. Succeeds `codex` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Visuals/content production; contract at the host repo (Codex lane papers until cutover). |
+| `codex` | **RETIRED 2026-07-14** — succeeded by `carl` (itself succeeded by `kayda` 2026-07-27). Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
+| `carl` | **RETIRED 2026-07-27** — succeeded by `kayda` (Web Designer seat). Was: Carl · Web Designer (succeeded `codex` 2026-07-14). History retained — comments signed by `carl` remain valid record. **Note:** slug `carl` is freed for ProtocolCity drew→carl hire (city rename epic). |
+| `kayda` | Kayda · Web Designer. Succeeds `carl` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `codex` also valid history). Visuals/content production; contract at host repo `workers/kayda-lane/`. |
 | `riley` | Riley · City Hall Desk. Succeeds `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). ProtocolCity docs/planning desk. |
 | `drew` | Drew · Software Engineer (new hire 2026-07-21 — no predecessor). ProtocolCity code lane — suite/citylens/CLI packaging; papers at `ProtocolCity/workers/drew/`. |
 | `claude-socials` | **RETIRED 2026-07-14** — succeeded by `iris`. Was: Claude CLI lane, socials drafting desk (added 2026-07-14). History retained. |
 | `iris` | Iris · Content Writer. Succeeds `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Socials drafts-only (posting is founder-only). |
-| `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto`. Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
-| `otto` | Otto · Systems Engineer. Succeeds `claude-orchestrator` (retired 2026-07-14, history retained — comments signed by the old id remain valid record). Orchestrator engine/board/schedule; never touches `local/` state, the daemon service, or live dispatches. |
+| `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto` (itself succeeded by `melanie` 2026-07-27). Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
+| `otto` | **RETIRED 2026-07-27** — succeeded by `melanie`. Was: Otto · Systems Engineer (succeeded `claude-orchestrator` 2026-07-14). History retained — comments signed by `otto` remain valid record. |
+| `melanie` | Melanie · Systems Engineer. Succeeds `otto` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-orchestrator` also valid history). WorkForce engine/board/schedule; never touches `local/` state, the daemon service, or live dispatches; papers at `workforce/workers/melanie/`. |
 | `neo` | Neo · Market Analyst (new hire 2026-07-14 — no predecessor). Specialist lane; papers when armed. |
 | `wren` | Wren (new hire 2026-07-14 — no predecessor). Specialist / future desk; papers when armed. |
 | `city-steward` | City Steward — cross-store stewardship patrol (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/city-steward/. |
@@ -264,13 +292,13 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 **If You are in the loop, the ticket author is `founder-terminal`.** The chat
 product (Grok, Claude, Cursor, …) is the **hand**, not the person. Signing a
 founder decision, human-gate clear, or `FOUNDER ·` close-out as `grok` /
-`kai` / `riley` / `cursor` makes the board look like a worker self-approved
+`kc` / `riley` / `cursor` makes the board look like a worker self-approved
 a human gate.
 
 | Situation | Author field (`--author` / `WL_AGENT_ID`) | Optional body line |
 | --- | --- | --- |
 | You + any AI: decisions, gates, registry law, publish packets | `founder-terminal` | `Hand: grok-build` / `Hand: claude-desktop` / … |
-| Autonomous worker shift (roster / launchd) | persona id (`tess`, `kai`, `riley`, …) | model in `Owner:` per §5 |
+| Autonomous worker shift (roster / launchd) | persona id (`tierra`, `kc`, `riley`, …) | model in `Owner:` per §5 |
 | Patrol / report job | job id (`city-steward`, `founder-brief`, …) | — |
 
 **MCP connect-time identity** is the stamp on every write. Founder-present
@@ -300,13 +328,18 @@ them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
 | --- | --- | --- |
 | `riley` | Riley · City Hall Desk | `claude-protocolcity` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
 | `drew` | Drew · Software Engineer | — (new hire 2026-07-21, no predecessor) |
-| `morgan` | Morgan · Lead Developer | the original host-dispatch lane (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
-| `kai` | Kai · Software Engineer | `grok` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
-| `ellis` | Ellis · Technical Writer | `cursor` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
-| `carl` | Carl · Web Designer | `codex` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
-| `tess` | Tess · Desk Engineer | `claude-worklane` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `sincere` | Sincere · Lead Developer | `morgan` (retired 2026-07-27; earlier the original host-dispatch lane 2026-07-14 — history retained) |
+| `kc` | Kc · Software Engineer | `kai` (retired 2026-07-27; earlier `grok` 2026-07-14 — history retained) |
+| `beatriz` | Beatriz · Technical Writer | `ellis` (retired 2026-07-27; earlier `cursor` 2026-07-14 — history retained) |
+| `kayda` | Kayda · Web Designer | `carl` (retired 2026-07-27; earlier `codex` 2026-07-14 — history retained) |
+| `morgan` | **RETIRED 2026-07-27** → `sincere` | the original host-dispatch lane (retired 2026-07-14) |
+| `kai` | **RETIRED 2026-07-27** → `kc` | `grok` (retired 2026-07-14) |
+| `ellis` | **RETIRED 2026-07-27** → `beatriz` | `cursor` (retired 2026-07-14) |
+| `carl` | **RETIRED 2026-07-27** → `kayda` | `codex` (retired 2026-07-14) |
+| `tierra` | Tierra · Desk Engineer | `tess` (retired 2026-07-27, history retained — comments signed by the old id remain valid record) |
 | `iris` | Iris · Content Writer | `claude-socials` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
-| `otto` | Otto · Systems Engineer | `claude-orchestrator` (retired 2026-07-14, history retained — comments signed by the old id remain valid record) |
+| `otto` | **RETIRED 2026-07-27** → `melanie` | `claude-orchestrator` (retired 2026-07-14) |
+| `melanie` | Melanie · Systems Engineer | `otto` (retired 2026-07-27; earlier `claude-orchestrator` 2026-07-14 — history retained) |
 | `neo` | Neo · Market Analyst | — (new hire, no predecessor) |
 | `wren` | Wren | — (new hire, no predecessor) |
 | `city-steward` | City Steward | — (new hire, no predecessor; patrol job) |

@@ -523,6 +523,9 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
         if labels & _FOUNDER_DECISION_LABELS:
             items.append(_attention_item(t, prod_slug, "founder_decision", "founder decision needed", since, now))
             counted.add(t.id)
+        elif t.gate_type == "deferred":
+            # Deferred gate: withholds ready but never enters For You (wl-261).
+            continue
         elif t.gate_type == "human":
             if _human_gate_is_parked(t.gate_note):
                 # Ready still withheld; For You / Map gold skip (scarce signal law).
