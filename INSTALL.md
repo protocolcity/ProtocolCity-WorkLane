@@ -1,6 +1,6 @@
 # Installing WorkLane in a new host
 
-This walks a new host ("I found WL on GitHub, I want ticket tracking for my
+This walks a new host ("I found WL on GitHub, I want work order tracking for my
 own project") from a bare clone to agents filing and working tickets. It
 assumes no existing host.
 
@@ -11,7 +11,7 @@ as a suite dependency — no source checkout is required:
 
 ```bash
 pip install protocolcity-worklane
-worklane          # start the server → http://127.0.0.1:8799
+worklane          # start the API server (http://127.0.0.1:8799)
 worklane-mcp      # MCP server for agent clients
 tk --help         # ticket CLI (wl is a short alias)
 ```
@@ -81,8 +81,7 @@ worklane --demo
 This writes **only** the isolated `demo` project store
 (`worklane/local/data/demo.db`). It never touches any other project
 store you have configured. Re-run is a no-op unless
-you pass `--force` (demo store only). Open
-http://127.0.0.1:8799/admin/tickets/demo?view=board after the server is up.
+you pass `--force` (demo store only). Inspect the seeded tickets: `tk list --product demo`.
 
 To keep it running across reboots on macOS without any host repo:
 
@@ -96,7 +95,7 @@ See [README.md#native-startup](README.md#native-startup) for details and
 Verify it's up:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8799/admin/overview   # expect 200
+curl -s http://localhost:8799/api/admin/products   # expect {"ok":true,"products":[...]}
 ```
 
 ## 4. Bootstrap your project
@@ -128,20 +127,19 @@ Filing a ticket with `"surface": "<your-slug>"` (via the API, CLI, or MCP
 with an "unknown ticket surface" / "unknown product" error — bootstrap
 first, then file.
 
-Once the store exists, it gets its own scope tab (Board/Table views) at
-`/admin/tickets/<your-slug>` automatically — no code changes. File your
-first ticket:
+Once the store exists, it appears in the products registry automatically — no code changes. File your
+first work order:
 
 ```bash
 tk --help   # confirm the CLI is on PATH first
 
 curl -s -X POST http://localhost:8799/api/admin/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"title":"First ticket","description":"Bootstrapping myproject.","surface":"myproject","author":"you"}'
+  -d '{"title":"First work order","description":"Bootstrapping myproject.","surface":"myproject","author":"you"}'
 ```
 
 You can rename the display name / short id prefix later too, via
-`/admin/settings` or `PATCH /api/admin/products/<slug>` (wl-17) — see
+`PATCH /api/admin/products/<slug>` (wl-17) — see
 `worklane/products.py` for the on-disk shape of the
 `products.json` overlay.
 
@@ -177,7 +175,7 @@ Three ways to read/write tickets, in order of preference:
 
 Every host that adopts WL is expected to write its own operating profile
 — what agent identity to sign as, which working copy to use, what the
-verification bar is before closing a ticket. Don't skip this: it's what
+verification bar is before closing a work order. Don't skip this: it's what
 keeps multiple agents from clobbering each other's claims.
 
 Start from [HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md), which has
@@ -186,6 +184,6 @@ See PROTOCOL.md §6 (Host Profiles).
 
 ## Read next
 
-- [PROTOCOL.md](PROTOCOL.md) — the normative ticket lifecycle/ownership
+- [PROTOCOL.md](PROTOCOL.md) — the normative work order lifecycle/ownership
   rulebook every agent (yours included) follows.
 - [README.md](README.md) — product overview, quickstart, MCP setup.

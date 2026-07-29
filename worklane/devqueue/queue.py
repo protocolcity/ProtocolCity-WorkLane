@@ -240,6 +240,8 @@ class WorkQueue:
             ]
         candidates = [t for t in candidates if self.is_ready(t)]
         candidates = [t for t in candidates if not task_is_gated(t)]
+        # wl-297: defense-in-depth — umbrella coordination wrappers never dispatch
+        candidates = [t for t in candidates if "umbrella" not in t.labels]
         candidates.sort(key=_priority_key)
         return candidates
 

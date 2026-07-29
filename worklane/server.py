@@ -11,7 +11,7 @@ import os
 import sys
 from typing import List, Optional
 
-from worklane.products import default_product_slug_with_source
+from worklane.products import default_product_slug_with_source, discover_products, wl_data_dir
 from worklane.task_server import create_app
 
 app = create_app()
@@ -49,16 +49,42 @@ def main(argv: Optional[List[str]] = None) -> None:
             sys.exit(1)
         print(report["message"])
         print(
-            f"Demo board: http://127.0.0.1:"
-            f"{os.environ.get('TASK_PORT', '8799')}/admin/tickets/"
-            f"{report['slug']}?view=board"
+            f"Demo data seeded for project '{report['slug']}'. "
+            f"API: http://127.0.0.1:"
+            f"{os.environ.get('TASK_PORT', '8799')}/api/admin/products"
         )
 
     host = os.environ.get("TASK_HOST", "127.0.0.1")
     port = int(os.environ.get("TASK_PORT", "8799"))
     default_slug, default_source = default_product_slug_with_source()
-    print(f"Starting WorkLane board on http://{host}:{port} ...")
+    print(f"Starting WorkLane API server on http://{host}:{port} ...")
     print(f"Default product: {default_slug or '(none)'} (source: {default_source})")
+
+    # Guard: refuse to serve a dead registry (wl-289).
+    # discover_products() is disk-fresh each call, so this reflects the actual
+    # state at bind time rather than the module-level app init.
+    products = discover_products()
+    if not products:
+        data_dir = wl_data_dir()
+        db_files = sorted(data_dir.glob("*.db")) if data_dir.is_dir() else []
+        if db_files:
+            # Stores exist but none resolved — bad products.json or wrong stems
+            print(
+                f"FATAL: {len(db_files)} store(s) exist in {data_dir} but the "
+                f"product registry resolved empty. Aborting — serving an empty "
+                f"registry would break all HTTP consumers. Verify products.json "
+                f"and _IGNORED_DB_STEMS / scratch-glob configuration.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        # No stores in data_dir: fresh install or wrong working directory.
+        print(
+            f"WARNING: product registry empty — no .db stores in {data_dir}. "
+            f"If unexpected, verify WORKLANE_RUNTIME_DIR and that "
+            f"this server is run from the correct checkout.",
+            file=sys.stderr,
+        )
+
     uvicorn.run(app, host=host, port=port)
 
 

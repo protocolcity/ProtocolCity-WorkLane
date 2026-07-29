@@ -159,7 +159,7 @@ class ArchivalHttpTest(unittest.TestCase):
 
         settings = self.client.get("/admin/settings")
         self.assertEqual(settings.status_code, 200)
-        self.assertIn("Done-ticket archival", settings.text)
+        self.assertIn("Done work order archival", settings.text)
         self.assertIn("Compact now", settings.text)
         self.assertIn("tsSettingsCompact", settings.text)
 

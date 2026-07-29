@@ -14,12 +14,25 @@ Law (BluePrint cities + this engine):
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 WORKER_LABEL_RE = re.compile(r"^worker:(.+)$", re.IGNORECASE)
 YOU_KIND_RE = re.compile(r"^you:(note|remind|todo|host)$", re.IGNORECASE)
 NEEDS_ROUTING_LABEL = "needs:routing"
 WORKER_YOU = "worker:you"
+
+
+def _coerce_labels(raw: object) -> List[str]:
+    """Return a clean list of stripped, non-empty label strings from any input.
+
+    Guards the pc-621 incident: an LLM tool call may pass labels as a
+    comma-joined string ("ship,service,worker:you").  Iterating a bare str
+    char-wise destroys the worker seat silently.  A str is always comma-split
+    here; any other iterable has its elements str-coerced normally.
+    """
+    if isinstance(raw, str):
+        return [s.strip() for s in raw.split(",") if s.strip()]
+    return [str(x).strip() for x in (raw or []) if str(x).strip()]
 
 
 def worker_ids_from_labels(labels: Iterable[str]) -> List[str]:
@@ -89,7 +102,7 @@ def ensure_create_labels(
     - If no ``worker:*`` and hired lanes exist and hard_when_hands → error (B).
     - If no ``worker:*`` and no hired lanes → stamp ``needs:routing`` (pre-hire).
     """
-    labs = [str(x).strip() for x in (labels or []) if str(x).strip()]
+    labs = _coerce_labels(labels)
     ids = worker_ids_from_labels(labs)
     if len(ids) > 1:
         return (
@@ -136,7 +149,7 @@ def reconcile_routing_after_mutation(
     - live ticket with zero ``worker:*`` → ensure ``needs:routing``;
     - done/canceled ticket without a seat → leave as-is (not a queue).
     """
-    labs = [str(x).strip() for x in (labels or []) if str(x).strip()]
+    labs = _coerce_labels(labels)
     if has_worker_label(labs):
         cleaned = [x for x in labs if x.lower() != NEEDS_ROUTING_LABEL]
         return cleaned, False, len(cleaned) != len(labs)
@@ -145,3 +158,35 @@ def reconcile_routing_after_mutation(
     if any(x.lower() == NEEDS_ROUTING_LABEL for x in labs):
         return labs, False, False
     return labs + [NEEDS_ROUTING_LABEL], True, False
+
+
+def check_worker_product_mismatch(
+    worker_ids: Iterable[str],
+    ticket_product: str,
+    all_worker_products: Dict[str, str],
+) -> Optional[str]:
+    """Warn when a worker:<id> is registered for a different product (wl-296).
+
+    Returns a warning string listing each mismatch, or None when all workers
+    match or are absent from the roster (roster absence = unknown, not wrong).
+    ``worker:you`` is always skipped — it is a personal human seat, not a
+    roster lane, so no product comparison applies.
+    """
+    mismatches: List[Tuple[str, str]] = []
+    for wid in worker_ids:
+        if wid.lower() == "you":
+            continue
+        registered = all_worker_products.get(wid)
+        if registered and registered != ticket_product:
+            mismatches.append((wid, registered))
+    if not mismatches:
+        return None
+    parts = [
+        f"worker:{wid} is registered for product={registered!r}, not {ticket_product!r}"
+        for wid, registered in mismatches
+    ]
+    return (
+        "worker/product mismatch — this ticket will not appear in the hand's ready feed. "
+        + "; ".join(parts)
+        + ". Move the ticket to the correct store or re-route it."
+    )

@@ -171,6 +171,26 @@ class WorkQueueBehaviorTest(unittest.TestCase):
         ready = WorkQueue(self.tracker).ready(labels=["lane:grok"])
         self.assertEqual([t.id for t in ready], [a.id])
 
+    def test_umbrella_label_excluded_even_if_ungated(self) -> None:
+        # wl-297: umbrella coordination wrappers must not appear in ready feed
+        # regardless of gate state — defense in depth against mis-filed epics.
+        child = self.tracker.create_task(title="child slice")
+        self.tracker.create_task(title="parent epic", labels=["umbrella"])
+
+        ready_ids = {t.id for t in WorkQueue(self.tracker).ready()}
+        self.assertIn(child.id, ready_ids)
+
+    def test_umbrella_label_excluded_stays_out_with_extra_labels(self) -> None:
+        # umbrella label wins even when other labels are present
+        self.tracker.create_task(
+            title="epic with routing",
+            labels=["umbrella", "worker:lili", "process"],
+        )
+        child = self.tracker.create_task(title="real work")
+
+        ready_ids = {t.id for t in WorkQueue(self.tracker).ready()}
+        self.assertEqual(ready_ids, {child.id})
+
 
 class BuildDispatchPromptTest(unittest.TestCase):
     def test_empty(self) -> None:

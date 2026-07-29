@@ -6,16 +6,18 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_workforce(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point the WorkForce lookup at a non-listening address for all tests.
+    """Block the WorkForce lookup and roster fallback for all tests (wl-282, wl-287).
 
-    _workforce_workers_for_product catches all connection errors and returns
-    []; pointing it at a refused port makes every test hermetic against the
-    machine's live WorkForce roster so the suite is green regardless of what
-    is running on port 8797 (wl-282).
+    _workforce_workers_for_product now has two sources: the HTTP API (blocked
+    by pointing WL_WORKFORCE_URL at a refused port) and the local roster file
+    (blocked by clearing WL_WORKFORCE_ROSTER and WORKFORCE_PREDIRTY).  Clearing
+    both keeps every test hermetic against the machine's live roster regardless
+    of what env vars the launch environment exports.
 
     Tests that need a specific roster (test_create_task_routing_warning.py)
-    override WL_WORKFORCE_URL in setUp and/or mock urllib.request.urlopen
-    directly; those overrides take precedence inside the test body and are
-    cleaned up by tearDown before this fixture restores the env.
+    set WL_WORKFORCE_ROSTER explicitly in setUp and clean it up in tearDown;
+    those overrides take precedence and are restored before this fixture runs.
     """
     monkeypatch.setenv("WL_WORKFORCE_URL", "http://127.0.0.1:1")
+    monkeypatch.delenv("WL_WORKFORCE_ROSTER", raising=False)
+    monkeypatch.delenv("WORKFORCE_PREDIRTY", raising=False)

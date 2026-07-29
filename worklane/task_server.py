@@ -172,10 +172,10 @@ def _render_tickets_context_strip() -> str:
 # In a founded city the Tickets dashboard fronts the suite brand
 # ("ProtocolCity — Tickets", engine attributed as a subtitle); a standalone
 # WorkLane install fronts the engine brand ("WorkLane — Tickets").
-# WL_BRAND=city|standalone selects the mode. This internal checkout IS the
-# city instance, so the default here is "city"; the WorkLane public export
-# must default to "standalone" (wl-134 — flip the default in the export).
-_BRAND_MODE = os.environ.get("WL_BRAND", "city")
+# WL_BRAND=city|standalone selects the mode (WL_BRAND is a back-compat alias).
+# This internal checkout IS the city instance, so the default here is "city";
+# the WorkLane public export must default to "standalone" (wl-134).
+_BRAND_MODE = os.environ.get("WL_BRAND") or os.environ.get("WL_BRAND", "city")
 # Sixth naming amendment (founder, 2026-07-15): city D0 mast is
 # "[Folder] Desk" (parity with Office / Roster). Tab <title> keeps the
 # suite · function form. Standalone stays engine-branded.
@@ -302,7 +302,7 @@ def _render_tickets_surface_nav(
             _href(TICKETS_APP_ALL),
             "All",
             cur == TICKETS_APP_ALL.rstrip("/"),
-            "Every ticket across all project stores",
+            "Every work order across all project stores",
             "all",
         )
     ]
@@ -313,7 +313,7 @@ def _render_tickets_surface_nav(
                 _href(dest),
                 spec.display,
                 cur == dest.rstrip("/"),
-                f"{spec.display} tickets ({spec.db_path.name})",
+                f"{spec.display} work orders ({spec.db_path.name})",
                 spec.slug,
             )
         )
@@ -328,7 +328,7 @@ def _render_overview_scope_nav(scope: str) -> str:
             "/admin/overview/all",
             "All",
             (scope or "") == "all" or not scope,
-            "Every ticket across all project stores",
+            "Every work order across all project stores",
             "all",
         )
     ]
@@ -1402,7 +1402,7 @@ def _render_task_relations_panel(
     return (
         f"<ul style='margin:0; padding-left:18px;'>{''.join(rows)}</ul>"
         f"<p class='dim' style='margin:8px 0 0; font-size:var(--fs-sm);'>"
-        f"Skim any linked ticket in the Desk drawer · this page is the power bench."
+        f"Skim any linked work order in the Desk drawer · this page is the power bench."
         f"</p>"
     )
 
@@ -1617,13 +1617,13 @@ def _render_tickets_module() -> str:
 
     tbl = (
         "<table class='tos-table ts-tw-table ts-ticket-recent'>"
-        "<thead><tr><th>Ticket</th><th>Status</th><th>Pri</th><th>Updated</th></tr></thead>"
+        "<thead><tr><th>Work order</th><th>Status</th><th>Pri</th><th>Updated</th></tr></thead>"
         "<tbody>"
         + (
             "".join(rows)
             if rows
             # wl-91: quick-add is gone (wl-26) — don't advertise it.
-            else "<tr><td colspan='4' class='dim'>No open tickets — "
+            else "<tr><td colspan='4' class='dim'>No open work orders — "
             "check the <a href='" + wq_board + "'>Board</a> for Done.</td></tr>"
         )
         + "</tbody></table>"
@@ -1706,7 +1706,7 @@ def _render_activity_chart(tasks: List[Task], *, days: int = 14) -> str:
     first_lbl = day_list[0].strftime("%m-%d")
     last_lbl = day_list[-1].strftime("%m-%d")
     svg = (
-        f"<svg viewBox='0 0 {w} {h}' role='img' aria-label='Ticket activity last {days} days' "
+        f"<svg viewBox='0 0 {w} {h}' role='img' aria-label='Work order activity last {days} days' "
         "style='width:100%;height:auto;display:block;'>"
         "<defs><linearGradient id='tpGrad' x1='0' y1='0' x2='1' y2='0'>"
         "<stop offset='0%' stop-color='var(--accent,#d94f1e)'/><stop offset='100%' stop-color='var(--accent2,#e8622c)'/>"
@@ -1867,7 +1867,7 @@ def _render_breakdown_panels(
     breakdown_body = (
         "<div class='pulse-breakdown'>"
         "<div><div class='pulse-breakdown-title'>By status</div>"
-        + _render_count_bars(status_rows, empty_text="No ticket statuses yet.")
+        + _render_count_bars(status_rows, empty_text="No work order statuses yet.")
         + "</div>"
         "<div><div class='pulse-breakdown-title'>By priority</div>"
         + _render_count_bars(pri_rows, empty_text="No priority data yet.")
@@ -1984,7 +1984,7 @@ def _render_product_tradeos_hub() -> str:
 
     lead = (
         "<p class='ts-ops-lead dim'><strong>tradeOS</strong> is the primary project here. "
-        "This page will aggregate ticket summaries, work-in-flight, ADR links, and other "
+        "This page will aggregate work order summaries, work-in-flight, ADR links, and other "
         "cross-cutting signals as we wire them up.</p>"
     )
     open_app = _task_card(
@@ -2020,7 +2020,7 @@ def _render_product_tradeos_hub() -> str:
 def _render_product_ops_page() -> str:
     task_port = _esc(os.environ.get("TASK_PORT", "8799"))
     body = (
-        "<p class='dim'>The ticket store (<strong>Board</strong> / <strong>Table</strong>) runs on a "
+        "<p class='dim'>The work order store (<strong>Board</strong> / <strong>Table</strong>) runs on a "
         "<strong>separate port</strong> from the host product so the host can restart "
         "without losing the board (ADR-019).</p>"
         f"<p class='dim'>You are on port <code>{task_port}</code> — landing: "
@@ -4198,7 +4198,7 @@ def _render_task_table(
         "<thead><tr>"
         "<th class='tt-c-age' data-tt-key='age'>Age</th>"
         "<th class='tt-c-no' data-tt-key='no'>No.</th>"
-        "<th class='tt-c-ticket' data-tt-key='ticket'>Ticket</th>"
+        "<th class='tt-c-ticket' data-tt-key='ticket'>Work order</th>"
         "<th class='tt-c-labels' data-tt-key='labels'>Labels</th>"
         "<th class='tt-c-owner' data-tt-key='owner'>Owner</th>"
         "<th class='tt-c-status' data-tt-key='status'>Status</th>"
@@ -4748,9 +4748,9 @@ def admin_settings() -> str:
     service_html = (
         "<table class='tos-table'><tbody>"
         f"<tr><th>Port</th><td><code>{_esc(os.environ.get('TASK_PORT', '8799'))}</code> (TASK_HOST/TASK_PORT)</td></tr>"
-        f"<tr><th>Runtime dir</th><td><code>{_esc(str(wl_data_dir().parent))}</code> (WORKLANE_RUNTIME_DIR)</td></tr>"
+        f"<tr><th>Runtime dir</th><td><code>{_esc(str(wl_data_dir().parent))}</code> (WORKLANE_RUNTIME_DIR / WORKLANE_RUNTIME_DIR)</td></tr>"
         f"<tr><th>Data dir</th><td><code>{_esc(str(wl_data_dir()))}</code></td></tr>"
-        "<tr><th>DB overrides</th><td><code>WORKLANE_DB</code> (tradeos store), <code>OPS_TICKETS_DB</code> (legacy)</td></tr>"
+        "<tr><th>DB overrides</th><td><code>WORKLANE_DB</code> / <code>WORKLANE_DB</code> (tradeos store), <code>OPS_TICKETS_DB</code> (legacy)</td></tr>"
         "<tr><th>Board poll</th><td>10s (board JS) · Cockpit refresh 30s</td></tr>"
         "<tr><th>Boot persistence</th><td><code>scripts/install-macos-service.sh install</code> (com.worklane.server LaunchAgent, wl-14)</td></tr>"
         "</tbody></table>"
@@ -4846,7 +4846,7 @@ def admin_settings() -> str:
     body = (
         "<div class='ts-ops-page'>"
         + _task_card("Projects · stores · numbering", products_html)
-        + _task_card("Done-ticket archival", archival_html)
+        + _task_card("Done work order archival", archival_html)
         + _task_card("Identity & enforcement", identity_html)
         + _task_card("Service", service_html)
         + "</div>"
@@ -5224,14 +5224,14 @@ def task_detail(task_id: str) -> str:
     if task is None:
         body = (
             _render_tickets_context_strip()
-            + "<p>No ticket with id <code>"
+            + "<p>No work order with id <code>"
             f"{_esc(task_id)}</code>. "
             f"<a href='{TICKETS_APP_ALL}'>Back to list</a></p>"
             + _client_js()
             + _task_server_extra_js()
         )
         return _task_page(
-            "Ticket not found",
+            "Work order not found",
             body,
             nav_active="work_queue",
             shell="tickets",
@@ -5276,7 +5276,7 @@ def task_detail(task_id: str) -> str:
     if archived:
         archive_banner = (
             "<div class='ts-archive-banner' role='status'>"
-            "Archived (cold storage) — read-only. This ticket was compacted out "
+            "Archived (cold storage) — read-only. This work order was compacted out "
             "of the hot board; restore moves it back via the archival engine."
             "</div>"
         )
@@ -5348,12 +5348,12 @@ def task_detail(task_id: str) -> str:
 def _city_root_path() -> Optional[str]:
     """City root directory, or None when no city is detectable (wl-155).
 
-    WL stays host-neutral: WL_CITY_ROOT env wins; otherwise walk up from this
+    WL stays host-neutral: WL_CITY_ROOT (or WL_CITY_ROOT) env wins; otherwise walk up from this
     repo to the topmost dir carrying an AGENTS.md (the city-root convention).
     A standalone checkout that is its own topmost AGENTS.md dir counts as no
     city — the check silently skips.
     """
-    root = (os.environ.get("WL_CITY_ROOT") or "").strip()
+    root = (os.environ.get("WL_CITY_ROOT") or os.environ.get("WL_CITY_ROOT") or "").strip()
     if not root:
         d = os.path.abspath(_ROOT)
         top = ""
@@ -5489,7 +5489,7 @@ def _dev_status_card(title: str, tasks: List[Task]) -> str:
         body = (
             "<table class='tos-table'>"
             "<thead><tr>"
-            "<th>Ticket</th><th>Priority</th><th>Labels</th><th>Updated</th>"
+            "<th>Work order</th><th>Priority</th><th>Labels</th><th>Updated</th>"
             "</tr></thead>"
             f"<tbody>{rows}</tbody>"
             "</table>"
@@ -5560,8 +5560,8 @@ def _dev_ready_queue(queue: WorkQueue) -> str:
             )
         single = len(batch.tickets) == 1
         title = (
-            f"Batch {idx} · 1 ticket" if single else
-            f"Batch {idx} · {len(batch.tickets)} tickets sharing files"
+            f"Batch {idx} · 1 work order" if single else
+            f"Batch {idx} · {len(batch.tickets)} work orders sharing files"
         )
         task_ids_csv = ",".join(str(t.id) for t in batch.tickets)
         parts.append(
@@ -5572,7 +5572,7 @@ def _dev_ready_queue(queue: WorkQueue) -> str:
             "</header>"
             f"{files_html}"
             "<table class='tos-table'>"
-            "<thead><tr><th>Ticket</th><th>Priority</th><th>Labels</th><th>Updated</th></tr></thead>"
+            "<thead><tr><th>Work order</th><th>Priority</th><th>Labels</th><th>Updated</th></tr></thead>"
             f"<tbody>{rows}</tbody>"
             "</table>"
             "<div class='devq-batch-actions'>"
@@ -5584,8 +5584,8 @@ def _dev_ready_queue(queue: WorkQueue) -> str:
         )
     body = (
         "<p class='devq-ready-intro dim'>"
-        f"{len(ready)} ready ticket(s) in {len(batches)} batch(es). "
-        "Tickets that touch the same files are grouped for one terminal."
+        f"{len(ready)} ready work order(s) in {len(batches)} batch(es). "
+        "Work orders that touch the same files are grouped for one terminal."
         "</p>"
         + "".join(parts)
     )
@@ -5628,7 +5628,7 @@ def _dev_blocked_card(queue: WorkQueue) -> str:
 
 def _dev_shutdown_card() -> str:
     body = (
-        "<p class='dim'>Walks every in-progress ticket, scans <code>git log</code> "
+        "<p class='dim'>Walks every in-progress work order, scans <code>git log</code> "
         "for matching commits, and writes a closeout comment via the active "
         "ProjectTracker.</p>"
         "<p class='dim'>Trigger explicitly:</p>"
@@ -5793,8 +5793,8 @@ def _task_server_extra_css() -> str:
 
 # Directory-board doors (pc-37 case #4): mode-aware — a standalone WorkLane
 # install is ONE room and shows no doors to uninstalled rooms.
-_CITYHALL_URL = os.environ.get("WL_CITYHALL_URL", "http://127.0.0.1:8796")
-_WORKFORCE_URL = os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")
+_CITYHALL_URL = os.environ.get("WL_CITYHALL_URL") or os.environ.get("WL_CITYHALL_URL", "http://127.0.0.1:8796")
+_WORKFORCE_URL = os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")
 
 
 _DESK_SCENE_CSS = (_SURFACES_DESK / "desk-scene.css").read_text(encoding="utf-8")  # wl-222
@@ -6014,9 +6014,9 @@ def admin_desk() -> str:
 # this page, oc-15's daily founder brief, and city hall (reporting
 # doctrine, wl-139: engines compute facts, dashboards render).
 
-_REPORT_WINDOW_DAYS = int(os.environ.get("WL_REPORT_WINDOW_DAYS", "7"))
-_REPORT_AGING_DAYS = int(os.environ.get("WL_REPORT_AGING_DAYS", "7"))
-_REPORT_PRUNE_QUIET_HOURS = int(os.environ.get("WL_REPORT_PRUNE_QUIET_HOURS", "72"))
+_REPORT_WINDOW_DAYS = int(os.environ.get("WL_REPORT_WINDOW_DAYS") or os.environ.get("WL_REPORT_WINDOW_DAYS", "7"))
+_REPORT_AGING_DAYS = int(os.environ.get("WL_REPORT_AGING_DAYS") or os.environ.get("WL_REPORT_AGING_DAYS", "7"))
+_REPORT_PRUNE_QUIET_HOURS = int(os.environ.get("WL_REPORT_PRUNE_QUIET_HOURS") or os.environ.get("WL_REPORT_PRUNE_QUIET_HOURS", "72"))
 
 
 def _report_verdict(filed: int, signed: int, backlog: int, over_aging: int) -> str:

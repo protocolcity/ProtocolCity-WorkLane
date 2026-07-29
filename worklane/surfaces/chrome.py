@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 
 # WL_BRAND=city (suite install) or standalone (public WorkLane install).
-# Internal checkout defaults to "city"; public export flips to "standalone"
-# (wl-134).
-_BRAND_MODE: str = os.environ.get("WL_BRAND", "city")
+# WL_BRAND is a silent back-compat alias. Internal checkout defaults to
+# "city"; public export flips to "standalone" (wl-134).
+_BRAND_MODE: str = os.environ.get("WL_BRAND") or os.environ.get("WL_BRAND", "city")
 
 # Sixth naming amendment (2026-07-15): city D0 mast is "[Folder] Desk".
 _BRAND_NAME: str = (

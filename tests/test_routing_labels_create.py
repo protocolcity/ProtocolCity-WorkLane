@@ -84,6 +84,42 @@ class EnsureCreateLabelsTest(unittest.TestCase):
         self.assertFalse(stamped)  # already present
         self.assertEqual(labs, [NEEDS_ROUTING_LABEL])
 
+    # -- pc-621 regression: string labels must never be char-iterated --------
+
+    def test_string_labels_with_worker_parsed_correctly(self) -> None:
+        # Simulates an LLM tool call passing labels="a,b,worker:x" as a bare str.
+        labs, stamped, err = ensure_create_labels(
+            "a,b,worker:x",
+            hired_hands=["worker:x"],
+        )
+        self.assertIsNone(err)
+        self.assertFalse(stamped)
+        self.assertEqual(labs, ["a", "b", "worker:x"])
+        self.assertTrue(has_worker_label(labs))
+
+    def test_string_labels_pre_hire_stamps_needs_routing(self) -> None:
+        labs, stamped, err = ensure_create_labels("area,suite")
+        self.assertIsNone(err)
+        self.assertTrue(stamped)
+        self.assertIn(NEEDS_ROUTING_LABEL, labs)
+        self.assertIn("area", labs)
+        self.assertIn("suite", labs)
+
+    def test_string_labels_hard_b_rejects_without_seat(self) -> None:
+        labs, stamped, err = ensure_create_labels(
+            "area,suite",
+            hired_hands=["worker:drew"],
+        )
+        self.assertIsNotNone(err)
+        self.assertIn("worker:* required", err or "")
+
+    def test_string_labels_comma_only_treated_as_empty(self) -> None:
+        # A string of only commas/spaces → no valid labels → pre-hire stamp.
+        labs, stamped, err = ensure_create_labels(", ,  ,")
+        self.assertIsNone(err)
+        self.assertTrue(stamped)
+        self.assertEqual(labs, [NEEDS_ROUTING_LABEL])
+
 
 if __name__ == "__main__":
     unittest.main()

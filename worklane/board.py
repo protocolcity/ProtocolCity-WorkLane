@@ -1494,7 +1494,7 @@ def _client_js() -> str:
         }).join('');
         box.hidden = false;
       } else if (typeof showToast === 'function') {
-        showToast('No ticket #' + v + ' found', 'error');
+        showToast('No work order #' + v + ' found', 'error');
       }
     } catch (e) {
       if (typeof showToast === 'function') showToast('Network error', 'error');

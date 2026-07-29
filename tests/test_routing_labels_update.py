@@ -49,6 +49,23 @@ class ReconcileRoutingAfterMutationTest(unittest.TestCase):
         self.assertFalse(stamped)
         self.assertNotIn(NEEDS_ROUTING_LABEL, labs)
 
+    # -- pc-621 regression: string input must never be char-iterated ---------
+
+    def test_string_labels_with_worker_drops_stamp(self) -> None:
+        labs, stamped, dropped = reconcile_routing_after_mutation(
+            "worker:carl,suite," + NEEDS_ROUTING_LABEL
+        )
+        self.assertFalse(stamped)
+        self.assertTrue(dropped)
+        self.assertIn("worker:carl", labs)
+        self.assertNotIn(NEEDS_ROUTING_LABEL, labs)
+
+    def test_string_labels_no_worker_stamps(self) -> None:
+        labs, stamped, dropped = reconcile_routing_after_mutation("area,suite")
+        self.assertTrue(stamped)
+        self.assertFalse(dropped)
+        self.assertIn(NEEDS_ROUTING_LABEL, labs)
+
 
 class UpdateLabelsRestampTest(unittest.TestCase):
     """Tracker-level regression: the pc-603 create-with-worker → remove path."""

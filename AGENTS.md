@@ -34,7 +34,7 @@ these rows; entries missing here render unmapped.
 
 ## Boundary rules
 
-- **WL does not render inside host product pages.** UI lives at WL's own port (default 8799).
+- **WL does not render inside host product pages.** The engine exposes a REST API at port 8799 (API-only); the visual surface is the BluePrint suite at :8801.
 - **WL does not depend on host product uptime.** It is a long-lived local service.
 - **WL is not a SaaS dependency.** Everything is file-backed SQLite on the local machine.
 - **Any city project may connect to WL as a client** — via the CLI or the HTTP API. Connecting is optional city infrastructure; WL never reaches back into the connecting project.

@@ -61,6 +61,7 @@ Multi-agent routing on WL is a negative-space default, not an explicit gate. Thi
 - **`worker:*` labels are the exclusive hand feed.** A `worker:nala` or
   `worker:felix` label places the ticket on that hand's schedule. Do not put two
   `worker:*` labels on one ticket.
+- **Cross-store mismatch guard (wl-296, 2026-07-29).** On create and on label-add, if the roster lists `worker:<id>` with a `queue_url` for a *different* product than the ticket's store, the engine emits a `routing_warning` (the ticket would never reach that hand's feed). Set env `WL_WORKER_PRODUCT_HARD_REJECT=1` to hard-reject instead. `worker:you` is exempt — it is a personal seat, not a roster lane.
 - **>24h no-activity demotion.** A `worker:*` label with no activity for more than 24 hours is treated as stale: the default-worker pool may pick the ticket up as if it were unlabeled. Narrower-scope agents don't need to strip the label themselves — the pool's own scan handles the fallback.
 - **Why labels aren't mandatory.** Requiring a worker label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
 
@@ -108,6 +109,9 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
     - **Mass cancel forbidden** unless You **explicitly** order it (named ids or “cancel all of X”). One cancel needs a one-ticket rationale; bulk needs explicit founder language.
     - **Wrong cancel → reopen.** If an agent mass-canceled without that order, reopen and restore the board.
 11. **Sticky residual work · board is shared memory** (2026-07-26, founder — invisible close-outs) —
+12. **Umbrella epic discipline — file gated, never claim** (2026-07-29, wl-297) — A ticket that decomposes into child slices is a coordination wrapper, not a unit of dispatchable work. Two hard rules:
+    - **File epics gated.** Before filing children, set `gate_type=deferred` + label `umbrella` on the parent. An epic filed without these is a filing error; the hand that encounters it must park it (`gate_type=deferred` + `umbrella` label, no claim), not work it. Claiming an umbrella without shipping the entire phase it represents is a process violation.
+    - **Do not claim umbrella tickets.** A ticket labeled `umbrella` or `epic`, or whose deferred gate note contains "umbrella" or "epic", is a wrapper — take a child slice instead. Engine defense-in-depth: the ready feed (`wl_ready` / `WorkQueue.ready()`) excludes all `umbrella`-labeled tickets regardless of gate state, so a mis-filed epic also drops out of dispatch automatically.
     The work-order board is how You and agents coordinate. **Closing a ticket hides the work.** Residual work that still needs a return visit must remain **visible as open tickets**, not only as prose in a `Completed:` or `Follow-ups:` note.
     - **`Follow-ups: none` means none.** Not “tabled in my head,” not “hard-stops listed in the close comment,” not “re-file later.”
     - **If residual work exists at close:** either (a) **keep the parent open** and comment progress, or (b) **file child tickets first** (imperative titles, parent linked with `blocks:parent` / body “Parent: **id**”), list those ids under `Follow-ups:`, **then** close only the slice that actually shipped.
@@ -250,6 +254,7 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
    The `git status --porcelain` check from step 1 is where you catch this: if
    it shows dirty files outside your ticket's scope, leave them unstaged and
    name them in your close-out comment rather than silently sweeping them in.
+7. **One active publish gate per dest repo (wl-298, 2026-07-29).** When filing a `FOUNDER · publish <repo> sync` ticket, first search open `gate_type=human` tickets for any with the same title pattern (`FOUNDER · publish <repo>`). If prior ones exist: post a `superseded by <new-id> HEAD <sha>` comment on each and cancel them. The newest HEAD is the only actionable one; stale gates dilute For You attention and shadow the live action. `export_worklane.sh` (and sibling export scripts) warn about prior gates when the local WL server is reachable.
 
 ### 5.2) Identity and attribution (all agents)
 

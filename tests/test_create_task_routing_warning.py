@@ -56,6 +56,8 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
                 "WL_PROJECT",
                 "WL_PRODUCT",
                 "WL_WORKFORCE_URL",
+                "WL_WORKFORCE_ROSTER",
+                "WORKFORCE_PREDIRTY",
             )
         }
         os.environ["WORKLANE_RUNTIME_DIR"] = str(self.root)
@@ -67,6 +69,8 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         os.environ.pop("WL_PROJECT", None)
         os.environ.pop("WL_PRODUCT", None)
         os.environ["WL_WORKFORCE_URL"] = "http://127.0.0.1:8797"
+        os.environ.pop("WL_WORKFORCE_ROSTER", None)
+        os.environ.pop("WORKFORCE_PREDIRTY", None)
 
         SQLiteTracker(db_path=self.root / "data" / "worklane.db", product_default="product:worklane")
 
@@ -168,6 +172,57 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertIsNotNone(data.get("routing_warning"))
         self.assertNotIn("clerk", data["routing_warning"] or "")
+        self.assertIn("needs:routing", data["task"].get("labels") or [])
+
+
+    def test_roster_fallback_rejects_when_api_down(self):
+        """Roster fallback (wl-287): hard-B rejection when API fails but roster names a hand."""
+        roster_file = self.root / "roster.json"
+        roster_file.write_text(json.dumps({
+            "workers": {
+                "tess": {
+                    "kind": "lane",
+                    "queue_url": (
+                        "http://127.0.0.1:8799/api/admin/tasks/ready"
+                        "?product=worklane&label=worker:tess"
+                    ),
+                }
+            }
+        }))
+        os.environ["WL_WORKFORCE_ROSTER"] = str(roster_file)
+        import urllib.error
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+            r = self._post(labels=["intake"])
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:* required", err)
+        self.assertIn("worker:tess", err)
+        self.assertIn("worker:you", err)
+
+    def test_roster_fallback_soft_stamp_when_no_hands_for_product(self):
+        """Roster fallback: soft stamp when roster exists but has no hand for this store."""
+        roster_file = self.root / "roster.json"
+        roster_file.write_text(json.dumps({
+            "workers": {
+                "carl": {
+                    "kind": "lane",
+                    "queue_url": (
+                        "http://127.0.0.1:8799/api/admin/tasks/ready"
+                        "?product=tradeos&label=worker:carl"
+                    ),
+                }
+            }
+        }))
+        os.environ["WL_WORKFORCE_ROSTER"] = str(roster_file)
+        import urllib.error
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+            r = self._post(labels=["intake"])
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertTrue(data["ok"])
+        self.assertIsNotNone(data.get("routing_warning"))
         self.assertIn("needs:routing", data["task"].get("labels") or [])
 
 

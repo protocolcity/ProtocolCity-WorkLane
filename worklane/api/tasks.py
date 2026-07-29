@@ -88,29 +88,132 @@ router = APIRouter()
 DEFAULT_AGENT_ID = "founder"
 
 
+def _workforce_roster_path() -> Optional[str]:
+    """Return the local WorkForce roster.json path from env or auto-discovery.
+
+    Checks WL_WORKFORCE_ROSTER (or WL_WORKFORCE_ROSTER) first, then derives the path from
+    WORKFORCE_PREDIRTY ($ROOT/local/run/predirty-*.txt → $ROOT/local/roster.json).
+    Returns None when neither source is configured.
+    """
+    explicit = (os.environ.get("WL_WORKFORCE_ROSTER") or os.environ.get("WL_WORKFORCE_ROSTER", "")).strip()
+    if explicit:
+        return explicit
+    predirty = os.environ.get("WORKFORCE_PREDIRTY", "").strip()
+    if predirty:
+        try:
+            return str(Path(predirty).parent.parent / "roster.json")
+        except Exception:
+            return None
+    return None
+
+
 def _workforce_workers_for_product(product_slug: str) -> List[str]:
     """Return lane worker names hired for *product_slug* per the WorkForce roster.
 
-    Queries WL_WORKFORCE_URL/api/workers with a 1-second timeout.  Returns an
-    empty list on any network / parse error — the caller must never block on
+    Primary: queries WL_WORKFORCE_URL (or WL_WORKFORCE_URL)/api/workers with a 1-second timeout.
+    Fallback (wl-287): when the API is unreachable, reads the local roster
+    file at the path from WL_WORKFORCE_ROSTER (or WL_WORKFORCE_ROSTER) or derived from WORKFORCE_PREDIRTY.
+    Returns an empty list on all failures — the caller must never block on
     this (wl-256: soft warning only, never a gate).
 
     A worker is considered hired for the product when its ``queue_url`` contains
     ``product=<slug>`` (the convention all current lanes follow).
     """
-    url = os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797") + "/api/workers"
+    needle = "product=" + product_slug
+    url = (os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")) + "/api/workers"
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=1) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+        workers = data.get("workers") or []
+        if isinstance(workers, list):
+            return [
+                "worker:" + w["name"]
+                for w in workers
+                if w.get("kind") == "lane" and needle in (w.get("queue_url") or "")
+            ]
+        if isinstance(workers, dict):
+            return [
+                "worker:" + name
+                for name, w in workers.items()
+                if isinstance(w, dict) and w.get("kind") == "lane"
+                and needle in (w.get("queue_url") or "")
+            ]
     except Exception:
+        pass
+    # Fallback: local roster.json when the WorkForce service is unavailable.
+    roster_path = _workforce_roster_path()
+    if not roster_path:
         return []
-    needle = "product=" + product_slug
-    return [
-        "worker:" + w["name"]
-        for w in (data.get("workers") or [])
-        if w.get("kind") == "lane" and needle in (w.get("queue_url") or "")
-    ]
+    try:
+        with open(roster_path) as fh:
+            data = json.load(fh)
+        workers = data.get("workers") or {}
+        if isinstance(workers, dict):
+            return [
+                "worker:" + name
+                for name, w in workers.items()
+                if isinstance(w, dict) and w.get("kind") == "lane"
+                and needle in (w.get("queue_url") or "")
+            ]
+    except Exception:
+        pass
+    return []
+
+
+_PRODUCT_FROM_URL_RE = re.compile(r"[?&]product=([^&]+)")
+
+
+def _workforce_products_for_workers() -> Dict[str, str]:
+    """Return {worker_id: product_slug} for all known lane workers (wl-296).
+
+    Inverse of _workforce_workers_for_product — used for cross-product guard.
+    Same API / roster fallback chain; returns empty dict on all failures so
+    the caller is never blocked.
+    """
+    url = (os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")) + "/api/workers"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        workers = data.get("workers") or []
+        result: Dict[str, str] = {}
+        if isinstance(workers, list):
+            for w in workers:
+                if w.get("kind") != "lane":
+                    continue
+                m = _PRODUCT_FROM_URL_RE.search(w.get("queue_url") or "")
+                if m:
+                    result[w["name"]] = m.group(1)
+        elif isinstance(workers, dict):
+            for name, w in workers.items():
+                if not isinstance(w, dict) or w.get("kind") != "lane":
+                    continue
+                m = _PRODUCT_FROM_URL_RE.search(w.get("queue_url") or "")
+                if m:
+                    result[name] = m.group(1)
+        return result
+    except Exception:
+        pass
+    roster_path = _workforce_roster_path()
+    if not roster_path:
+        return {}
+    try:
+        with open(roster_path) as fh:
+            data = json.load(fh)
+        workers = data.get("workers") or {}
+        result = {}
+        if isinstance(workers, dict):
+            for name, w in workers.items():
+                if not isinstance(w, dict) or w.get("kind") != "lane":
+                    continue
+                m = _PRODUCT_FROM_URL_RE.search(w.get("queue_url") or "")
+                if m:
+                    result[name] = m.group(1)
+        return result
+    except Exception:
+        pass
+    return {}
 
 
 def _tracker_db_path(tracker: Any) -> Path:
@@ -467,7 +570,7 @@ async def api_create_task(request: Request) -> JSONResponse:
     routing_warning: Optional[str] = None
     if stamped_nr:
         routing_warning = (
-            "no worker:* label and no hired hands yet — stamped needs:routing "
+            "no worker:* label and no known hands for this store — stamped needs:routing "
             "so unrouted ready stays visible. After hire, create requires "
             "worker:<persona> or worker:you. " + (
                 "Hired hands: " + ", ".join(hired) + ". "
@@ -482,6 +585,22 @@ async def api_create_task(request: Request) -> JSONResponse:
             + ", ".join(hired)
             + ". Add one (or worker:you)."
         )
+
+    # wl-296: cross-product mismatch guard — warn/reject when the worker's
+    # roster queue_url points at a different product than the ticket's store.
+    from worklane.routing_labels import (  # noqa: PLC0415
+        check_worker_product_mismatch,
+        worker_ids_from_labels,
+    )
+    _wids = worker_ids_from_labels(labels)
+    if _wids:
+        _all_wp = _workforce_products_for_workers()
+        _mismatch = check_worker_product_mismatch(_wids, surface, _all_wp)
+        if _mismatch:
+            _hard = os.environ.get("WL_WORKER_PRODUCT_HARD_REJECT", "").lower() in ("1", "true", "yes")
+            if _hard:
+                return JSONResponse({"ok": False, "error": _mismatch}, status_code=400)
+            routing_warning = (_mismatch + " | " + routing_warning) if routing_warning else _mismatch
 
     if surface in ("ops", "op"):
         tracker = get_ops_ticket_tracker()
@@ -1125,12 +1244,27 @@ async def api_update_labels(task_id: str, request: Request) -> JSONResponse:
 
     surf, raw_id, tracker = _resolve_product_tracker(task_id)
 
+    # wl-296: cross-product mismatch guard on newly added worker:* labels.
+    from worklane.routing_labels import (  # noqa: PLC0415
+        check_worker_product_mismatch,
+        worker_ids_from_labels,
+    )
+    _added_wids = worker_ids_from_labels(add_labels)
+    _mismatch_warn: Optional[str] = None
+    if _added_wids:
+        _all_wp = _workforce_products_for_workers()
+        _mismatch_warn = check_worker_product_mismatch(_added_wids, surf, _all_wp)
+        if _mismatch_warn:
+            _hard = os.environ.get("WL_WORKER_PRODUCT_HARD_REJECT", "").lower() in ("1", "true", "yes")
+            if _hard:
+                return JSONResponse({"ok": False, "error": _mismatch_warn}, status_code=400)
+
     updated = tracker.update_labels(raw_id, add=add_labels, remove=remove_labels)
     if updated is None:
         return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
     out = updated.to_dict()
     out["id"] = task_id
-    return JSONResponse({"ok": True, "task": out})
+    return JSONResponse({"ok": True, "task": out, "routing_warning": _mismatch_warn})
 
 
 _CLOSEOUT_HINT = (
@@ -1169,7 +1303,7 @@ def _misattributed_owner(author: str, body: str) -> Optional[str]:
     Returns the mismatched agent id when a comment signed with the default
     identity (``DEFAULT_AGENT_ID``) carries an ``Owner: <agent>`` marker for
     a *different* agent — the signature the wl-39 misconfiguration produces
-    (launcher never exported ``WL_AGENT_ID``, so an autonomous agent's
+    (launcher never exported ``WL_AGENT_ID`` / ``WL_AGENT_ID``, so an autonomous agent's
     writes fall back to the default and silently mis-sign). Returns None for
     normal interactive use of the default identity.
     """
@@ -1204,7 +1338,7 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
     if marked:
         logger.warning(
             "default-identity write looks autonomous: author=%r task=%s "
-            "claims Owner: %r — launcher likely never exported WL_AGENT_ID "
+            "claims Owner: %r — launcher likely never exported WL_AGENT_ID/WL_AGENT_ID "
             "(wl-39/wl-50)",
             author, task_id, marked,
         )

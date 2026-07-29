@@ -258,18 +258,18 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--author",
-        default=os.environ.get("WL_AGENT_ID", ""),
-        help="Canonical agent id for signed writes (or set WL_AGENT_ID)",
+        default=os.environ.get("WL_AGENT_ID") or os.environ.get("WL_AGENT_ID", ""),
+        help="Canonical agent id for signed writes (or set WL_AGENT_ID / WL_AGENT_ID)",
     )
     p.add_argument(
         "--project",
-        default=(os.environ.get("WL_PROJECT") or os.environ.get("WL_PRODUCT") or default_product_slug()),
-        help="Default project store when tools omit project (or set WL_PROJECT)",
+        default=(os.environ.get("WL_PROJECT") or os.environ.get("WL_PRODUCT") or os.environ.get("WL_PROJECT") or os.environ.get("WL_PRODUCT") or default_product_slug()),
+        help="Default project store when tools omit project (or set WL_PROJECT / WL_PROJECT)",
     )
     p.add_argument(
         "--product",
         default="",
-        help="Back-compat alias for --project (or set WL_PRODUCT)",
+        help="Back-compat alias for --project (or set WL_PRODUCT / WL_PRODUCT)",
     )
     return p.parse_args(argv)
 
@@ -281,7 +281,7 @@ def main(argv: Optional[list] = None) -> None:
         print(
             "Error: author identity required at connect time.\n"
             "  python -m worklane.mcp --author <agent-id>\n"
-            "  or set WL_AGENT_ID=<agent-id>\n"
+            "  or set WL_AGENT_ID=<agent-id> (or WL_AGENT_ID)\n"
             "Canonical ids: work-pool, founder, cursor, grok, "
             "cowork, wl-pool (PROTOCOL.md §5.2).",
             file=sys.stderr,

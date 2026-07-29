@@ -51,12 +51,14 @@ class TPHandlers:
         if not author:
             raise ValueError(
                 "author identity is required at connect time "
-                "(--author / WL_AGENT_ID) — PROTOCOL.md §3.8"
+                "(--author / WL_AGENT_ID or WL_AGENT_ID) — PROTOCOL.md §3.8"
             )
         self.author = author
         self.default_product = (
             (
                 default_product
+                or os.environ.get("WL_PROJECT")
+                or os.environ.get("WL_PRODUCT")
                 or os.environ.get("WL_PROJECT")
                 or os.environ.get("WL_PRODUCT")
                 or default_product_slug()
@@ -296,7 +298,7 @@ class TPHandlers:
         except Exception:
             hired = []
         labs, stamped_nr, route_err = ensure_create_labels(
-            list(labels or []), hired_hands=hired, hard_when_hands=True
+            labels, hired_hands=hired, hard_when_hands=True
         )
         if route_err:
             raise ToolError(route_err)
@@ -889,7 +891,7 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
             "Project store slug (e.g. tradeos, worklane) — canonical "
             "name (wl-64). 'product' is a silent back-compat alias for this "
             "same field; passing both with different values is an error. "
-            "Omit to use connect-time default (WL_PROJECT or tradeos). "
+            "Omit to use connect-time default (WL_PROJECT / WL_PROJECT or tradeos). "
             "wl_list/wl_ready/wl_mine/wl_counts also accept 'all'."
         ),
     }

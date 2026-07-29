@@ -1,8 +1,7 @@
 """SQLiteTracker — ticket store under ``worklane/local/data/``.
 
 Default path: ``<main-worktree>/worklane/local/data/tradeos.db``
-(override with ``WORKLANE_DB``; legacy ``TRADEOS_TRACKER_DB``
-still supported). Product / planning tickets live here. Builder-scoped
+(override with ``WORKLANE_DB``; or ``WORKLANE_DB`` / legacy ``TRADEOS_TRACKER_DB``). Product / planning tickets live here. Builder-scoped
 tickets use a separate file — see :func:`core.web.routes.admin_tasks.get_ops_ticket_tracker`.
 
 SEO-171 introduced local task tracking; ADR-019/021 split product vs operations
@@ -225,7 +224,7 @@ class SQLiteTracker(ProjectTracker):
     Pass ``db_path`` to override the DB location (tests do this). The
     default is :data:`DEFAULT_DB_PATH`
     (``worklane/local/data/tradeos.db`` under the main worktree root
-    unless ``WORKLANE_DB`` or legacy ``TRADEOS_TRACKER_DB`` is set).
+    unless ``WORKLANE_DB`` / ``WORKLANE_DB`` / legacy ``TRADEOS_TRACKER_DB`` is set).
     """
 
     name = "sqlite"
@@ -239,6 +238,7 @@ class SQLiteTracker(ProjectTracker):
         if db_path is None:
             env = (
                 os.environ.get("WORKLANE_DB")
+                or os.environ.get("WORKLANE_DB")
                 or os.environ.get("TRADEOS_TRACKER_DB")
             )
             if env:

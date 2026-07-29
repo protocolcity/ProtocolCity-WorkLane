@@ -25,7 +25,7 @@ Or PyPI: `pip install protocolcity protocolcity-worklane protocolcity-workforce`
 
 ```bash
 pip install protocolcity-worklane
-worklane          # server + board UI → http://127.0.0.1:8799
+worklane          # start the API server (http://127.0.0.1:8799)
 tk --help         # ticket CLI (wl is a short alias)
 ```
 
@@ -41,7 +41,7 @@ cloud dependency.
 WorkLane is a **protocol plus a reference implementation**. The protocol
 ([PROTOCOL.md](PROTOCOL.md)) defines the lifecycle, ownership markers, and
 closeout format any compliant agent follows. The implementation ships
-everything you need to run it: a FastAPI server with a live board UI, an MCP
+everything you need to run it: a FastAPI server with a REST API, an MCP
 server so agents get native tools, a stdlib-only CLI, and per-project SQLite
 stores.
 
@@ -55,11 +55,10 @@ shared backlog daily for months.
 git clone https://github.com/protocolcity/ProtocolCity-WorkLane && cd ProtocolCity-WorkLane
 pip install -e .
 
-worklane                     # server + board UI on http://127.0.0.1:8799
+worklane                     # start the API server (http://127.0.0.1:8799)
 ```
 
-Open http://localhost:8799/admin/overview — the Overview shows live metrics,
-in-flight work, and throughput for one project store or all of them.
+Health-check: `curl -s localhost:8799/api/admin/products` — lists all project stores. Use `tk --help` for the ticket CLI or connect agents via MCP.
 
 File your first ticket:
 
@@ -168,7 +167,7 @@ spreadsheet" — is what most multi-agent teams actually run on today. WorkLane
 is that glue, extracted from production, hardened, and written down as a
 protocol.
 
-The humans keep the board UI and the final say. The agents get a queue they
+The humans keep the final say. The agents get a queue they
 can't cheat.
 
 ## Layout & configuration

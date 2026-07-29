@@ -25,10 +25,10 @@ Usage:
     wl import <FILE> --project <slug>
     wl doctor [--path PATH] [--project SLUG] [--json]
 
-Base URL:  WL_BASE_URL env var, default http://127.0.0.1:8799
-Project:   --project flag, default WL_PROJECT env var, else server default
-           (--product / WL_PRODUCT remain silent back-compat aliases, wl-64)
-Signing:   --author flag or WL_AGENT_ID env var (PROTOCOL.md §3.8) — required
+Base URL:  WL_BASE_URL env var (or WL_BASE_URL), default http://127.0.0.1:8799
+Project:   --project flag, default WL_PROJECT env var (or WL_PROJECT), else server default
+           (--product / WL_PRODUCT / WL_PRODUCT are silent back-compat aliases, wl-64)
+Signing:   --author flag or WL_AGENT_ID env var (or WL_AGENT_ID; PROTOCOL.md §3.8) — required
            for `comment` (the API rejects unsigned writes with a 400)
 """
 from __future__ import annotations
@@ -49,7 +49,7 @@ _STATUS_CHOICES = ("backlog", "in_progress", "in_review", "done", "canceled")
 
 
 def _base_url() -> str:
-    return (os.environ.get("WL_BASE_URL") or "http://127.0.0.1:8799").rstrip("/")
+    return (os.environ.get("WL_BASE_URL") or os.environ.get("WL_BASE_URL") or "http://127.0.0.1:8799").rstrip("/")
 
 
 class ApiError(RuntimeError):
@@ -98,7 +98,7 @@ def _fmt_labels(labels: List[str]) -> str:
 
 
 def _resolve_author(cli_value: str) -> str:
-    return (cli_value or os.environ.get("WL_AGENT_ID") or "").strip()
+    return (cli_value or os.environ.get("WL_AGENT_ID") or os.environ.get("WL_AGENT_ID") or "").strip()
 
 
 def _resolve_project_flag(args: argparse.Namespace) -> str:
@@ -291,8 +291,8 @@ def cmd_demo(args: argparse.Namespace) -> None:
         print(f"  status:  {', '.join(parts)}")
     if not report.get("skipped"):
         print(
-            "Open the board: http://127.0.0.1:8799/admin/tickets/"
-            f"{report['slug']}?view=board"
+            f"Use `tk list --product {report['slug']}` to browse tickets, "
+            "or connect via MCP."
         )
         print(
             "Claim the backlog ticket labeled 'Claim me' via MCP wl_claim "
@@ -443,13 +443,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--description", default="")
     p_create.add_argument(
         "--project",
-        default=os.environ.get("WL_PROJECT"),
-        help="Ticket surface/project slug (required; canonical name, wl-64; or set WL_PROJECT)",
+        default=os.environ.get("WL_PROJECT") or os.environ.get("WL_PROJECT"),
+        help="Ticket surface/project slug (required; canonical name, wl-64; or set WL_PROJECT / WL_PROJECT)",
     )
     p_create.add_argument(
         "--product",
-        default=os.environ.get("WL_PRODUCT", ""),
-        help="Back-compat alias for --project (or set WL_PRODUCT)",
+        default=os.environ.get("WL_PRODUCT") or os.environ.get("WL_PRODUCT", ""),
+        help="Back-compat alias for --project (or set WL_PRODUCT / WL_PRODUCT)",
     )
     p_create.add_argument("--priority", type=int, choices=[1, 2, 3, 4])
     p_create.add_argument("--label", action="append", metavar="LABEL")
@@ -459,8 +459,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--status", choices=_STATUS_CHOICES)
     p_list.add_argument("--label")
     p_list.add_argument("--priority", type=int, choices=[1, 2, 3, 4])
-    p_list.add_argument("--project", default=os.environ.get("WL_PROJECT"), help="Canonical project slug (wl-64; or set WL_PROJECT)")
-    p_list.add_argument("--product", default=os.environ.get("WL_PRODUCT", ""))
+    p_list.add_argument("--project", default=os.environ.get("WL_PROJECT") or os.environ.get("WL_PROJECT"), help="Canonical project slug (wl-64; or set WL_PROJECT / WL_PROJECT)")
+    p_list.add_argument("--product", default=os.environ.get("WL_PRODUCT") or os.environ.get("WL_PRODUCT", ""))
     p_list.add_argument("--limit", type=int)
     p_list.add_argument("--json", action="store_true")
     p_list.add_argument("-v", "--verbose", action="store_true")
@@ -499,7 +499,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("id")
     p_status.add_argument("new_status", choices=_STATUS_CHOICES)
     p_status.add_argument("--author", default="",
-                          help="Agent id signing the transition (or WL_AGENT_ID)")
+                          help="Agent id signing the transition (or WL_AGENT_ID / WL_AGENT_ID)")
 
     p_label = sub.add_parser("label", help="Add or remove labels")
     p_label.add_argument("id")
@@ -520,7 +520,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_demo.add_argument(
         "--product",
-        default=os.environ.get("WL_DEMO_PRODUCT", "demo"),
+        default=os.environ.get("WL_DEMO_PRODUCT") or os.environ.get("WL_DEMO_PRODUCT", "demo"),
         help="Back-compat alias for --project (default: demo; protected real products refused)",
     )
     p_demo.add_argument(
@@ -545,12 +545,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.add_argument(
         "--project",
-        default=os.environ.get("WL_PROJECT"),
-        help="Project slug to check for a registered store (default: guessed from --path; or set WL_PROJECT)",
+        default=os.environ.get("WL_PROJECT") or os.environ.get("WL_PROJECT"),
+        help="Project slug to check for a registered store (default: guessed from --path; or set WL_PROJECT / WL_PROJECT)",
     )
     p_doctor.add_argument(
         "--product",
-        default=os.environ.get("WL_PRODUCT", ""),
+        default=os.environ.get("WL_PRODUCT") or os.environ.get("WL_PRODUCT", ""),
         help="Back-compat alias for --project",
     )
     p_doctor.add_argument("--json", action="store_true")
@@ -561,13 +561,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_export.add_argument(
         "--project",
-        default=os.environ.get("WL_PROJECT"),
-        help="Project slug (required; canonical name, wl-64; or set WL_PROJECT)",
+        default=os.environ.get("WL_PROJECT") or os.environ.get("WL_PROJECT"),
+        help="Project slug (required; canonical name, wl-64; or set WL_PROJECT / WL_PROJECT)",
     )
     p_export.add_argument(
         "--product",
-        default=os.environ.get("WL_PRODUCT", ""),
-        help="Back-compat alias for --project (or set WL_PRODUCT)",
+        default=os.environ.get("WL_PRODUCT") or os.environ.get("WL_PRODUCT", ""),
+        help="Back-compat alias for --project (or set WL_PRODUCT / WL_PRODUCT)",
     )
     p_export.add_argument("--out", metavar="FILE", help="Write JSONL to FILE (default: stdout)")
 
@@ -578,13 +578,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("file", help="JSONL file to import")
     p_import.add_argument(
         "--project",
-        default=os.environ.get("WL_PROJECT"),
-        help="Destination project slug (required; canonical name, wl-64; or set WL_PROJECT)",
+        default=os.environ.get("WL_PROJECT") or os.environ.get("WL_PROJECT"),
+        help="Destination project slug (required; canonical name, wl-64; or set WL_PROJECT / WL_PROJECT)",
     )
     p_import.add_argument(
         "--product",
-        default=os.environ.get("WL_PRODUCT", ""),
-        help="Back-compat alias for --project (or set WL_PRODUCT)",
+        default=os.environ.get("WL_PRODUCT") or os.environ.get("WL_PRODUCT", ""),
+        help="Back-compat alias for --project (or set WL_PRODUCT / WL_PRODUCT)",
     )
 
     return parser

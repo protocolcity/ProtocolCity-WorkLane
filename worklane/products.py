@@ -82,7 +82,7 @@ def _is_source_checkout() -> bool:
 
 
 def wl_data_dir() -> Path:
-    """Runtime data dir (honors WORKLANE_RUNTIME_DIR).
+    """Runtime data dir (honors WORKLANE_RUNTIME_DIR; or WORKLANE_RUNTIME_DIR).
 
     Source checkouts keep the existing in-repo default so hosts already
     running from a checkout see no change. An installed package (wl-124:
@@ -90,7 +90,7 @@ def wl_data_dir() -> Path:
     package) falls back to a user-level directory instead of writing
     inside site-packages, where it would be wiped on reinstall/upgrade.
     """
-    override = (os.environ.get("WORKLANE_RUNTIME_DIR") or "").strip()
+    override = (os.environ.get("WORKLANE_RUNTIME_DIR") or os.environ.get("WORKLANE_RUNTIME_DIR") or "").strip()
     if override:
         return Path(override) / "data"
     if _is_source_checkout():
@@ -136,37 +136,64 @@ def _config_overrides() -> Dict[str, Dict[str, str]]:
 def default_product_slug_with_source() -> Tuple[str, str]:
     """Resolve the host's bootstrap-default product slug and where it came from.
 
-    Order: ``WL_DEFAULT_PROJECT`` env (canonical, always wins),
-    ``WL_DEFAULT_PRODUCT`` (silent back-compat alias for the same), the
-    ``"default"`` key in the ``products.json`` config overlay (an operator's
-    persisted choice), ``WL_PROJECT`` env (the client-scoping convention,
-    used here only as a fresh-install fallback when no config overlay has
-    picked a default yet), ``WL_PRODUCT`` (silent back-compat alias), then
-    the first product discovered on disk.
+    Order: ``WL_DEFAULT_PROJECT`` env (preferred canonical, always wins),
+    ``WL_DEFAULT_PRODUCT`` (silent back-compat alias for the same),
+    ``WL_DEFAULT_PROJECT`` / ``WL_DEFAULT_PRODUCT`` (legacy aliases, still read),
+    the ``"default"`` key in the ``products.json`` config overlay (an operator's
+    persisted choice), ``WL_PROJECT`` / ``WL_PRODUCT`` / ``WL_PROJECT`` /
+    ``WL_PRODUCT`` env (the client-scoping convention, used here only as a
+    fresh-install fallback when no config overlay has picked a default yet),
+    then the first product discovered on disk.
 
-    The config overlay outranks ``WL_PROJECT`` deliberately: ``WL_PROJECT``
-    is a *client* identity var (which store a given CLI/MCP session talks
-    to), not server config. A lane exporting it and then restarting the
+    The config overlay outranks ``WL_PROJECT`` / ``WL_PROJECT`` deliberately:
+    those are *client* identity vars (which store a given CLI/MCP session talks
+    to), not server config. A lane exporting them and then restarting the
     server (wl-68, 2026-07-11) must not silently override an operator's
     configured default — that flips routing for every other client. Fresh
     installs with no ``products.json`` yet still get a sane default via the
-    ``WL_PROJECT`` fallback, and ``WL_DEFAULT_PROJECT`` remains available as
-    an explicit, intentional override for either case.
+    ``WL_PROJECT`` / ``WL_PROJECT`` fallback, and ``WL_DEFAULT_PROJECT`` /
+    ``WL_DEFAULT_PROJECT`` remain available as explicit, intentional overrides.
 
     Empty slug only on a fresh install with nothing configured and nothing
     on disk yet — callers treat that as "no default product" rather than
     substituting a literal.
     """
-    val = (os.environ.get("WL_DEFAULT_PROJECT") or os.environ.get("WL_DEFAULT_PRODUCT") or "").strip().lower()
+    val = (
+        os.environ.get("WL_DEFAULT_PROJECT")
+        or os.environ.get("WL_DEFAULT_PRODUCT")
+        or os.environ.get("WL_DEFAULT_PROJECT")
+        or os.environ.get("WL_DEFAULT_PRODUCT")
+        or ""
+    ).strip().lower()
     if val:
-        src = "WL_DEFAULT_PROJECT" if os.environ.get("WL_DEFAULT_PROJECT") else "WL_DEFAULT_PRODUCT"
+        if os.environ.get("WL_DEFAULT_PROJECT"):
+            src = "WL_DEFAULT_PROJECT"
+        elif os.environ.get("WL_DEFAULT_PRODUCT"):
+            src = "WL_DEFAULT_PRODUCT"
+        elif os.environ.get("WL_DEFAULT_PROJECT"):
+            src = "WL_DEFAULT_PROJECT"
+        else:
+            src = "WL_DEFAULT_PRODUCT"
         return val, f"env:{src}"
     configured = _raw_products_config().get("default")
     if isinstance(configured, str) and configured.strip():
         return configured.strip().lower(), "config:products.json"
-    val = (os.environ.get("WL_PROJECT") or os.environ.get("WL_PRODUCT") or "").strip().lower()
+    val = (
+        os.environ.get("WL_PROJECT")
+        or os.environ.get("WL_PRODUCT")
+        or os.environ.get("WL_PROJECT")
+        or os.environ.get("WL_PRODUCT")
+        or ""
+    ).strip().lower()
     if val:
-        src = "WL_PROJECT" if os.environ.get("WL_PROJECT") else "WL_PRODUCT"
+        if os.environ.get("WL_PROJECT"):
+            src = "WL_PROJECT"
+        elif os.environ.get("WL_PRODUCT"):
+            src = "WL_PRODUCT"
+        elif os.environ.get("WL_PROJECT"):
+            src = "WL_PROJECT"
+        else:
+            src = "WL_PRODUCT"
         return val, f"env:{src} (fresh-install fallback)"
     data = wl_data_dir()
     if data.is_dir():
@@ -197,12 +224,12 @@ def live_feed_product_slug() -> str:
     This is a documented host-specific integration point (wl-59), not a
     generic upstream-feed abstraction — generalize only if a second host
     ever needs an equivalent feed. Configurable via the
-    ``WL_LIVE_FEED_PRODUCT`` env var or the ``live_feed_product`` key in
+    ``WL_LIVE_FEED_PRODUCT`` env var (or ``WL_LIVE_FEED_PRODUCT``) or the ``live_feed_product`` key in
     the ``products.json`` config overlay; defaults to ``"tradeos"`` (the
     only host that has ever used this feature) so an unconfigured install
     behaves exactly as before.
     """
-    override = (os.environ.get("WL_LIVE_FEED_PRODUCT") or "").strip().lower()
+    override = (os.environ.get("WL_LIVE_FEED_PRODUCT") or os.environ.get("WL_LIVE_FEED_PRODUCT") or "").strip().lower()
     if override:
         return override
     configured = _raw_products_config().get("live_feed_product")
