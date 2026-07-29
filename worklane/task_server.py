@@ -5381,16 +5381,29 @@ def _city_folder_name() -> str:
     return name
 
 
+def _hood_slugify(name: str) -> str:
+    """Folder basename → store slug (pc-313 / wl-270 twin of protocolcity.slugs).
+
+    WorkLane must not import protocolcity. Lowercase; whitespace runs → one
+    hyphen. ``Work Folder`` / ``SE Local HC`` → ``work-folder`` / ``se-local-hc``.
+    """
+    return "-".join(str(name).strip().lower().split())
+
+
 def _city_neighborhood_slugs() -> Optional[set]:
-    """Neighborhood folder names (lowercased) at the city root, or None when
-    no city is detectable (wl-155).
+    """Neighborhood store slugs at the city root, or None when no city is
+    detectable (wl-155 · wl-270).
+
+    Uses the same hyphen-slug rule as BluePrint ``slugify`` (pc-313), not bare
+    ``name.lower()`` — otherwise spaced folders create stores that never match
+    the warning check and emit false "no neighborhood folder" warnings.
     """
     root = _city_root_path()
     if not root:
         return None
     try:
         return {
-            name.lower()
+            _hood_slugify(name)
             for name in os.listdir(root)
             if os.path.isdir(os.path.join(root, name))
             and os.path.isfile(os.path.join(root, name, "AGENTS.md"))

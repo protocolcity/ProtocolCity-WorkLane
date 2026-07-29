@@ -211,16 +211,19 @@ async def api_create_product(request: Request) -> JSONResponse:
             {"ok": False, "error": "project store created but not discoverable — check runtime dir"},
             status_code=500,
         )
-    # wl-155: soft founding-path guardrail — the city joins store to
-    # neighborhood by slug == dirname.lower(); warn (never refuse) when no
-    # such folder exists. Skips silently outside a city (host-neutral).
+    # wl-155 / wl-270: soft founding-path guardrail — city joins store to
+    # neighborhood by slug == slugify(dirname) (pc-313: lower + whitespace→-);
+    # warn (never refuse) when no such folder exists. Skips silently outside
+    # a city (host-neutral).
     warning = None
     hoods = _city_neighborhood_slugs()
     if hoods is not None and slug not in hoods:
         warning = (
-            f"store created, but no neighborhood folder named {slug!r} exists "
-            "at the city root — the ProtocolCity map won't show a building "
-            "until one does (the slug must equal the folder name, lowercased)"
+            f"store created, but no neighborhood folder whose slug is {slug!r} "
+            "exists at the city root — the ProtocolCity map won't show a "
+            "building until one does (slug = folder name lowercased with "
+            "whitespace runs collapsed to hyphens; e.g. 'Work Folder' → "
+            "'work-folder')"
         )
     return JSONResponse(
         {
@@ -448,31 +451,37 @@ async def api_create_task(request: Request) -> JSONResponse:
     surface = project_val or legacy_surface_val or default_product_slug()
     surface = str(surface).strip().lower()
 
-    # Create-path routing (2026-07-27): stamp needs:routing when no worker:*.
-    # WorkForce schedules only drain labeled feeds — silent unlabeled ready is a bug.
+    # Create-path routing (wl-274 B): hard-require worker:* when hired hands exist;
+    # pre-hire still soft-stamps needs:routing. worker:you is a valid seat.
     from worklane.routing_labels import ensure_create_labels, has_worker_label
 
-    labels, stamped_nr = ensure_create_labels(labels)
+    hired = _workforce_workers_for_product(surface)
+    labels, stamped_nr, route_err = ensure_create_labels(
+        labels, hired_hands=hired, hard_when_hands=True
+    )
+    if route_err:
+        return JSONResponse(
+            {"ok": False, "error": route_err},
+            status_code=400,
+        )
     routing_warning: Optional[str] = None
-    if stamped_nr or not has_worker_label(labels):
-        hired = _workforce_workers_for_product(surface)
-        if stamped_nr:
-            routing_warning = (
-                "no worker:* label — stamped needs:routing so unrouted ready "
-                "stays visible"
+    if stamped_nr:
+        routing_warning = (
+            "no worker:* label and no hired hands yet — stamped needs:routing "
+            "so unrouted ready stays visible. After hire, create requires "
+            "worker:<persona> or worker:you. " + (
+                "Hired hands: " + ", ".join(hired) + ". "
+                if hired
+                else ""
             )
-            if hired:
-                routing_warning += (
-                    "; hired hands for this product: " + ", ".join(hired)
-                )
-            routing_warning += ". Add worker:<id> to place on a hand feed."
-        elif hired:
-            # wl-256 residual: worker present path shouldn't hit; keep soft warn
-            routing_warning = (
-                "no worker:* routing label — this product has hired hands: "
-                + ", ".join(hired)
-                + ". Add one to ensure the ticket reaches its queue."
-            )
+        )
+    elif not has_worker_label(labels) and hired:
+        # Should not reach here under hard B
+        routing_warning = (
+            "no worker:* routing label — this product has hired hands: "
+            + ", ".join(hired)
+            + ". Add one (or worker:you)."
+        )
 
     if surface in ("ops", "op"):
         tracker = get_ops_ticket_tracker()

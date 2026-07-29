@@ -287,8 +287,19 @@ class TPHandlers:
 
         from worklane.routing_labels import ensure_create_labels
 
-        labs, stamped_nr = ensure_create_labels(list(labels or []))
         slug, tr = self._tracker(product)
+        hired: list = []
+        try:
+            from worklane.api.tasks import _workforce_workers_for_product
+
+            hired = _workforce_workers_for_product(slug)
+        except Exception:
+            hired = []
+        labs, stamped_nr, route_err = ensure_create_labels(
+            list(labels or []), hired_hands=hired, hard_when_hands=True
+        )
+        if route_err:
+            raise ToolError(route_err)
         task = tr.create_task(
             title=title,
             description=description,
@@ -303,8 +314,9 @@ class TPHandlers:
         if stamped_nr:
             tr.add_comment(
                 str(task.id),
-                "Routing: no worker:<id> on create — stamped needs:routing "
-                "(schedule feeds only drain labeled hands; route with wl_label).",
+                "Routing: no worker:<id> on create (pre-hire) — stamped "
+                "needs:routing. After hands exist, create requires worker:* "
+                "or worker:you (wl-274 B).",
                 author=self.author,
             )
         # re-fetch for updated_at after intake comment
@@ -312,9 +324,11 @@ class TPHandlers:
         out = {"ok": True, "task": self._task_dict(slug, fresh)}
         if stamped_nr:
             out["routing_warning"] = (
-                "no worker:* label — stamped needs:routing so unrouted ready "
-                "stays visible; add worker:<id> to place on a hand feed"
+                "no worker:* and no hired hands yet — stamped needs:routing. "
+                "After hire, pass worker:<persona> or worker:you on create."
             )
+            if hired:
+                out["hired_hands"] = hired
         return out
 
     def wl_claim(

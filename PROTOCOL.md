@@ -46,33 +46,44 @@ Multi-agent routing on WL is a negative-space default, not an explicit gate. Thi
 - **WorkForce scheduled hands drain labeled feeds only (BluePrint / roster law).**
   Each hand's `queue_url` filters `worker:<id>`. Unlabeled ready is **not**
   drained by cron — it shows as Map “No hand” / `needs:routing` until routed.
-  **Create path (MCP / CLI / HTTP):** if no `worker:*` is supplied, the engine
-  **auto-stamps `needs:routing`** so silence cannot hide unrouted work
-  (`routing_labels.ensure_create_labels`, 2026-07-27). Prefer stamping
-  `worker:<id>` at create.
+  **Create path (MCP / CLI / HTTP) — hard B (wl-274, 2026-07-28):** when the
+  product has ≥1 hired **lane** hand, create **requires** exactly one
+  `worker:*` seat (`worker:<persona>` or **`worker:you`** personal seat).
+  Omit seat → create **rejected** with an error listing valid seats (never
+  invent a hand). **Pre-hire** (no hired lanes): auto-stamp `needs:routing`
+  so silence cannot hide unrouted work. Never two `worker:*` labels. Area
+  tags are not routing. Grammar: ProtocolCity
+  `docs/specs/WORK_ORDER_LABELS.md`.
 - **Unlabeled historical note (pre-roster exclusivity).** Older PROCESS text
   treated unlabeled as “default worker pool scans full backlog.” That remains
   true only for **manual** `wl_ready` without a label filter — **not** for
   WorkForce launchd/schedule drains. New cities: always route.
-- **`worker:*` labels are the exclusive hand feed.** A `worker:beatriz` or
-  `worker:kc` label places the ticket on that hand's schedule. Do not put two
+- **`worker:*` labels are the exclusive hand feed.** A `worker:nala` or
+  `worker:felix` label places the ticket on that hand's schedule. Do not put two
   `worker:*` labels on one ticket.
 - **>24h no-activity demotion.** A `worker:*` label with no activity for more than 24 hours is treated as stale: the default-worker pool may pick the ticket up as if it were unlabeled. Narrower-scope agents don't need to strip the label themselves — the pool's own scan handles the fallback.
 - **Why labels aren't mandatory.** Requiring a worker label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
 
-This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Beatriz's `--label worker:beatriz`, Kc's `--label worker:kc`) are narrowings of the default-worker pool's scan, never replacements for it.
+This is deliberately a fail-safe, not a strict routing table: per-agent scan filters (Nala's `--label worker:nala`, Felix's `--label worker:felix`) are narrowings of the default-worker pool's scan, never replacements for it.
 
-One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok/Kc) may, when its queue is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-worker pool, and an agent without a self-service clause in its profile (e.g. Cursor/Beatriz, §6.1) has none.
+One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines **objective, mechanically checkable self-service criteria** (§6.2 Grok/Felix) may, when its queue is empty, take an unlabeled ticket that passes every criterion — self-labeling it first so the triage decision is recorded on the ticket. Self-service never changes ownership defaults: unlabeled tickets still belong to the default-worker pool, and an agent without a self-service clause in its profile (e.g. Cursor/Nala, §6.1) has none.
 
 ## 3) Rules
 
 1. **No orphan work** — any TODO, gap, fix, or refactor starts with a ticket.
+1b. **Entry/host chat that implements is not exempt** (wl-273 / pc-589) —
+    interactive sessions (Claude / Grok / Cursor / …) that **change the
+    system** must create or claim a work order as they go. Pure advice is
+    free; shipping code/docs/config without a ticket id is a process
+    violation. Host-as-hand claims as **you** (or the citizen id). Coord
+    still must not steal `worker:*` feeds when hands are armed.
 2. **Single live owner** — `in_progress` is one ticket per agent at a time.
 3. **Status is truth** — ticket status matches actual work state.
 4. **Comment trail** — blockers, decisions, and completion evidence go in comments.
 5. **Close with links** — the completion comment must include at least one navigable reference (PR URL, merge commit, doc path).
 6. **Declare dependencies** — use `Depends on #NNN` in the description so the queue guard can freeze siblings.
 7. **Recommendation-default decisions** (founder-ratified 2026-07-09) — when a ticket hits a decision point, the agent records its recommendation as the decision (`DECISION (recommendation-default): <choice> — <why>` comment) and keeps working; the founder reviews and can veto after the fact. `needs:founder-decision` is reserved for the escalation class only: real-money gates (LIVE flips, risk-limit widening, new broker/credential enablement, moving money, gate bypasses), reversals of ratified ADRs/product direction, and public-facing or expensive-to-reverse actions. Everything else — including strategy-intent on paper/bench plays and exposure-reducing enforcement — proceeds on the recommendation. Decisions must be logged in ticket comments so the veto window is real.
+7a. **File = decided** (BluePrint product law, 2026-07-28) — when **You** file a work order (ordinary backlog, not a `FOUNDER ·` publish/gate ticket), that **is** the decision. Hands and coord sessions **work it** — they do not re-ask for permission, re-open design debate, or park as “waiting for You to pick.” Route with `worker:<id>` so schedules drain. **For You** remains scarce (rule 9): roadblocks only. This is expected behavior in every WorkLane-backed city, not host-private air traffic.
 8. **Sign every comment** (2026-07-10) — pass the author flag (`--author "<agent-id>"` on the CLI, `author` on the API) on every comment you post, using your canonical agent id from §5.2. The `Owner:` line inside the body documents the claim; the author *field* is what the board byline, filters, and ghost-audits key on. The two must carry the same id. An unsigned (empty-author) comment is a process violation, not a default.
 9. **Gate classes — Ready · For You · Deferred** (engine wl-261, 2026-07-27; For You law wl-257, 2026-07-16) — Three attention/ready classes govern how a ticket surfaces to You:
 
@@ -254,56 +265,62 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 
 | Agent id | Who |
 | --- | --- |
-| `morgan` | **RETIRED 2026-07-27** — succeeded by `sincere`. Was: Morgan · Lead Developer (succeeded the original host-dispatch lane 2026-07-14). History retained — comments signed by `morgan` remain valid record. |
-| `sincere` | Sincere · Lead Developer. Succeeds `morgan` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier the original host-dispatch lane also valid history). Host-repo generalist desk. |
+| `morgan` | **RETIRED 2026-07-27** — succeeded by `sincere` (itself succeeded by `garfield` 2026-07-28). Was: Morgan · Lead Developer (succeeded the original host-dispatch lane 2026-07-14). History retained — comments signed by `morgan` remain valid record. |
+| `sincere` | **RETIRED 2026-07-28** — succeeded by `garfield`. Was: Sincere · Lead Developer (succeeded `morgan` 2026-07-27). History retained — comments signed by `sincere` remain valid record. |\n| `garfield` | Garfield · Lead Developer. Succeeds `sincere` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `morgan` / the original host-dispatch lane also valid history). Host-repo generalist desk. Papers at `the host product/workers/garfield-lane/`. |
 | `founder-terminal` | **You present** — founder-driven interactive sessions on any host (Claude Desktop/Code, Grok Build/TUI, Cursor chat, Codex interactive, etc.). The AI product is the **hand**, not the actor. See §5.2.1. |
-| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis` (itself succeeded by `beatriz` 2026-07-27). Was: Cursor editor lane (§6.1). History retained. **Do not** use as MCP author for founder-present Cursor chat (that is `founder-terminal`). |
-| `ellis` | **RETIRED 2026-07-27** — succeeded by `beatriz`. Was: Ellis · Technical Writer (succeeded `cursor` 2026-07-14). History retained — comments signed by `ellis` remain valid record. |
-| `beatriz` | Beatriz · Technical Writer. Succeeds `ellis` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `cursor` also valid history). Lane-labeled / `worker:beatriz` tickets; contract at host repo `workers/beatriz-lane/`. |
-| `grok` | **RETIRED 2026-07-14** — succeeded by `kai` (itself succeeded by `kc` 2026-07-27). Was: Grok CLI lane (§6.2). History retained. **Do not** use as MCP author for founder-present Grok sessions (that is `founder-terminal`). |
-| `kai` | **RETIRED 2026-07-27** — succeeded by `kc`. Was: Kai · Software Engineer (succeeded `grok` 2026-07-14). History retained — comments signed by `kai` remain valid record. |
-| `kc` | Kc · Software Engineer. Succeeds `kai` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `grok` also valid history). Lane-labeled / `worker:kc` tickets; contract at host repo `workers/kc-lane/`. |
+| `cursor` | **RETIRED 2026-07-14** — succeeded by `ellis` (itself succeeded by `beatriz` 2026-07-27 → `nala` 2026-07-28). Was: Cursor editor lane (§6.1). History retained. **Do not** use as MCP author for founder-present Cursor chat (that is `founder-terminal`). |
+| `ellis` | **RETIRED 2026-07-27** — succeeded by `beatriz` (itself succeeded by `nala` 2026-07-28). Was: Ellis · Technical Writer (succeeded `cursor` 2026-07-14). History retained — comments signed by `ellis` remain valid record. |
+| `beatriz` | **RETIRED 2026-07-28** — succeeded by `nala`. Was: Beatriz · Technical Writer (succeeded `ellis` 2026-07-27). History retained — comments signed by `beatriz` remain valid record. |\n| `nala` | Nala · Technical Writer. Succeeds `beatriz` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `ellis` / `cursor` also valid history). Lane-labeled / `worker:nala` tickets; contract at host repo `workers/nala-lane/`. |
+| `grok` | **RETIRED 2026-07-14** — succeeded by `kai` (itself succeeded by `kc` 2026-07-27 → `felix` 2026-07-28). Was: Grok CLI lane (§6.2). History retained. **Do not** use as MCP author for founder-present Grok sessions (that is `founder-terminal`). |
+| `kai` | **RETIRED 2026-07-27** — succeeded by `kc` (itself succeeded by `felix` 2026-07-28). Was: Kai · Software Engineer (succeeded `grok` 2026-07-14). History retained — comments signed by `kai` remain valid record. |
+| `kc` | **RETIRED 2026-07-28** — succeeded by `felix`. Was: Kc · Software Engineer (succeeded `kai` 2026-07-27). History retained — comments signed by `kc` remain valid record. |\n| `felix` | Felix · Software Engineer. Succeeds `kc` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `kai` / `grok` also valid history). Lane-labeled / `worker:felix` tickets; contract at host repo `workers/felix-lane/`. |
 | `cowork` | Claude cowork sessions |
 | `claude-worklane` | **RETIRED 2026-07-14** — succeeded by `tess`. Was: Claude CLI dispatch, WL's own tickets (§8; fka `wl-pool`, renamed 2026-07-11). History retained. |
-| `tess` | **RETIRED 2026-07-27** — succeeded by `tierra`. Was: Tess · Desk Engineer, WL self-host lane (§8; succeeded `claude-worklane` 2026-07-14). History retained. |
-| `tierra` | Tierra · Desk Engineer. Succeeds `tess` (retired 2026-07-27, history retained — comments signed by the old id remain valid record). WL self-host lane; contract at `workers/tierra/CONTRACT.md`. |
+| `tess` | **RETIRED 2026-07-27** — succeeded by `tierra` (itself succeeded by `lili` 2026-07-28). Was: Tess · Desk Engineer, WL self-host lane (§8; succeeded `claude-worklane` 2026-07-14). History retained. |
+| `tierra` | **RETIRED 2026-07-28** — succeeded by `lili`. Was: Tierra · Desk Engineer (succeeded `tess` 2026-07-27). History retained — comments signed by `tierra` remain valid record. |
+| `lili` | Lili · Desk Engineer. Succeeds `tierra` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `tess` / `claude-worklane` also valid history). WL self-host lane; contract at `workers/lili/CONTRACT.md`. |
 | `doc-audit` | Monthly documentation-audit job (Claude CLI, unattended; added 2026-07-11) — files tickets and commits doc patches; never claims, reserves, or closes backlog tickets (a report job, not a dispatch lane). Patrol — function-named; not retired. |
 | `backlog-snapshot` | Night-auditor patrol job — read-only backlog report; never claims. Function-named; not retired. |
 | `visual-sweep` | Night-inspector patrol job — automated visual sweep; never claims. Function-named; not retired. |
-| `codex` | **RETIRED 2026-07-14** — succeeded by `carl` (itself succeeded by `kayda` 2026-07-27). Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
-| `carl` | **RETIRED 2026-07-27** for the host product Web Designer seat (succeeded by `kayda`; earlier `codex` 2026-07-14 — history retained). Re-hired 2026-07-27 as Carl · Software Engineer at ProtocolCity (renamed pc-532, succeeds `drew`). Papers at `ProtocolCity/workers/carl/`. Do not use `carl` for the host product. |
-| `kayda` | Kayda · Web Designer. Succeeds `carl` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `codex` also valid history). Visuals/content production; contract at host repo `workers/kayda-lane/`. |
+| `codex` | **RETIRED 2026-07-14** — succeeded by `carl` (itself succeeded by `kayda` 2026-07-27 → `cheshire` 2026-07-28). Was: Codex CLI lane (§6.3; added 2026-07-11). History retained. |
+| `carl` | **RETIRED 2026-07-27** for the host product Web Designer seat (succeeded by `kayda` → `cheshire` 2026-07-28; earlier `codex` 2026-07-14 — history retained). Re-hired 2026-07-27 as Carl · Software Engineer at ProtocolCity (renamed pc-532, succeeds `drew`). Papers at `ProtocolCity/workers/carl/`. Do not use `carl` for the host product. |
+| `kayda` | **RETIRED 2026-07-28** — succeeded by `cheshire`. Was: Kayda · Web Designer (succeeded `carl` 2026-07-27). History retained — comments signed by `kayda` remain valid record. |\n| `cheshire` | Cheshire · Web Designer. Succeeds `kayda` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `carl` / `codex` also valid history). Visuals/content production; contract at host repo `workers/cheshire-lane/`. |
 | `riley` | **RETIRED 2026-07-27** — succeeded by `trinity`. Was: Riley · City Hall Desk, ProtocolCity docs/planning (succeeded `claude-protocolcity` 2026-07-14). History retained — comments signed by `riley` remain valid record. |
 | `trinity` | Trinity · ProtocolCity. Succeeds `riley` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-protocolcity` also valid history). ProtocolCity docs/planning desk. Papers at `ProtocolCity/workers/trinity/`. |
 | `drew` | **RETIRED 2026-07-27** — succeeded by `carl` (ProtocolCity Software Engineer, pc-532). Was: Drew · Software Engineer, ProtocolCity code lane (new hire 2026-07-21). History retained — comments signed by `drew` remain valid record. |
 | `bryce` | Bryce · Suite Engineer. ProtocolCity suite/citylens/CLI packaging lane (renamed pc-533 2026-07-27; succeeded the ProtocolCity `codex` CLI slot — distinct from the the host product `codex` seat retired 2026-07-14). Papers at `ProtocolCity/workers/bryce/`. |
 | `claude-socials` | **RETIRED 2026-07-14** — succeeded by `iris`. Was: Claude CLI lane, socials drafting desk (added 2026-07-14). History retained. |
-| `iris` | **RETIRED 2026-07-27** — succeeded by `kenzie`. Was: Iris · Content Writer (succeeded `claude-socials` 2026-07-14). History retained — comments signed by `iris` remain valid record. |
-| `kenzie` | Kenzie · Content Writer. Succeeds `iris` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-socials` also valid history). Socials drafts-only (posting is founder-only). Papers at `socials/workers/kenzie/`. |
-| `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto` (itself succeeded by `melanie` 2026-07-27). Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
-| `otto` | **RETIRED 2026-07-27** — succeeded by `melanie`. Was: Otto · Systems Engineer (succeeded `claude-orchestrator` 2026-07-14). History retained — comments signed by `otto` remain valid record. |
-| `melanie` | Melanie · Systems Engineer. Succeeds `otto` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-orchestrator` also valid history). WorkForce engine/board/schedule; never touches `local/` state, the daemon service, or live dispatches; papers at `workforce/workers/melanie/`. |
-| `neo` | **RETIRED 2026-07-27** — succeeded by `aniya`. Was: Neo · Market Analyst (new hire 2026-07-14, no predecessor). History retained — comments signed by `neo` remain valid record. |
-| `aniya` | Aniya · Market Analyst. Succeeds `neo` (retired 2026-07-27, history retained — comments signed by the old id remain valid record). the host product specialist lane. Papers at `the host product/workers/neo-lane/` (pending rename). |
+| `iris` | **RETIRED 2026-07-27** — succeeded by `kenzie`, then `mittens` (so-17). Was: Iris · Content Writer (succeeded `claude-socials` 2026-07-14). History retained — comments signed by `iris` remain valid record. |
+| `kenzie` | **RETIRED 2026-07-28** — succeeded by `mittens` (so-17 / pc-564 cat slate). Was: Kenzie · Content Writer (succeeded `iris` 2026-07-27, so-16). History retained — comments signed by `kenzie` remain valid record; earlier `iris` / `claude-socials` also valid history. |
+| `mittens` | Mittens · Content Writer. Succeeds `kenzie` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `iris` / `claude-socials` also valid history). Socials drafts-only (posting is founder-only). Papers at `socials/workers/mittens/`. Feed `worker:mittens`. |
+| `claude-orchestrator` | **RETIRED 2026-07-14** — succeeded by `otto` (then `melanie` 2026-07-27, then `salem` 2026-07-28). Was: Claude CLI lane, orchestrator/WorkForce backlog (added 2026-07-14, oc-12). History retained. |
+| `otto` | **RETIRED 2026-07-27** — succeeded by `melanie` (itself succeeded by `salem` 2026-07-28). Was: Otto · Systems Engineer (succeeded `claude-orchestrator` 2026-07-14). History retained — comments signed by `otto` remain valid record. |
+| `melanie` | **RETIRED 2026-07-28** — succeeded by `salem`. Was: Melanie · Systems Engineer (succeeded `otto` 2026-07-27). History retained — comments signed by `melanie` remain valid record. |
+| `salem` | Salem · Systems Engineer. Succeeds `melanie` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `otto` / `claude-orchestrator` also valid history). WorkForce engine/board/schedule; never touches `local/` state, the daemon service, or live dispatches; papers at `workforce/workers/salem/`. |
+| `neo` | **RETIRED 2026-07-27** — succeeded by `aniya` (itself succeeded by `maru` 2026-07-28). Was: Neo · Market Analyst (new hire 2026-07-14, no predecessor). History retained — comments signed by `neo` remain valid record. |
+| `aniya` | **RETIRED 2026-07-28** — succeeded by `maru`. Was: Aniya · Market Analyst (succeeded `neo` 2026-07-27). History retained — comments signed by `aniya` remain valid record. |\n| `maru` | Maru · Market Analyst. Succeeds `aniya` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `neo` also valid history). the host product specialist lane. Papers at `the host product/workers/maru-lane/`. |
 | `wren` | Wren (new hire 2026-07-14 — no predecessor). Specialist / future desk; papers when armed. |
 | `city-steward` | City Steward — cross-store stewardship patrol (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/city-steward/. |
 | `founder-brief` | Founder Brief — daily city reporting job (job, not a claiming lane; new hire 2026-07-14 — no predecessor). Papers at orchestrator/workers/founder-brief/. |
 | `correspondent` | Correspondent — city-wide reporting job (job, not a claiming lane; hired pc-32, armed pc-502 2026-07-26). Signs briefs only; never claims backlog. Canonical papers: `.protocolcity/ops/workers/correspondent/` (pc-461). |
-| `reed` | **RETIRED 2026-07-27** — succeeded by `zach` (conn-7). Was: Reed · Connector Desk (new hire 2026-07-27, no predecessor). History retained — comments signed by `reed` remain valid record. |
-| `zach` | Zach · Connector Desk. Succeeds `reed` (retired 2026-07-27, history retained — comments signed by the old id remain valid record). Connector product generalist — design, law, bootstrap. Papers at `connector/workers/zach/`. Feed `worker:zach`. |
+| `github-desk` | GitHub Desk · Public Issues — BP suite public issue **intake + close** job (job, not a claiming lane; hired 2026-07-27). Exclusive owner of `gh issue comment/close` on protocolcity org issue boards for BluePrint/WorkLane/WorkForce/homebrew-tap. Never implements suite code; never pushes public org git. Canonical papers: `.protocolcity/ops/workers/github-desk/`. |
+| `ship-desk` | Ship Desk · Releases — BP suite **daily release** job (job, not a claiming lane; hired 2026-07-27). Runs `scripts/stage_daily_ship.sh` with launch-ramp default `SHIP_AUTO=1` (PyPI + homebrew-tap + local `blueprint update`). Opt out `SHIP_AUTO=0` for stage-only. Canonical papers: `.protocolcity/ops/workers/ship-desk/`. |
+| `reed` | **RETIRED 2026-07-27** — succeeded by `zach` (conn-7), then `jiji` (conn-8). Was: Reed · Connector Desk (new hire 2026-07-27, no predecessor). History retained — comments signed by `reed` remain valid record. |
+| `zach` | **RETIRED 2026-07-28** — succeeded by `jiji` (conn-8 / pc-564 cat slate). Was: Zach · Connector Desk (succeeded `reed` 2026-07-27, conn-7). History retained — comments signed by `zach` remain valid record. |
+| `jiji` | Jiji · Connector Desk. Succeeds `zach` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `reed` also valid history). Connector product generalist — design, law, bootstrap. Papers at `connector/workers/jiji/`. Feed `worker:jiji`. |
 
 #### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
 
 **If You are in the loop, the ticket author is `founder-terminal`.** The chat
 product (Grok, Claude, Cursor, …) is the **hand**, not the person. Signing a
 founder decision, human-gate clear, or `FOUNDER ·` close-out as `grok` /
-`kc` / `trinity` / `cursor` makes the board look like a worker self-approved
+`felix` / `trinity` / `cursor` makes the board look like a worker self-approved
 a human gate.
 
 | Situation | Author field (`--author` / `WL_AGENT_ID`) | Optional body line |
 | --- | --- | --- |
 | You + any AI: decisions, gates, registry law, publish packets | `founder-terminal` | `Hand: grok-build` / `Hand: claude-desktop` / … |
-| Autonomous worker shift (roster / launchd) | persona id (`tierra`, `kc`, `trinity`, …) | model in `Owner:` per §5 |
+| Autonomous worker shift (roster / launchd) | persona id (`lili`, `kc`, `trinity`, …) | model in `Owner:` per §5 |
 | Patrol / report job | job id (`city-steward`, `founder-brief`, …) | — |
 
 **MCP connect-time identity** is the stamp on every write. Founder-present
@@ -331,28 +348,32 @@ them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
 
 | Persona id | Display | Succeeds |
 | --- | --- | --- |
-| `sincere` | Sincere · Lead Developer | `morgan` (retired 2026-07-27; earlier the original host-dispatch lane 2026-07-14 — history retained) |
-| `kc` | Kc · Software Engineer | `kai` (retired 2026-07-27; earlier `grok` 2026-07-14 — history retained) |
-| `beatriz` | Beatriz · Technical Writer | `ellis` (retired 2026-07-27; earlier `cursor` 2026-07-14 — history retained) |
-| `kayda` | Kayda · Web Designer (the host product) | `carl` the host product seat (retired 2026-07-27; earlier `codex` 2026-07-14 — history retained) |
+| `garfield` | Garfield · Lead Developer | `sincere` (retired 2026-07-28; earlier `morgan` 2026-07-27 / the original host-dispatch lane 2026-07-14 — history retained) |\n| `sincere` | **RETIRED 2026-07-28** → `garfield` | `morgan` (retired 2026-07-27; earlier the original host-dispatch lane 2026-07-14 — history retained) |
+| `felix` | Felix · Software Engineer | `kc` (retired 2026-07-28; earlier `kai` 2026-07-27 / `grok` 2026-07-14 — history retained) |\n| `kc` | **RETIRED 2026-07-28** → `felix` | `kai` (retired 2026-07-27; earlier `grok` 2026-07-14 — history retained) |
+| `nala` | Nala · Technical Writer | `beatriz` (retired 2026-07-28; earlier `ellis` 2026-07-27 / `cursor` 2026-07-14 — history retained) |\n| `beatriz` | **RETIRED 2026-07-28** → `nala` | `ellis` (retired 2026-07-27; earlier `cursor` 2026-07-14 — history retained) |
+| `cheshire` | Cheshire · Web Designer (the host product) | `kayda` (retired 2026-07-28; earlier `carl` the host product seat 2026-07-27 / `codex` 2026-07-14 — history retained) |\n| `kayda` | **RETIRED 2026-07-28** → `cheshire` | `carl` the host product seat (retired 2026-07-27; earlier `codex` 2026-07-14 — history retained) |
 | `trinity` | Trinity · ProtocolCity | `riley` (retired 2026-07-27; earlier `claude-protocolcity` 2026-07-14 — history retained) |
-| `carl` | Carl · Software Engineer (ProtocolCity) | `drew` (retired 2026-07-27, pc-532 — history retained). Note: the host product `carl` seat separately RETIRED → `kayda`. |
-| `kenzie` | Kenzie · Content Writer | `iris` (retired 2026-07-27; earlier `claude-socials` 2026-07-14 — history retained) |
-| `aniya` | Aniya · Market Analyst | `neo` (retired 2026-07-27, no predecessor before neo — history retained) |
-| `zach` | Zach · Connector Desk | `reed` (retired 2026-07-27, history retained) |
-| `bryce` | Bryce · Suite Engineer (ProtocolCity) | ProtocolCity `codex` CLI slot (renamed pc-533 2026-07-27; distinct from the host product `codex` → `carl` → `kayda` chain) |
-| `tierra` | Tierra · Desk Engineer | `tess` (retired 2026-07-27, history retained — comments signed by the old id remain valid record) |
-| `melanie` | Melanie · Systems Engineer | `otto` (retired 2026-07-27; earlier `claude-orchestrator` 2026-07-14 — history retained) |
-| `morgan` | **RETIRED 2026-07-27** → `sincere` | the original host-dispatch lane (retired 2026-07-14) |
-| `kai` | **RETIRED 2026-07-27** → `kc` | `grok` (retired 2026-07-14) |
-| `ellis` | **RETIRED 2026-07-27** → `beatriz` | `cursor` (retired 2026-07-14) |
-| `carl` (the host product) | **RETIRED 2026-07-27** → `kayda` (the host product Web Designer); slug re-hired for ProtocolCity (see above) | `codex` (retired 2026-07-14) |
+| `carl` | Carl · Software Engineer (ProtocolCity) | `drew` (retired 2026-07-27, pc-532 — history retained). Note: the host product `carl` seat separately RETIRED → `kayda` → `cheshire`. |
+| `mittens` | Mittens · Content Writer | `kenzie` (retired 2026-07-28, so-17; earlier `iris` 2026-07-27 / `claude-socials` 2026-07-14 — history retained) |
+| `maru` | Maru · Market Analyst | `aniya` (retired 2026-07-28; earlier `neo` 2026-07-14 — history retained) |\n| `aniya` | **RETIRED 2026-07-28** → `maru` | `neo` (retired 2026-07-27, no predecessor before neo — history retained) |
+| `jiji` | Jiji · Connector Desk | `zach` (retired 2026-07-28, history retained; earlier `reed` also valid history) |
+| `bryce` | Bryce · Suite Engineer (ProtocolCity) | ProtocolCity `codex` CLI slot (renamed pc-533 2026-07-27; distinct from the host product `codex` → `carl` → `kayda` → `cheshire` chain) |
+| `lili` | Lili · Desk Engineer | `tierra` (retired 2026-07-28; earlier `tess` 2026-07-27 / `claude-worklane` 2026-07-14 — history retained) |
+| `salem` | Salem · Systems Engineer | `melanie` (retired 2026-07-28; earlier `otto` 2026-07-27 / `claude-orchestrator` 2026-07-14 — history retained) |
+| `tierra` | **RETIRED 2026-07-28** → `lili` | `tess` (retired 2026-07-27) |
+| `melanie` | **RETIRED 2026-07-28** → `salem` | `otto` (retired 2026-07-27) |
+| `morgan` | **RETIRED 2026-07-27** → `sincere` → `garfield` | the original host-dispatch lane (retired 2026-07-14) |
+| `kai` | **RETIRED 2026-07-27** → `kc` → `felix` | `grok` (retired 2026-07-14) |
+| `ellis` | **RETIRED 2026-07-27** → `beatriz` → `nala` | `cursor` (retired 2026-07-14) |
+| `carl` (the host product) | **RETIRED 2026-07-27** → `kayda` → `cheshire` (the host product Web Designer); slug re-hired for ProtocolCity (see above) | `codex` (retired 2026-07-14) |
 | `riley` | **RETIRED 2026-07-27** → `trinity` | `claude-protocolcity` (retired 2026-07-14) |
 | `drew` | **RETIRED 2026-07-27** → `carl` (ProtocolCity) | — (new hire 2026-07-21) |
-| `iris` | **RETIRED 2026-07-27** → `kenzie` | `claude-socials` (retired 2026-07-14) |
-| `neo` | **RETIRED 2026-07-27** → `aniya` | — (new hire 2026-07-14) |
-| `reed` | **RETIRED 2026-07-27** → `zach` | — (new hire 2026-07-27) |
-| `otto` | **RETIRED 2026-07-27** → `melanie` | `claude-orchestrator` (retired 2026-07-14) |
+| `iris` | **RETIRED 2026-07-27** → `kenzie` → `mittens` | `claude-socials` (retired 2026-07-14) |
+| `kenzie` | **RETIRED 2026-07-28** → `mittens` | `iris` (retired 2026-07-27) |
+| `neo` | **RETIRED 2026-07-27** → `aniya` → `maru` | — (new hire 2026-07-14) |
+| `reed` | **RETIRED 2026-07-27** → `zach` → `jiji` | — (new hire 2026-07-27) |
+| `zach` | **RETIRED 2026-07-28** → `jiji` | `reed` (retired 2026-07-27) |
+| `otto` | **RETIRED 2026-07-27** → `melanie` → `salem` | `claude-orchestrator` (retired 2026-07-14) |
 | `wren` | Wren | — (new hire 2026-07-14, no predecessor; specialist / future desk) |
 | `city-steward` | City Steward | — (new hire, no predecessor; patrol job) |
 | `founder-brief` | Founder Brief | — (new hire, no predecessor; report job) |
@@ -487,7 +508,7 @@ API/MCP/CLI param names — e.g. `?product=` query params not yet migrated to
 `?project=` — see wl-64/wl-46.)
 
 **`local/data/` holds live stores only**: sqlite backups and dry-run
-scratch files belong outside the discovery dir (`~/Developer/wl-backups/` or
+scratch files belong outside the discovery dir (`~/OneSeo/wl-backups/` or
 similar — the scheduled `com.worklane.backup` job already writes
 there). A stray backup left in `local/data/` used to surface as a phantom
 project tab; discovery now skips `<slug>.db` stems matching a backup/scratch
@@ -533,7 +554,7 @@ items) once the project gets its own dispatched agent lane.
    `project=<slug>` explicitly on every WL call — required, not optional,
    once more than one project store exists (no single call may rely on
    `WL_PRODUCT`/`WL_DEFAULT_PRODUCT` defaulting to the right one). See the
-   cross-project rule in `~/Developer/AGENTS.md` for a worked multi-project
+   cross-project rule in `~/OneSeo/AGENTS.md` for a worked multi-project
    example.
 6. **UI wiring is automatic** — `discover_products()` re-scans
    `local/data/*.db` on every request (no restart), so Board/Table's

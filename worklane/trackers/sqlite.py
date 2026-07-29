@@ -1089,6 +1089,32 @@ class SQLiteTracker(ProjectTracker):
                     labels.remove(lb)
                     removed.append(lb)
 
+            # wl-281: a label mutation must never leave a live ticket
+            # silently unrouted — re-stamp needs:routing when the last
+            # worker:* seat goes away; drop the redundant stamp when a
+            # seat is present (same law as the create path).
+            from worklane.routing_labels import (
+                NEEDS_ROUTING_LABEL,
+                reconcile_routing_after_mutation,
+            )
+
+            live = str(row["status"] or "") not in (
+                TaskStatus.DONE,
+                TaskStatus.CANCELED,
+            )
+            labels, stamped_nr, dropped_nr = reconcile_routing_after_mutation(
+                labels, live=live
+            )
+            if stamped_nr:
+                if NEEDS_ROUTING_LABEL in removed:
+                    # Stripping the stamp from a still-unrouted live ticket
+                    # is a net no-op — the invariant puts it right back.
+                    removed.remove(NEEDS_ROUTING_LABEL)
+                else:
+                    added.append(NEEDS_ROUTING_LABEL)
+            if dropped_nr and NEEDS_ROUTING_LABEL not in removed:
+                removed.append(NEEDS_ROUTING_LABEL)
+
             if not added and not removed:
                 return _row_to_task(row)
 

@@ -266,6 +266,24 @@ class OverviewScopeTest(unittest.TestCase):
         finally:
             os.environ.pop("WL_CITY_ROOT", None)
 
+    def test_add_project_spaced_folder_no_false_warning(self) -> None:
+        # wl-270 / pc-313: spaced dirname must slugify-match store slug —
+        # "SE Local HC" → se-local-hc must NOT warn about missing folder.
+        city = self.root / "city-spaced"
+        hood = city / "SE Local HC"
+        hood.mkdir(parents=True)
+        (hood / "AGENTS.md").write_text("# SE Local HC\n")
+        os.environ["WL_CITY_ROOT"] = str(city)
+        try:
+            r = self.client.post(
+                "/api/admin/products",
+                json={"slug": "se-local-hc", "display": "SE Local HC", "prefix": "selo"},
+            ).json()
+            self.assertTrue(r["ok"], r)
+            self.assertIsNone(r.get("warning"), r)
+        finally:
+            os.environ.pop("WL_CITY_ROOT", None)
+
     def test_founder_identity_roundtrip_and_desk_prefill(self) -> None:
         # wl-148: default identity, alias PATCH roundtrip, desk injection
         j = self.client.get("/api/admin/identity").json()
