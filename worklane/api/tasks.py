@@ -76,6 +76,7 @@ from worklane.server_helpers import (
     _identity_config,
     _identity_config_path,
 )
+from worklane.notify import notify_done
 from worklane.trackers import (
     TaskStatus,
     get_default_tracker,
@@ -1114,6 +1115,8 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
         updated = tracker.update_status(raw_id, new_status, actor=actor)
         if updated is None:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
+        if new_status == TaskStatus.DONE:
+            notify_done(task_id, updated.title or "")
         out = updated.to_dict()
         out["id"] = task_id
         return JSONResponse({"ok": True, "task": out})

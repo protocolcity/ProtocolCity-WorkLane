@@ -5,6 +5,12 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _disable_ntfy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent any test from pushing to ntfy (wl-302). No network in CI."""
+    monkeypatch.setenv("WL_NTFY_DISABLE", "1")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_workforce(monkeypatch: pytest.MonkeyPatch) -> None:
     """Block the WorkForce lookup and roster fallback for all tests (wl-282, wl-287).
 
