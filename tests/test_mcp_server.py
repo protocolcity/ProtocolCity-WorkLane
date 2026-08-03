@@ -364,9 +364,14 @@ class HandlersTest(unittest.TestCase):
         self.assertIn("add", ctx.exception.message.lower())
 
     def test_label_bad_id(self) -> None:
+        # wl-344: bare numeric without project= is refused before store lookup.
         with self.assertRaises(ToolError) as ctx:
             self.h.wl_label("99999", add=["lane:grok"])
-        self.assertIn("not found", ctx.exception.message)
+        self.assertIn("wl-344", ctx.exception.message)
+        # Explicit project still reaches not-found for missing rows.
+        with self.assertRaises(ToolError) as ctx2:
+            self.h.wl_label("99999", product="tradeos", add=["lane:grok"])
+        self.assertIn("not found", ctx2.exception.message)
 
     def test_update_priority_and_title(self) -> None:
         created = self.h.wl_create(

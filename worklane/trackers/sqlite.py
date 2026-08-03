@@ -30,6 +30,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional
 
+from worklane._ref_parse import (
+    _BLOCKER_DECL_RE,
+    _BLOCKER_KEYWORDS,
+    _EPIC_REF_RE,
+    _HEADING_RE,
+    _LOCAL_TICKET_RE,
+    _SEO_TICKET_RE,
+    _extract_ticket_refs,
+)
 from worklane.trackers.protocol import ProjectTracker, Task, TaskComment, TaskStatus
 
 
@@ -89,45 +98,8 @@ _NEXT_STEP_RE = re.compile(r"next\s+step", re.IGNORECASE)
 _OWNER_RE = re.compile(r"^\s*owner\s*:", re.IGNORECASE | re.MULTILINE)
 _PLAN_RE = re.compile(r"^\s*plan\s*:", re.IGNORECASE | re.MULTILINE)
 _START_RE = re.compile(r"^\s*start\s*:", re.IGNORECASE | re.MULTILINE)
-_HEADING_RE = re.compile(
-    r"^(?:#{1,6}\s+|\*\*)\s*(?P<title>[^*\n]+?)\s*(?:\*\*)?\s*$",
-    re.MULTILINE,
-)
-_SEO_TICKET_RE = re.compile(r"\bSEO-(\d+)\b", re.IGNORECASE)
-_LOCAL_TICKET_RE = re.compile(r"(?:^|[^A-Za-z0-9_])#(\d+)\b")
-_BLOCKER_KEYWORDS = ("depend", "blocked by", "blockers", "requires")
-# Inline blocker declarations (PROTOCOL.md: "use `Depends on #NNN`").
-# Only refs immediately following the keyword count — a run of ticket
-# refs separated by commas/"and"/etc., ending at the first non-ref token.
-_REF_TOKEN = r"(?:#\d+|SEO-\d+)\b"
-_BLOCKER_DECL_RE = re.compile(
-    r"(?:\bdepends?\s+on\b|\bblocked\s+by\b|^[ \t]*blockers?\b)[ \t]*:?[ \t]*"
-    rf"(?P<refs>{_REF_TOKEN}(?:[ \t]*(?:,|;|/|&|\+|\band\b)?[ \t]*{_REF_TOKEN})*)",
-    re.IGNORECASE | re.MULTILINE,
-)
-# Parent-epic references are membership, not dependency — an epic can
-# never close before its phase tickets, so counting them deadlocks.
-_EPIC_REF_RE = re.compile(r"\bepic[ \t]*:[ \t]*#\d+", re.IGNORECASE)
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _extract_ticket_refs(text: str) -> List[str]:
-    refs: List[str] = []
-    seen = set()
-    for m in _SEO_TICKET_RE.finditer(text or ""):
-        ref = f"SEO-{m.group(1)}"
-        if ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    for m in _LOCAL_TICKET_RE.finditer(text or ""):
-        ref = m.group(1)
-        if ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    return refs
 
 
 def _parse_blockers(description: str) -> List[str]:

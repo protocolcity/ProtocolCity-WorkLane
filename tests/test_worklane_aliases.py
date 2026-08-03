@@ -1,7 +1,9 @@
 """WorkLane public verb aliases (wl-176 / wl-143) — CLI + MCP.
 
-CLI (private catalog): `wl` + `worklane` + blessed short `tk` + brand short
-`wl` all share one main. MCP: `wl_*` aliases of `wl_*` on private checkouts.
+CLI (private catalog): `wl` + `worklane` + canonical short `wl` share one
+main. `tk` was fully retired 2026-08-03 (wl-327 ruling B / wl-342) — tests
+guard against re-introduction. MCP: `wl_*` aliases of `wl_*` on private
+checkouts.
 
 The WorkLane public export rewrites `wl`/`wl_*` → `wl`/`wl_*` wholesale, so
 dual-prefix MCP assertions only apply when the private catalog is present.
@@ -58,17 +60,23 @@ def _core_is_internal() -> bool:
 
 
 class CliEntrypointAliasTest(unittest.TestCase):
-    """console_scripts: worklane + tk + wl → same main as wl (private)."""
+    """console_scripts: worklane + wl → same main as wl (private)."""
 
-    def test_pyproject_declares_worklane_tk_and_wl_scripts(self) -> None:
+    def test_pyproject_declares_worklane_and_wl_scripts(self) -> None:
         raw = _PYPROJECT.read_text(encoding="utf-8")
         if tomllib is not None:
             data = tomllib.loads(raw)
             scripts = data["project"]["scripts"]
             cli_vals = [v for v in scripts.values() if ".cli." in v]
-            # Private WL (wl-176/wl-143): wl + worklane + tk + wl share one
-            # CLI main. Public export rebuilds scripts (export strips the
-            # private multi-alias block and emits worklane/tk/wl).
+            # Private WL (wl-176/wl-143): wl + worklane + wl share one CLI
+            # main. Public export rebuilds scripts (export strips the
+            # private multi-alias block and emits worklane/wl).
+            # wl-342: tk must stay absent (founder ruling B on wl-327).
+            self.assertNotIn(
+                "tk",
+                scripts,
+                msg="tk console_script was retired 2026-08-03 (wl-342)",
+            )
             self.assertGreaterEqual(len(cli_vals), 1)
             if len(cli_vals) >= 2:
                 self.assertEqual(
@@ -76,8 +84,7 @@ class CliEntrypointAliasTest(unittest.TestCase):
                     1,
                     msg="private CLI aliases must share one main target",
                 )
-                # Blessed short + brand short both present on private catalog.
-                for name in ("worklane", "tk", "wl", "wl"):
+                for name in ("worklane", "wl", "wl"):
                     self.assertIn(name, scripts)
                     self.assertIn(".cli.", scripts[name])
             else:
@@ -86,9 +93,12 @@ class CliEntrypointAliasTest(unittest.TestCase):
                     msg=f"expected a CLI console script, got {scripts!r}",
                 )
         else:
-            # py39 fallback: at least one cli module entry exists.
+            # py39 fallback: at least one cli module entry exists; no tk.
             self.assertRegex(raw, r"\.cli\.\w+:main")
-            self.assertIsNotNone(re.search(r"^tk\s*=", raw, re.M))
+            self.assertIsNone(
+                re.search(r"^tk\s*=", raw, re.M),
+                msg="tk console_script must not reappear in pyproject",
+            )
 
     def test_main_dispatch_identical_under_alias_prog_names(self) -> None:
         """argv tokens drive routing — prog name does not fork behavior."""
@@ -122,8 +132,8 @@ class CliEntrypointAliasTest(unittest.TestCase):
 
         mock_urlopen.side_effect = _open
 
-        # Blessed short alias (tk) and brand short (wl) both dispatch.
-        for prog in ("tk", "wl", "worklane"):
+        # Canonical short (wl) and long form (worklane) both dispatch.
+        for prog in ("wl", "worklane"):
             mock_urlopen.reset_mock()
             mock_urlopen.side_effect = _open
             with mock.patch("sys.argv", [prog, "list", "--status", "backlog"]):

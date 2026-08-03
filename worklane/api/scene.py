@@ -26,7 +26,9 @@ _SCENE_TRANSITION_LIMIT = 40
 # Suite + WorkForce + citylens all hit /api/scene together. Without a short
 # cache, concurrent sync handlers re-walk every store and pin the process at
 # multi-core CPU — Map bootstrap then hangs (2026-07-25 dogfood).
-_SCENE_CACHE_TTL_S = 2.0
+# pc-881: 2s was too short vs Map soft-poll + compat + gate-count stampede;
+# 8s still feels live for open badges while cutting rebuild thrash hard.
+_SCENE_CACHE_TTL_S = 8.0
 _scene_lock = threading.Condition()
 _scene_cache_ts = 0.0
 _scene_cache_payload: Optional[Dict[str, Any]] = None

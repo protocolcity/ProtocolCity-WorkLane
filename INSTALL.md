@@ -13,7 +13,7 @@ as a suite dependency — no source checkout is required:
 pip install protocolcity-worklane
 worklane          # start the API server (http://127.0.0.1:8799)
 worklane-mcp      # MCP server for agent clients
-tk --help         # ticket CLI (wl is a short alias)
+wl --help         # ticket CLI (canonical short; worklane is the long form)
 ```
 
 No source checkout or separate host venv required. Runtime state (SQLite
@@ -52,7 +52,7 @@ This installs the `worklane` package plus three console scripts:
 | --- | --- |
 | `worklane` | starts the FastAPI/uvicorn service |
 | `worklane-mcp` | starts the stdio MCP server for agent clients |
-| `tk` | ticket CLI (`tk list` / `show` / `comment` / `status` / `label`) — see below; `worklane` and `wl` are installed aliases |
+| `wl` | ticket CLI (`wl list` / `show` / `comment` / `status` / `label`) — see below; `worklane` is the long-form alias (`tk` retired 2026-08-03) |
 
 Requires Python 3.9+ (see `pyproject.toml`).
 
@@ -73,7 +73,7 @@ For a first-run board that already has tickets across backlog / in_progress /
 in_review / done (so an agent can claim one immediately):
 
 ```bash
-tk demo
+wl demo
 # or seed then start in one shot:
 worklane --demo
 ```
@@ -81,7 +81,7 @@ worklane --demo
 This writes **only** the isolated `demo` project store
 (`worklane/local/data/demo.db`). It never touches any other project
 store you have configured. Re-run is a no-op unless
-you pass `--force` (demo store only). Inspect the seeded tickets: `tk list --product demo`.
+you pass `--force` (demo store only). Inspect the seeded tickets: `wl list --product demo`.
 
 To keep it running across reboots on macOS without any host repo:
 
@@ -131,7 +131,7 @@ Once the store exists, it appears in the products registry automatically — no 
 first work order:
 
 ```bash
-tk --help   # confirm the CLI is on PATH first
+wl --help   # confirm the CLI is on PATH first
 
 curl -s -X POST http://localhost:8799/api/admin/tasks \
   -H 'Content-Type: application/json' \
@@ -151,18 +151,18 @@ Three ways to read/write tickets, in order of preference:
    `python -m worklane.mcp --author <agent-id>` — see
    [README.md#mcp-server-agent-native-access](README.md#mcp-server-agent-native-access)
    for the full 16-tool catalog and a sample client config.
-2. **The `tk` CLI** (best for shell scripts / non-MCP hosts): installed by
-   step 2 above (`wl` and `worklane` are aliases).
+2. **The `wl` CLI** (best for shell scripts / non-MCP hosts): installed by
+   step 2 above (`worklane` is the long-form alias).
 
    ```bash
    export WL_BASE_URL=http://localhost:8799   # default if unset
    export WL_AGENT_ID=you                     # signs comments (PROTOCOL.md §3.8)
 
-   tk list --project myproject --status backlog
-   tk show mp-1
-   tk comment mp-1 "starting work" --author you
-   tk status mp-1 in_progress
-   tk label mp-1 --add area:backend
+   wl list --project myproject --status backlog
+   wl show mp-1
+   wl comment mp-1 "starting work" --author you
+   wl status mp-1 in_progress
+   wl label mp-1 --add area:backend
    ```
 
    This CLI only speaks HTTP (`urllib`, stdlib-only) — no

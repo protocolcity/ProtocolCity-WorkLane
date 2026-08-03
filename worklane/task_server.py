@@ -111,6 +111,7 @@ from worklane.board import (
     _render_task_card,
     _render_work_queue_filters,
     _owner_claim_html,
+    _parse_iso_ts,
     _STATUS_LABELS,
     _STATUS_TIERS,
     TICKETS_APP_ALL,
@@ -2263,15 +2264,6 @@ def _render_lane_lens_panel(rows: List[Dict[str, Any]]) -> str:
     return f"<div class='pulse-side-rows'>{head}{body}</div>"
 
 
-def _parse_iso_ts(s: str) -> Optional[datetime]:
-    if not s:
-        return None
-    try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
 def _percentile(sorted_vals: List[float], pct: float) -> Optional[float]:
     """Linear-interpolation percentile over an already-sorted list (wl-107).
 
@@ -2706,7 +2698,7 @@ _ATTENTION_KIND_RANK = {
 }
 _ATTENTION_KIND_BLURB = {
     "founder_decision": "Needs a yes/no or direction from You",
-    "in_review": "Work finished — waiting on Your sign-off",
+    "in_review": "Soft-lock / reserve (not auto gold — use human gate if You must act)",
     "stalled": "In flight with no update (stale claim)",
     "human_gate": "Needs You now (action-shaped human gate — not deferred/umbrella park)",
     "embargo": "Date-gated — not actionable until the date",
@@ -5949,7 +5941,7 @@ def admin_desk() -> str:
   </div>
   <div class="pl-flyers" id="plFlyers" aria-hidden="true"></div>
 </div>
-<!-- wl-154 front window + take-a-number retired — file/claim via AI / MCP / tk -->
+<!-- wl-154 front window + take-a-number retired — file/claim via AI / MCP / wl -->
 <main class="surface">
   <div>
     <div class="tray"><div class="tray-head">
@@ -5982,7 +5974,7 @@ def admin_desk() -> str:
   </div>
 </main>
 <footer class="bar">
-  <div>File &amp; claim via AI / MCP / <code>tk</code> ·
+  <div>File &amp; claim via AI / MCP / <code>wl</code> ·
     <a href="/admin/tickets/all">Board (power view)</a>
     <a href="/admin/overview">Overview</a>
     <a href="/admin/settings">Settings</a>

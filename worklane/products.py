@@ -472,6 +472,26 @@ def prefixed_task_id(slug: str, raw_id: Any) -> str:
     return f"{prefix}-{raw_id}"
 
 
+def known_prefix_slug(task_id: str) -> Optional[str]:
+    """Return the product slug when ``task_id`` has a known live/legacy prefix.
+
+    ``"wl-328"`` → ``"worklane"``; ``"wl-3"`` → worklane (or worklane
+    if that .db still exists) via legacy map; bare ``"328"`` → ``None``.
+    Unknown hyphenated tokens (``"zz-9"``) also return ``None`` — they are
+    not addressable composites.
+    """
+    s = str(task_id or "").strip()
+    if "-" not in s:
+        return None
+    prefix, rest = s.split("-", 1)
+    if not rest:
+        return None
+    for spec in discover_products():
+        if spec.prefix == prefix:
+            return spec.slug
+    return _legacy_prefix_map().get(prefix)
+
+
 def split_task_id(task_id: str) -> Tuple[str, str]:
     """``"wl-3"`` → ``("worklane", "3")``; bare ids → the default product.
 
@@ -484,13 +504,50 @@ def split_task_id(task_id: str) -> Tuple[str, str]:
     legacy behavior of ``parse_surface_task_id``.
     """
     s = str(task_id or "").strip()
-    if "-" in s:
-        prefix, rest = s.split("-", 1)
-        if rest:
-            for spec in discover_products():
-                if spec.prefix == prefix:
-                    return spec.slug, rest
-            legacy_slug = _legacy_prefix_map().get(prefix)
-            if legacy_slug:
-                return legacy_slug, rest
+    slug = known_prefix_slug(s)
+    if slug is not None:
+        _prefix, rest = s.split("-", 1)
+        return slug, rest
     return default_product_slug(), s
+
+
+def resolve_write_task_id(
+    task_id: str, project: Optional[str] = None
+) -> Tuple[str, str]:
+    """Resolve ``(product_slug, raw_id)`` for **write** operations (wl-344).
+
+    Hard guarantee against default-store bleed:
+
+    * known composite id (``wl-328``) → store from prefix; optional
+      ``project`` must match when given
+    * bare / unknown id → requires explicit ``project`` (never the
+      configured default alone)
+    * composite prefix + mismatched ``project`` → ``ValueError``
+
+    Raises ``ValueError`` with a caller-safe message on violation.
+    """
+    tid = str(task_id or "").strip()
+    if not tid:
+        raise ValueError("task_id is required")
+    explicit = str(project or "").strip().lower() or None
+    if explicit == "all":
+        raise ValueError(
+            "project='all' is not valid for write ops — pass a concrete store "
+            "or a composite task id"
+        )
+    prefix_slug = known_prefix_slug(tid)
+    if prefix_slug is not None:
+        _prefix, rest = tid.split("-", 1)
+        if explicit and explicit != prefix_slug:
+            raise ValueError(
+                f"task_id {tid!r} belongs to product {prefix_slug!r}, "
+                f"not {explicit!r}"
+            )
+        return prefix_slug, rest
+    if not explicit:
+        raise ValueError(
+            f"task_id {tid!r} is not a composite id and no project= was "
+            "passed — pass a composite id (e.g. wl-328) or project=<slug> "
+            "to prevent default-store bleed (wl-344)"
+        )
+    return explicit, tid

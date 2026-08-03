@@ -20,7 +20,6 @@ show a per-ticket summary card after the developer clicks the button.
 
 from __future__ import annotations
 
-import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,7 +36,6 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-_TICKET_RE = re.compile(r"\bSEO-(\d+)\b")
 _CLOSEOUT_AUTHOR = "devqueue"
 
 

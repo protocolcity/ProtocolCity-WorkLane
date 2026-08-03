@@ -225,6 +225,66 @@ class CreateTaskRoutingWarningTest(unittest.TestCase):
         self.assertIsNotNone(data.get("routing_warning"))
         self.assertIn("needs:routing", data["task"].get("labels") or [])
 
+    def test_slow_api_roster_fallback_rejects(self):
+        """wl-306: socket.timeout (slow API) falls to roster → hard B rejects."""
+        import socket
+        roster_file = self.root / "roster.json"
+        roster_file.write_text(json.dumps({
+            "workers": {
+                "vera": {
+                    "kind": "lane",
+                    "queue_url": (
+                        "http://127.0.0.1:8799/api/admin/tasks/ready"
+                        "?product=worklane&label=worker:vera"
+                    ),
+                }
+            }
+        }))
+        os.environ["WL_WORKFORCE_ROSTER"] = str(roster_file)
+        with patch("urllib.request.urlopen", side_effect=socket.timeout("timed out")):
+            r = self._post(labels=["intake"])
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:* required", err)
+        self.assertIn("worker:vera", err)
+        self.assertIn("worker:you", err)
+
+    def test_city_roster_autodiscovery_rejects(self):
+        """wl-306: city-root auto-discovery finds roster → hard B rejects without env vars."""
+        import urllib.error
+        city_roster = self.root / ".protocolcity" / "workforce" / "local" / "roster.json"
+        city_roster.parent.mkdir(parents=True, exist_ok=True)
+        city_roster.write_text(json.dumps({
+            "workers": {
+                "figaro": {
+                    "kind": "lane",
+                    "queue_url": (
+                        "http://127.0.0.1:8799/api/admin/tasks/ready"
+                        "?product=worklane&label=worker:figaro"
+                    ),
+                }
+            }
+        }))
+        os.environ.pop("WL_WORKFORCE_NO_CITY_ROSTER", None)
+        os.environ.pop("WL_WORKFORCE_ROSTER", None)
+        os.environ.pop("WORKFORCE_PREDIRTY", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(self.root)
+            with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+                r = self._post(labels=["intake"])
+        finally:
+            os.chdir(old_cwd)
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:* required", err)
+        self.assertIn("worker:figaro", err)
+        self.assertIn("worker:you", err)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,8 @@ import logging
 import os
 import re
 import sqlite3
+import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -89,12 +91,57 @@ router = APIRouter()
 DEFAULT_AGENT_ID = "founder"
 
 
+def _project_from_request(
+    request: Request, payload: Optional[Dict[str, Any]] = None
+) -> Optional[str]:
+    """Extract explicit project/product scope for write addressing (wl-344).
+
+    Preference: body ``project`` → body ``product`` → query ``project`` →
+    query ``product``. Empty strings ignored. Conflicting non-empty body
+    values are not resolved here — callers that need conflict detection
+    (create) handle it themselves; write mutation endpoints treat the first
+    non-empty as the explicit store.
+    """
+    body = payload or {}
+    for key in ("project", "product"):
+        raw = body.get(key)
+        if raw not in (None, ""):
+            return str(raw).strip().lower()
+    for key in ("project", "product"):
+        raw = request.query_params.get(key) if request is not None else None
+        if raw not in (None, ""):
+            return str(raw).strip().lower()
+    return None
+
+
+def _resolve_write_tracker(
+    task_id: str, project: Optional[str] = None
+) -> Tuple[Optional[Tuple[str, str, Any]], Optional[JSONResponse]]:
+    """Write-path task addressing (wl-344).
+
+    Returns ``((surf, raw_id, tracker), None)`` on success, or
+    ``(None, JSONResponse 400)`` when the id is bare without project= or
+    when composite prefix disagrees with project=.
+    """
+    try:
+        return (
+            _resolve_product_tracker(task_id, project=project, write=True),
+            None,
+        )
+    except ValueError as exc:
+        return None, JSONResponse(
+            {"ok": False, "error": str(exc)}, status_code=400
+        )
+
+
 def _workforce_roster_path() -> Optional[str]:
     """Return the local WorkForce roster.json path from env or auto-discovery.
 
     Checks WL_WORKFORCE_ROSTER (or WL_WORKFORCE_ROSTER) first, then derives the path from
     WORKFORCE_PREDIRTY ($ROOT/local/run/predirty-*.txt → $ROOT/local/roster.json).
-    Returns None when neither source is configured.
+    Finally, walks up from CWD looking for .protocolcity/workforce/local/roster.json
+    (skipped when WL_WORKFORCE_NO_CITY_ROSTER=1 — set that in test fixtures).
+    Returns None when no source is found.
     """
     explicit = (os.environ.get("WL_WORKFORCE_ROSTER") or os.environ.get("WL_WORKFORCE_ROSTER", "")).strip()
     if explicit:
@@ -105,15 +152,32 @@ def _workforce_roster_path() -> Optional[str]:
             return str(Path(predirty).parent.parent / "roster.json")
         except Exception:
             return None
+    if os.environ.get("WL_WORKFORCE_NO_CITY_ROSTER", "").strip() not in ("1", "true", "yes"):
+        try:
+            here = Path.cwd().resolve()
+            for _ in range(6):
+                candidate = here / ".protocolcity" / "workforce" / "local" / "roster.json"
+                if candidate.exists():
+                    return str(candidate)
+                parent = here.parent
+                if parent == here:
+                    break
+                here = parent
+        except Exception:
+            pass
     return None
 
 
 def _workforce_workers_for_product(product_slug: str) -> List[str]:
     """Return lane worker names hired for *product_slug* per the WorkForce roster.
 
-    Primary: queries WL_WORKFORCE_URL (or WL_WORKFORCE_URL)/api/workers with a 1-second timeout.
-    Fallback (wl-287): when the API is unreachable, reads the local roster
-    file at the path from WL_WORKFORCE_ROSTER (or WL_WORKFORCE_ROSTER) or derived from WORKFORCE_PREDIRTY.
+    Primary: queries WL_WORKFORCE_URL (or WL_WORKFORCE_URL)/api/workers?light=1 with a
+    3-second timeout (wl-308: ?light=1 returns in <50ms when WorkForce supports it; until
+    then the 404 falls through immediately to the roster fallback, avoiding the full 3s
+    wait from the unparameterized endpoint which serialises 25 queue probes at ~11s total).
+    Fallback (wl-287, wl-306): when the API is unreachable or too slow, reads the local
+    roster from WL_WORKFORCE_ROSTER / WL_WORKFORCE_ROSTER, WORKFORCE_PREDIRTY, or the
+    city root auto-discovered at .protocolcity/workforce/local/roster.json.
     Returns an empty list on all failures — the caller must never block on
     this (wl-256: soft warning only, never a gate).
 
@@ -121,10 +185,10 @@ def _workforce_workers_for_product(product_slug: str) -> List[str]:
     ``product=<slug>`` (the convention all current lanes follow).
     """
     needle = "product=" + product_slug
-    url = (os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")) + "/api/workers"
+    url = (os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")) + "/api/workers?light=1"
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=1) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         workers = data.get("workers") or []
         if isinstance(workers, list):
@@ -172,10 +236,10 @@ def _workforce_products_for_workers() -> Dict[str, str]:
     Same API / roster fallback chain; returns empty dict on all failures so
     the caller is never blocked.
     """
-    url = (os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")) + "/api/workers"
+    url = (os.environ.get("WL_WORKFORCE_URL") or os.environ.get("WL_WORKFORCE_URL", "http://127.0.0.1:8797")) + "/api/workers?light=1"
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=1) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         workers = data.get("workers") or []
         result: Dict[str, str] = {}
@@ -534,11 +598,31 @@ async def api_create_task(request: Request) -> JSONResponse:
         except Exception:
             pass
 
-    # project (wl-64) is the canonical field name; ticket_surface/surface
-    # remain silent back-compat aliases. Reject rather than silently pick
-    # when both are given with different values (PROTOCOL.md §5.2 rule).
+    # project (wl-64) is the canonical field name; product / ticket_surface /
+    # surface remain silent back-compat aliases. Reject rather than silently
+    # pick when both are given with different values (PROTOCOL.md §5.2 rule).
+    # wl-344: ``product=`` was previously ignored on create (ts-2423 bleed).
     project_val = payload.get("project")
+    product_alias = payload.get("product")
     legacy_surface_val = payload.get("ticket_surface") or payload.get("surface")
+    if (
+        project_val not in (None, "")
+        and product_alias not in (None, "")
+        and str(project_val).strip().lower()
+        != str(product_alias).strip().lower()
+    ):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"conflicting project/product values: project={project_val!r} "
+                    f"product={product_alias!r} — pass only one"
+                ),
+            },
+            status_code=400,
+        )
+    if project_val in (None, "") and product_alias not in (None, ""):
+        project_val = product_alias
     if (
         project_val not in (None, "")
         and legacy_surface_val not in (None, "")
@@ -916,7 +1000,13 @@ async def api_create_task_relation(task_id: str, request: Request) -> JSONRespon
         payload.get("relation_type") or payload.get("type") or ""
     ).strip()
 
-    surf, raw_from, tracker = _resolve_product_tracker(task_id)
+    resolved, err = _resolve_write_tracker(
+        task_id, _project_from_request(request, payload)
+    )
+    if err is not None:
+        return err
+    assert resolved is not None
+    surf, raw_from, tracker = resolved
     # Target may be bare or composite; same product only.
     to_str = str(to_raw).strip()
     if "-" in to_str and not to_str.isdigit():
@@ -962,11 +1052,19 @@ async def api_create_task_relation(task_id: str, request: Request) -> JSONRespon
 
 
 @router.delete("/api/admin/tasks/{task_id}/relations/{relation_id}")
-def api_delete_task_relation(task_id: str, relation_id: str) -> JSONResponse:
+def api_delete_task_relation(
+    task_id: str, relation_id: str, request: Request
+) -> JSONResponse:
     """Delete a relation by id; task_id must be an endpoint of the edge."""
     from worklane import relations as relmod  # noqa: PLC0415
 
-    surf, raw_id, tracker = _resolve_product_tracker(task_id)
+    resolved, err = _resolve_write_tracker(
+        task_id, _project_from_request(request)
+    )
+    if err is not None:
+        return err
+    assert resolved is not None
+    surf, raw_id, tracker = resolved
     if tracker.get_task(raw_id) is None:
         return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
     try:
@@ -1058,6 +1156,31 @@ def _comments_have_done_closeout(comments: List[Any]) -> bool:
     return False
 
 
+def _epic_coverage_block(
+    task: Any,
+    tracker: Any,
+    *,
+    product_slug: str = "",
+) -> Optional[str]:
+    """wl-347: refuse done for umbrella/epic with uncovered children."""
+    from worklane.epic_coverage import coverage_block_reason  # noqa: PLC0415
+
+    db_path: Optional[Path] = None
+    try:
+        db_path = _tracker_db_path(tracker)
+    except HTTPException:
+        db_path = getattr(tracker, "_db_path", None)
+        db_path = Path(db_path) if db_path is not None else None
+    prefix: Optional[str] = None
+    if product_slug:
+        spec = get_product(product_slug)
+        if spec is not None:
+            prefix = spec.prefix
+    return coverage_block_reason(
+        task, tracker, db_path=db_path, product_prefix=prefix
+    )
+
+
 @router.patch("/api/admin/tasks/{task_id}")
 async def api_update_task(task_id: str, request: Request) -> JSONResponse:
     try:
@@ -1065,7 +1188,13 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
     except Exception:
         return JSONResponse({"ok": False, "error": "Invalid JSON body"}, status_code=400)
 
-    surf, raw_id, tracker = _resolve_product_tracker(task_id)
+    resolved, err = _resolve_write_tracker(
+        task_id, _project_from_request(request, payload)
+    )
+    if err is not None:
+        return err
+    assert resolved is not None
+    surf, raw_id, tracker = resolved
 
     # Scene-feed attribution: optional signer on status writes. Not required
     # (existing clients PATCH bare {"status": ...}); when present it lands in
@@ -1111,6 +1240,14 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
                     return JSONResponse(
                         {"ok": False, "error": _DONE_WITHOUT_CLOSEOUT_HINT},
                         status_code=400,
+                    )
+                # wl-347: umbrella/epic child-coverage before status→done.
+                cov_err = _epic_coverage_block(
+                    current, tracker, product_slug=surf
+                )
+                if cov_err:
+                    return JSONResponse(
+                        {"ok": False, "error": cov_err}, status_code=400
                     )
         updated = tracker.update_status(raw_id, new_status, actor=actor)
         if updated is None:
@@ -1245,13 +1382,35 @@ async def api_update_labels(task_id: str, request: Request) -> JSONResponse:
     add_labels = _parse_labels(add_raw)
     remove_labels = _parse_labels(remove_raw)
 
-    surf, raw_id, tracker = _resolve_product_tracker(task_id)
+    resolved, err = _resolve_write_tracker(
+        task_id, _project_from_request(request, payload)
+    )
+    if err is not None:
+        return err
+    assert resolved is not None
+    surf, raw_id, tracker = resolved
 
-    # wl-296: cross-product mismatch guard on newly added worker:* labels.
+    # wl-320: starve guard — label mutation must not bypass wl-315 by
+    # creating a ticket with a valid seat and then swapping to bare worker:you.
     from worklane.routing_labels import (  # noqa: PLC0415
+        check_mutation_starve_guard,
         check_worker_product_mismatch,
         worker_ids_from_labels,
     )
+    _existing_task = tracker.get_task(raw_id)
+    if _existing_task is None:
+        return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
+    _hired = _workforce_workers_for_product(surf)
+    _starve_err = check_mutation_starve_guard(
+        list(_existing_task.labels or []),
+        add=add_labels,
+        remove=remove_labels,
+        hired_hands=_hired,
+    )
+    if _starve_err:
+        return JSONResponse({"ok": False, "error": _starve_err}, status_code=400)
+
+    # wl-296: cross-product mismatch guard on newly added worker:* labels.
     _added_wids = worker_ids_from_labels(add_labels)
     _mismatch_warn: Optional[str] = None
     if _added_wids:
@@ -1346,7 +1505,13 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
             author, task_id, marked,
         )
 
-    surf, raw_id, tracker = _resolve_product_tracker(task_id)
+    resolved, err = _resolve_write_tracker(
+        task_id, _project_from_request(request, payload)
+    )
+    if err is not None:
+        return err
+    assert resolved is not None
+    surf, raw_id, tracker = resolved
     if surf == live_feed_product_slug() and _tradeos_tickets_use_http_feed():
         code, data = _request_tradeos_json(
             "POST",
@@ -1373,6 +1538,18 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
                 },
             }
         )
+    # wl-347: refuse Completed: close-outs on umbrella/epic with uncovered children
+    # (before add_comment so lifecycle cannot race to done).
+    from worklane.epic_coverage import body_is_done_closeout  # noqa: PLC0415
+
+    if body_is_done_closeout(body):
+        current = tracker.get_task(raw_id)
+        if current is None:
+            return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
+        cov_err = _epic_coverage_block(current, tracker, product_slug=surf)
+        if cov_err:
+            return JSONResponse({"ok": False, "error": cov_err}, status_code=400)
+
     try:
         comment = tracker.add_comment(raw_id, body, author=author)
     except KeyError:
@@ -1717,15 +1894,15 @@ def api_dev_allocation(window_days: int = 7, scope: str = "all") -> JSONResponse
     return resp
 
 
-@router.get("/api/dev/attention")
-def api_dev_attention(include_snoozed: int = 0) -> JSONResponse:
-    """wl-135: the founder-attention feed — everything blocked on You,
-    always all stores. Same shape as /api/dev/board-summary consumers.
+# pc-881: Map + suite soft-poll stampede /api/dev/attention (~1s rebuild).
+# Short single-flight cache keeps For You truthful without re-walking every store.
+_ATTENTION_CACHE_TTL_S = 4.0
+_attention_lock = threading.Condition()
+_attention_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_attention_inflight: Dict[int, bool] = {}
 
-    Snoozes (product/kind focus mutes) filter the default feed without
-    changing ticket gates. Pass ``include_snoozed=1`` for the full set;
-    response always includes ``snoozed_count`` and ``snoozes``.
-    """
+
+def _build_attention_payload(include_snoozed: int = 0) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     all_items = _collect_founder_attention_items(now=now)
     visible, hidden, snoozes = _partition_attention_items(all_items, now=now)
@@ -1742,7 +1919,7 @@ def api_dev_attention(include_snoozed: int = 0) -> JSONResponse:
         {"author": a, "count": c}
         for a, c in sorted(gate_stats.items(), key=lambda x: -x[1])
     ]
-    resp = JSONResponse({
+    return {
         "ok": True,
         "count": len(items) if include_snoozed else len(visible),
         "items": items,
@@ -1753,8 +1930,58 @@ def api_dev_attention(include_snoozed: int = 0) -> JSONResponse:
         "updated_at": now.isoformat(),
         "human_gate_stats": human_gate_stats,
         "human_gate_stats_window_hours": 24,
-    })
+    }
+
+
+@router.get("/api/dev/attention")
+def api_dev_attention(include_snoozed: int = 0) -> JSONResponse:
+    """wl-135: the founder-attention feed — everything blocked on You,
+    always all stores. Same shape as /api/dev/board-summary consumers.
+
+    Snoozes (product/kind focus mutes) filter the default feed without
+    changing ticket gates. Pass ``include_snoozed=1`` for the full set;
+    response always includes ``snoozed_count`` and ``snoozes``.
+    """
+    key = 1 if include_snoozed else 0
+    now_m = time.monotonic()
+    with _attention_lock:
+        hit = _attention_cache.get(key)
+        if hit is not None and (now_m - hit[0]) < _ATTENTION_CACHE_TTL_S:
+            resp = JSONResponse(hit[1])
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            resp.headers["X-Attention-Cache"] = "hit"
+            return resp
+        while _attention_inflight.get(key):
+            _attention_lock.wait(timeout=6.0)
+            now_m = time.monotonic()
+            hit = _attention_cache.get(key)
+            if hit is not None and (now_m - hit[0]) < _ATTENTION_CACHE_TTL_S:
+                resp = JSONResponse(hit[1])
+                resp.headers["Cache-Control"] = "no-store, max-age=0"
+                resp.headers["X-Attention-Cache"] = "coalesce"
+                return resp
+            if not _attention_inflight.get(key):
+                break
+        _attention_inflight[key] = True
+
+    payload: Optional[Dict[str, Any]] = None
+    err: Optional[BaseException] = None
+    try:
+        payload = _build_attention_payload(include_snoozed=include_snoozed)
+    except BaseException as exc:  # noqa: BLE001 — re-raise after unlock
+        err = exc
+    finally:
+        with _attention_lock:
+            if payload is not None:
+                _attention_cache[key] = (time.monotonic(), payload)
+            _attention_inflight[key] = False
+            _attention_lock.notify_all()
+    if err is not None:
+        raise err
+    assert payload is not None
+    resp = JSONResponse(payload)
     resp.headers["Cache-Control"] = "no-store, max-age=0"
+    resp.headers["X-Attention-Cache"] = "miss"
     return resp
 
 

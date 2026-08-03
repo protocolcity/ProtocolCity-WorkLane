@@ -14,50 +14,16 @@ an example) and avoids needing the optional Linear ``relations`` graph.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set
 
-from worklane.trackers.protocol import ProjectTracker, Task, TaskStatus, task_is_gated
-
-
-# ── parsing helpers ──────────────────────────────────────────────────────
-
-# Match a markdown heading line ("##" / "###" / "**Depends on**" etc.)
-# Lower-cased before testing the keyword. We accept both real H2/H3
-# headings and bold-style "section" labels because Linear exports use
-# both forms.
-_HEADING_RE = re.compile(
-    r"^(?:#{1,6}\s+|\*\*)\s*(?P<title>[^*\n]+?)\s*(?:\*\*)?\s*$",
-    re.MULTILINE,
+from worklane._ref_parse import (
+    _BLOCKER_KEYWORDS,
+    _EPIC_REF_RE,
+    _HEADING_RE,
+    _extract_ticket_refs,
 )
-_SEO_TICKET_RE = re.compile(r"\bSEO-(\d+)\b", re.IGNORECASE)
-_LOCAL_TICKET_RE = re.compile(r"(?:^|[^A-Za-z0-9_])#(\d+)\b")
-_BLOCKER_KEYWORDS = ("depend", "blocked by", "blockers", "requires")
-
-
-def _extract_ticket_refs(text: str) -> List[str]:
-    """Extract ticket references from text, preserving first-seen order.
-
-    Supported forms:
-    - ``SEO-123`` (legacy external id)
-    - ``#123`` (local numeric id)
-    """
-    if not text:
-        return []
-    refs: List[str] = []
-    seen: Set[str] = set()
-    for m in _SEO_TICKET_RE.finditer(text):
-        ref = f"SEO-{m.group(1)}"
-        if ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    for m in _LOCAL_TICKET_RE.finditer(text):
-        ref = m.group(1)
-        if ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    return refs
+from worklane.trackers.protocol import ProjectTracker, Task, TaskStatus, task_is_gated
 
 
 def parse_blockers(description: str) -> List[str]:
@@ -71,7 +37,7 @@ def parse_blockers(description: str) -> List[str]:
     """
     if not description:
         return []
-    text = description
+    text = _EPIC_REF_RE.sub("", description)
 
     seen: Set[str] = set()
     out: List[str] = []
@@ -285,11 +251,6 @@ class WorkQueue:
         resume, comment, or hand them off rather than letting them rot.
         """
         return self.by_status(TaskStatus.IN_PROGRESS)
-
-
-def find_orphans(tracker: ProjectTracker) -> List[Task]:
-    """Convenience wrapper used by routes that don't need a full queue."""
-    return list(tracker.list_tasks(status=TaskStatus.IN_PROGRESS, limit=200))
 
 
 # ── dispatch prompt ──────────────────────────────────────────────────────

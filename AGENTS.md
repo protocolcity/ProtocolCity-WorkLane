@@ -1,19 +1,33 @@
-# WorkLane — Agent Instructions
+# WorkLane — Project instructions (L1 CORE)
 
-WorkLane (WL) is a **standalone local-first ticketing product**. It is independent of any host repo. Any city project may connect to the Desk as optional infrastructure; WL makes no assumptions about the host.
+**Product brand:** **WorkLane** (queue / work orders for BluePrint cities).  
+**Wire / package (legacy, keep working):** Python package folder
+`worklane/` · public export may still say WorkLane in
+places; **citizen and Map glass say WorkLane**. Store slug `worklane`
+(legacy `worklane` still aliases) · prefix **`wl-`** (legacy `wl-`
+forever).
 
-This file is the repo's canonical law (ProtocolCity Charter §3 vendor-pointer rule): `CLAUDE.md` and `GROK.md` are thin `@AGENTS.md` forwards — one law, every vendor reads it. **The normative process rules live in [PROTOCOL.md](PROTOCOL.md) — nothing in this file overrides it.**
+Standalone **local-first** work-order engine. Independent of any host repo.
+Any workspace project may connect to the Desk as optional infrastructure;
+WorkLane makes no assumptions about the host.
+
+This file is the repo's canonical law (ProtocolCity Charter §3 vendor-pointer
+rule): `CLAUDE.md` and `GROK.md` are thin `@AGENTS.md` forwards — one law,
+every vendor. **Normative process:** [PROTOCOL.md](PROTOCOL.md) — nothing here
+overrides it. **City loop (short):** workspace CORE + ProtocolCity
+`docs/specs/ALWAYS_WORK_PROTOCOL.md` (author You · seat hand · gold only on
+true blocker).
 
 Read this file when:
 
 - You've scoped into `worklane/` and need to know what the folder is.
-- You're about to change WL's code, schema, API surface, or process rules.
-- You're an agent picking up a ticket and want the entry point to the rulebook.
+- You're about to change WorkLane code, schema, API surface, or process rules.
+- You're an agent picking up a `wl-*` / `wl-*` ticket and want the entry point.
 
 ## Reading order
 
-0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a project → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROTOCOL.md §6-style profile. Start here if WL isn't running yet in your host.
-1. **[PROTOCOL.md](PROTOCOL.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket work.**
+0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a project → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROTOCOL.md §6-style profile. Start here if Desk isn't running yet.
+1. **[PROTOCOL.md](PROTOCOL.md)** — normative operations rulebook. Lifecycle, ownership markers, comment cadence, closeout contract (`Completed:` / `Verification:` / `Links:` / `Follow-ups:`), auto-transition guards, dependency freeze rules. **Start here for ticket engine work.**
 2. **[README.md](README.md)** — product overview, install, launch, host-integration examples.
 
 ## Folder map
@@ -23,7 +37,7 @@ these rows; entries missing here render unmapped.
 
 | Path | What it is |
 |---|---|
-| `worklane/` | The package — server, board, trackers, MCP, archival; `local/` inside holds runtime state (SQLite stores, config) |
+| `worklane/` | **Package path** (legacy name) — server, board, trackers, MCP, archival; `local/` runtime state |
 | `docs/` | The records — design docs, decisions, audits |
 | `scripts/` | Export/release/backup/migration scripts (the WorkLane export seam lives here) |
 | `github.public/` | Public-repo staging material for the WorkLane export |
@@ -34,23 +48,28 @@ these rows; entries missing here render unmapped.
 
 ## Boundary rules
 
-- **WL does not render inside host product pages.** The engine exposes a REST API at port 8799 (API-only); the visual surface is the BluePrint suite at :8801.
-- **WL does not depend on host product uptime.** It is a long-lived local service.
-- **WL is not a SaaS dependency.** Everything is file-backed SQLite on the local machine.
-- **Any city project may connect to WL as a client** — via the CLI or the HTTP API. Connecting is optional city infrastructure; WL never reaches back into the connecting project.
+- **WorkLane does not render inside host product pages.** REST API at port 8799 (API-only); glass is BluePrint suite `:8801`.
+- **Does not depend on host product uptime.** Long-lived local service.
+- **Not a SaaS dependency.** File-backed SQLite on the local machine.
+- **Any workspace project may connect as a client** — CLI or HTTP. Optional infrastructure; WorkLane never reaches back into the connecting project.
 
 If a change would cross any of these lines, open an issue proposing it first — boundary changes need explicit design sign-off. Don't silently couple.
 
 ## Code conventions
 
-WL ships Python and uses FastAPI. When writing WL code:
+WorkLane ships Python + FastAPI (package import path `worklane`).
 
-- Python 3.9+ is the version floor — use `Optional[X]`, `List[X]`, `Dict[K, V]` from `typing` in signatures and pydantic models; no `X | None` or built-in generics at annotation positions FastAPI evaluates at import time.
-- Keep WL importable without the host. `worklane/*` must not `from core.*` or `from <host>.*`. If you need host-specific behavior, hide it behind a host profile flag (PROTOCOL.md §6) and keep the default path host-neutral.
-- Follow the lifecycle contract in PROTOCOL.md §3 when emitting status changes, including the auto-transition guard semantics (`Owner:`, `Completed:`+`Verification:`, `Blocked:`+`Next step:`).
-- This is a shared checkout — other agent lanes and the founder's own terminal may have unrelated uncommitted edits in the working copy at any time. Never `git add -A` / `git add .` / `git commit -a`; stage only the files your own ticket touched, by explicit path (PROTOCOL.md §5.1).
+- Match the host Python floor (3.9+ minimum): `Optional[X]`, `List[X]` — no PEP 604 union syntax.
+- Keep the package importable without the host. `worklane/*` must not
+  `from core.*` or `from <host>.*`.
+- Follow PROTOCOL.md §3 lifecycle (`Owner:`, `Completed:`+`Verification:`,
+  `Blocked:`+`Next step:`).
+- Shared checkout — never `git add -A` / `git commit -a`; stage only your paths
+  (PROTOCOL.md §5.1).
 
 ## Host-specific instructions
 
-Each host that adopts WL owns its own AGENTS.md and repo docs (vendor files like CLAUDE.md are pointers to it). Host rules (server management, runtime tiers, supported platforms, etc.) live there, not here. This file is about WL the product — not about what a user of any particular host sees. When working inside a host repo, read that repo's own agent instructions first.
+Each host owns its own workspace `AGENTS.md`. Host rules live there. This file
+is about WorkLane the product. When working inside another project, read that
+project’s L1 `AGENTS.md` too.
 

@@ -42,6 +42,41 @@ class EnsureCreateLabelsTest(unittest.TestCase):
         self.assertFalse(stamped)
         self.assertIn("worker:you", labs)
 
+    def test_worker_you_host_ok_when_hands_exist(self) -> None:
+        labs, stamped, err = ensure_create_labels(
+            ["worker:you", "you:host", "area:routing"],
+            hired_hands=["worker:lili"],
+        )
+        self.assertIsNone(err)
+        self.assertIn("you:host", labs)
+
+    def test_worker_you_founder_gate_ok(self) -> None:
+        labs, stamped, err = ensure_create_labels(
+            ["worker:you", "gate:founder", "publish"],
+            hired_hands=["worker:blossom"],
+        )
+        self.assertIsNone(err)
+        self.assertIn("worker:you", labs)
+
+    def test_bare_worker_you_rejects_when_hands_exist(self) -> None:
+        """wl-315: bare worker:you starves cron — require you-kind or founder gate."""
+        labs, stamped, err = ensure_create_labels(
+            ["worker:you", "suite"],
+            hired_hands=["worker:drew", "worker:figaro"],
+        )
+        self.assertIsNotNone(err)
+        self.assertIn("starves", (err or "").lower())
+        self.assertIn("you:note", err or "")
+        self.assertFalse(stamped)
+
+    def test_bare_worker_you_ok_pre_hire(self) -> None:
+        labs, stamped, err = ensure_create_labels(
+            ["worker:you"],
+            hired_hands=[],
+        )
+        self.assertIsNone(err)
+        self.assertIn("worker:you", labs)
+
     def test_hard_b_rejects_when_hands_exist(self) -> None:
         labs, stamped, err = ensure_create_labels(
             ["suite"],

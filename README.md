@@ -26,7 +26,7 @@ Or PyPI: `pip install protocolcity protocolcity-worklane protocolcity-workforce`
 ```bash
 pip install protocolcity-worklane
 worklane          # start the API server (http://127.0.0.1:8799)
-tk --help         # ticket CLI (wl is a short alias)
+wl --help         # ticket CLI
 ```
 
 You have Claude Code working your backlog. Then you add Cursor. Then a
@@ -58,7 +58,7 @@ pip install -e .
 worklane                     # start the API server (http://127.0.0.1:8799)
 ```
 
-Health-check: `curl -s localhost:8799/api/admin/products` — lists all project stores. Use `tk --help` for the ticket CLI or connect agents via MCP.
+Health-check: `curl -s localhost:8799/api/admin/products` — lists all project stores. Use `wl --help` for the ticket CLI or connect agents via MCP.
 
 File your first ticket:
 
@@ -104,16 +104,16 @@ or in any MCP host config (Claude Code / Claude Desktop / Cursor / …):
 `wl_close` takes structured closeout sections (`completed`, `verification`,
 `links`, `follow_ups`) — a malformed closeout is impossible by construction.
 
-There's also `tk`, a stdlib-only CLI for agents and scripts that shouldn't
-import anything (`wl` is an installed alias):
+There's also `wl`, a stdlib-only CLI for agents and scripts that shouldn't
+import anything:
 
 ```bash
 export WL_AGENT_ID=my-agent
-tk list --project worklane --status backlog
-tk show wl-1
-tk status wl-1 in_progress
-tk comment wl-1 "Owner: my-agent — claiming" --author my-agent
-tk doctor  # optional Charter compliance check — reports, never blocks
+wl list --project worklane --status backlog
+wl show wl-1
+wl status wl-1 in_progress
+wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
+wl doctor  # optional Charter compliance check — reports, never blocks
 ```
 
 ## The protocol in 60 seconds

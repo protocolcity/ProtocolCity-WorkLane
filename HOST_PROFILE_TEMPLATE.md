@@ -17,13 +17,13 @@ what "done" means for your codebase. Skipping this doc is how two agents
 Run from `<absolute path to your repo root>`. Commit subject convention:
 `<your-prefix>-NNN: short description`.
 
-**Ticket interface:** `<MCP | tk CLI | direct HTTP>` — see
+**Ticket interface:** `<MCP | wl CLI | direct HTTP>` — see
 [INSTALL.md §5](INSTALL.md#5-pick-an-interface-for-agents) for how each
 works. Never write WL's SQLite stores directly from host code.
 
 ```bash
 # fill in whichever interface you picked above, e.g.:
-tk list --project <your-slug> --status backlog
+wl list --project <your-slug> --status backlog
 ```
 
 **Agent identity:** every agent lane your host runs needs its own
@@ -87,7 +87,7 @@ any ticket:
 
 1. Read `<path-to-your-copy-of>/PROTOCOL.md` (or your host profile section
    above) — the lifecycle/ownership rulebook every agent follows.
-2. Use `<MCP | the tk CLI | curl>` for every read/write — never open WL's
+2. Use `<MCP | the wl CLI | curl>` for every read/write — never open WL's
    SQLite files directly.
 3. Sign every comment with `<your-agent-id>` (PROTOCOL.md §3.8).
 4. Close tickets with the four-section contract: `Completed:` /

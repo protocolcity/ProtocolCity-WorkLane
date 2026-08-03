@@ -11,8 +11,6 @@ developer can approve in one click.
 Public surface:
 
 * :class:`WorkQueue` — load + prioritize + filter ready tasks.
-* :func:`find_orphans` — in-progress tickets left over from a previous
-  session, surfaced on dev dashboard startup.
 * :func:`group_by_file_conflict` — bucket tickets that touch the same
   files into one terminal so two agents don't stomp on each other.
 * :func:`build_dispatch_prompt` — render the Claude Code prompt for an
@@ -39,7 +37,6 @@ from worklane.devqueue.queue import (
     BlockerInfo,
     WorkQueue,
     build_dispatch_prompt,
-    find_orphans,
     parse_blockers,
 )
 from worklane.devqueue.shutdown import (
@@ -57,7 +54,6 @@ __all__ = [
     "WorkQueue",
     "build_dispatch_prompt",
     "extract_file_refs",
-    "find_orphans",
     "group_by_file_conflict",
     "parse_blockers",
     "run_shutdown",

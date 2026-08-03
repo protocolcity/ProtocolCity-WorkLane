@@ -41,12 +41,14 @@ class PortabilityTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def _seed_rich(self) -> None:
+        # Alpha is a live backlog ticket with a proper worker seat so it
+        # round-trips cleanly (routing stamp not applied when seat is present).
         t1 = self.src.create_task(
             title="Alpha",
             description="First ticket",
             status="backlog",
             priority=2,
-            labels=["area:data", "lane:grok"],
+            labels=["area:data", "worker:grok"],
             ext_id="EXT-alpha",
         )
         self.src.add_comment(str(t1.id), "hello from seed", author="grok")
@@ -197,6 +199,133 @@ class PortabilityTest(unittest.TestCase):
         self.assertEqual(count, 2)
         text = (self.root / "out.jsonl").read_text(encoding="utf-8")
         self.assertEqual(len([ln for ln in text.splitlines() if ln.strip()]), 2)
+
+
+class ImportRoutingTest(unittest.TestCase):
+    """Routing law on import paths (wl-338).
+
+    Live tickets without a worker:* seat must arrive with needs:routing.
+    Done/canceled tickets are exempt. Already-routed tickets are untouched.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dst = SQLiteTracker(
+            db_path=Path(self._tmp.name) / "dst.db", product_default=""
+        )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _import_one(self, obj: Dict[str, Any]) -> Dict[str, Any]:
+        line = json.dumps(obj, separators=(",", ":"))
+        portability.import_jsonl([line], "fixture", tracker=self.dst)
+        tasks = self.dst.list_tasks()
+        self.assertEqual(len(tasks), 1)
+        return tasks[0].__dict__
+
+    def test_live_ticket_without_seat_gets_needs_routing(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "Unrouted",
+                "description": "live, no seat",
+                "status": "backlog",
+                "priority": 3,
+                "labels": ["area:backend"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            }
+        )
+        self.assertIn("needs:routing", task["labels"])
+
+    def test_live_ticket_already_routed_is_unchanged(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "Routed",
+                "description": "live, has seat",
+                "status": "backlog",
+                "priority": 3,
+                "labels": ["worker:grok", "area:backend"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            }
+        )
+        self.assertNotIn("needs:routing", task["labels"])
+        self.assertIn("worker:grok", task["labels"])
+
+    def test_done_ticket_without_seat_is_not_stamped(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "Closed",
+                "description": "done, no seat",
+                "status": "done",
+                "priority": 3,
+                "labels": ["product:demo"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            }
+        )
+        self.assertNotIn("needs:routing", task["labels"])
+
+    def test_canceled_ticket_without_seat_is_not_stamped(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "Canceled",
+                "description": "canceled, no seat",
+                "status": "canceled",
+                "priority": 3,
+                "labels": [],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            }
+        )
+        self.assertNotIn("needs:routing", task["labels"])
+
+    def test_in_progress_ticket_without_seat_gets_stamped(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "InFlight",
+                "description": "in_progress, no seat",
+                "status": "in_progress",
+                "priority": 3,
+                "labels": ["area:api"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            }
+        )
+        self.assertIn("needs:routing", task["labels"])
+
+    def test_needs_routing_not_doubled_when_already_present(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "AlreadyStamped",
+                "description": "already has needs:routing",
+                "status": "backlog",
+                "priority": 3,
+                "labels": ["needs:routing"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            }
+        )
+        self.assertEqual(task["labels"].count("needs:routing"), 1)
 
 
 if __name__ == "__main__":

@@ -291,7 +291,7 @@ def cmd_demo(args: argparse.Namespace) -> None:
         print(f"  status:  {', '.join(parts)}")
     if not report.get("skipped"):
         print(
-            f"Use `tk list --product {report['slug']}` to browse tickets, "
+            f"Use `wl list --product {report['slug']}` to browse tickets, "
             "or connect via MCP."
         )
         print(

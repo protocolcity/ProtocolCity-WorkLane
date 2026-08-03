@@ -8,6 +8,10 @@ Law (BluePrint cities + this engine):
 - **Hard B (wl-274, 2026-07-28):** when the product has ≥1 hired *lane*
   hand, create **requires** a ``worker:*`` seat — reject, do not soft-stamp
   as steady state. Pre-hire (no hired lanes): stamp ``needs:routing``.
+- **Starve guard (wl-315, 2026-08-01):** bare ``worker:you`` (no ``you:kind``
+  and no founder gate label) is rejected when hands are hired — it parks
+  implement work on a seat cron never drains. Require ``you:note|remind|todo|host``
+  or a founder/publish gate label, or route to ``worker:<persona>``.
 - Never invent a hand id.
 """
 
@@ -20,6 +24,16 @@ WORKER_LABEL_RE = re.compile(r"^worker:(.+)$", re.IGNORECASE)
 YOU_KIND_RE = re.compile(r"^you:(note|remind|todo|host)$", re.IGNORECASE)
 NEEDS_ROUTING_LABEL = "needs:routing"
 WORKER_YOU = "worker:you"
+# Founder / publish park on You is intentional — not starve of implement work.
+_FOUNDER_GATE_LABELS = frozenset(
+    {
+        "gate:founder",
+        "gate:publish",
+        "gate:human",
+        "founder",
+        "publish",
+    }
+)
 
 
 def _coerce_labels(raw: object) -> List[str]:
@@ -52,6 +66,31 @@ def worker_ids_from_labels(labels: Iterable[str]) -> List[str]:
 
 def has_worker_label(labels: Iterable[str]) -> bool:
     return bool(worker_ids_from_labels(labels))
+
+
+def has_you_kind(labels: Iterable[str]) -> bool:
+    """True when a you:note|remind|todo|host kind is present."""
+    for lab in labels or []:
+        if YOU_KIND_RE.match(str(lab).strip()):
+            return True
+    return False
+
+
+def has_founder_gate_label(labels: Iterable[str]) -> bool:
+    """True when a founder/publish gate label parks work on You intentionally."""
+    for lab in labels or []:
+        s = str(lab).strip().lower()
+        if s in _FOUNDER_GATE_LABELS or s.startswith("gate:founder"):
+            return True
+    return False
+
+
+def worker_you_is_classified(labels: Iterable[str]) -> bool:
+    """worker:you is OK only when classified (you-kind or founder gate)."""
+    labs = list(labels or [])
+    if "you" not in worker_ids_from_labels(labs):
+        return True
+    return has_you_kind(labs) or has_founder_gate_label(labs)
 
 
 def normalize_hired_hands(hired: Optional[Sequence[str]]) -> List[str]:
@@ -111,11 +150,27 @@ def ensure_create_labels(
             "exactly one worker:<id> label allowed — got "
             + ", ".join("worker:" + i for i in ids),
         )
+    hired = normalize_hired_hands(hired_hands)
     if has_worker_label(labs):
         cleaned = [x for x in labs if x.lower() != NEEDS_ROUTING_LABEL]
+        # wl-315: bare worker:you starves ready when hands exist — classify it.
+        if (
+            hard_when_hands
+            and hired
+            and "you" in ids
+            and not worker_you_is_classified(cleaned)
+        ):
+            return (
+                cleaned,
+                False,
+                "worker:you without you:note|remind|todo|host (or founder/publish gate) "
+                "starves hand queues — cron never drains You. "
+                "Route implement work to a hired seat, or classify the human park: "
+                + format_seat_help(hired)
+                + " + you:note|you:host|you:todo|you:remind",
+            )
         return cleaned, False, None
 
-    hired = normalize_hired_hands(hired_hands)
     if hard_when_hands and hired:
         return (
             labs,
@@ -158,6 +213,44 @@ def reconcile_routing_after_mutation(
     if any(x.lower() == NEEDS_ROUTING_LABEL for x in labs):
         return labs, False, False
     return labs + [NEEDS_ROUTING_LABEL], True, False
+
+
+def check_mutation_starve_guard(
+    current_labels: Sequence[str],
+    *,
+    add: Optional[Sequence[str]] = None,
+    remove: Optional[Sequence[str]] = None,
+    hired_hands: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """wl-320: starve guard for label *mutations*.
+
+    Returns an error string when the post-mutation label set would result in
+    bare ``worker:you`` (no you-kind, no founder gate) while hired hands exist.
+    Returns None when the mutation is safe.
+    """
+    hired = normalize_hired_hands(hired_hands)
+    if not hired:
+        return None  # pre-hire: no guard applies
+
+    labs = list(_coerce_labels(current_labels))
+    for lb in (add or []):
+        lb_s = str(lb).strip()
+        if lb_s and lb_s not in labs:
+            labs.append(lb_s)
+    for lb in (remove or []):
+        lb_s = str(lb).strip()
+        if lb_s in labs:
+            labs.remove(lb_s)
+
+    if not worker_you_is_classified(labs):
+        return (
+            "worker:you without you:note|remind|todo|host (or founder/publish gate) "
+            "starves hand queues — cron never drains You. "
+            "Route implement work to a hired seat, or classify the human park: "
+            + format_seat_help(hired)
+            + " + you:note|you:host|you:todo|you:remind"
+        )
+    return None
 
 
 def check_worker_product_mismatch(

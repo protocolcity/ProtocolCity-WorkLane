@@ -29,6 +29,7 @@ from worklane.products import (
     live_feed_product_slug,
     product_tracker,
     product_trackers,
+    resolve_write_task_id,
     split_task_id,
     wl_data_dir,
     get_product,
@@ -344,13 +345,32 @@ def _allocation_author_rows(scope: str, since: datetime) -> List[Dict[str, Any]]
 
 # ── Task / tracker resolution ───────────────────────────────────────────────
 
-def _resolve_product_tracker(task_id: str) -> Tuple[str, str, Any]:
+def _resolve_product_tracker(
+    task_id: str,
+    project: Optional[str] = None,
+    *,
+    write: bool = False,
+) -> Tuple[str, str, Any]:
     """Composite task id → (product slug, raw store id, tracker).
 
     ``o-`` ids still resolve to the retired ops store so legacy links
     keep working; everything else routes through the product registry.
+
+    When ``write=True`` (wl-344): bare ids require an explicit ``project``
+    (query/body); never fall through to the configured default store.
+    Raises ``ValueError`` with a caller-safe message on addressing errors.
     """
-    slug, raw = split_task_id(task_id)
+    if write:
+        slug, raw = resolve_write_task_id(task_id, project)
+    else:
+        slug, raw = split_task_id(task_id)
+        explicit = str(project or "").strip().lower() or None
+        if explicit and explicit not in ("all", slug):
+            # Read-path mismatch is still a hard error when both are given.
+            raise ValueError(
+                f"task_id {task_id!r} belongs to product {slug!r}, "
+                f"not {explicit!r}"
+            )
     if slug == "ops":
         return slug, raw, get_ops_ticket_tracker()
     return slug, raw, product_tracker(slug)
@@ -489,33 +509,35 @@ def _human_gate_is_parked(gate_note: Optional[str]) -> bool:
 def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
     """Everything blocked on the founder *now*, all stores (wl-135 / wl-257):
 
-    in_review (sign-off), needs:founder-decision labels, gate_type=human that
-    still needs a concrete You action, stalled in-flight (§4, >90m), and
-    gate_type=timer embargoes. Sorted oldest-first.
+    needs:founder-decision labels, gate_type=human that still needs a concrete
+    You action, stalled in-flight (§4, >90m), and gate_type=timer embargoes.
+    Sorted oldest-first.
 
-    **Not** in the list: parked human gates (deferred:/umbrella/post-northstar
-    etc.) — they still withhold ready, but must not gold-paint For You. Each
-    open task counts once; first match wins (in_review before founder_decision
-    before human_gate).
+    **Not** in the list (2026-07-30 founder — file=decided / scarce For You):
+    - bare ``in_review`` — that status is soft-lock / reserve / bundle park
+      (PROCESS §4), **not** “work finished, wait for You to accept.” Ordinary
+      implement WOs close ``in_progress`` → ``done``. Use ``gate_type=human``
+      only when You must act now.
+    - parked human gates (deferred:/umbrella/post-northstar etc.) — they still
+      withhold ready, but must not gold-paint For You.
+
+    Each open task counts once; first match wins (founder_decision before
+    human_gate before stalled).
     """
     items: List[Dict[str, Any]] = []
     counted: set = set()
 
     for t in _merged_in_flight_tasks(""):
         prod_slug, _ = split_task_id(t.id)
-        if t.status == TaskStatus.IN_REVIEW:
-            since = _parse_task_date_utc(t.updated_at) or _parse_task_date_utc(t.created_at)
-            items.append(_attention_item(t, prod_slug, "in_review", "awaiting review", since, now))
+        # in_review is no longer auto-gold (was misread as founder accept).
+        # Still surface stalled in_progress/in_review after 90m silence.
+        since = _parse_task_date_utc(t.updated_at)
+        if since is not None and (now - since) >= _stale_inflight():
+            items.append(_attention_item(
+                t, prod_slug, "stalled",
+                f"no update {_pulse_relative_time(t.updated_at, now=now)}", since, now,
+            ))
             counted.add(t.id)
-        else:
-            since = _parse_task_date_utc(t.updated_at)
-            if since is not None and (now - since) >= _stale_inflight():
-                items.append(_attention_item(
-                    t, prod_slug, "stalled",
-                    f"no update {_pulse_relative_time(t.updated_at, now=now)}", since, now,
-                ))
-                counted.add(t.id)
-
     for t in _merged_scope_tasks_for_filters(""):
         if t.id in counted or t.status in (TaskStatus.DONE, TaskStatus.CANCELED):
             continue

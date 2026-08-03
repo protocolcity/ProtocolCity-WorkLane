@@ -12,6 +12,7 @@ from pathlib import Path
 
 from worklane.routing_labels import (
     NEEDS_ROUTING_LABEL,
+    check_mutation_starve_guard,
     reconcile_routing_after_mutation,
 )
 from worklane.trackers.protocol import TaskStatus
@@ -143,6 +144,76 @@ class UpdateLabelsRestampTest(unittest.TestCase):
         )
         assert updated is not None
         self.assertNotIn(NEEDS_ROUTING_LABEL, updated.labels)
+
+
+class CheckMutationStarveGuardTest(unittest.TestCase):
+    """wl-320: label mutations must not bypass the wl-315 starve guard."""
+
+    _HIRED = ["worker:lili", "worker:terra"]
+
+    def test_bare_worker_you_added_when_hired_is_error(self) -> None:
+        err = check_mutation_starve_guard(
+            ["worker:lili"],
+            add=["worker:you"],
+            remove=["worker:lili"],
+            hired_hands=self._HIRED,
+        )
+        self.assertIsNotNone(err)
+        self.assertIn("starves", (err or "").lower())
+
+    def test_worker_you_with_you_kind_is_allowed(self) -> None:
+        err = check_mutation_starve_guard(
+            ["worker:lili"],
+            add=["worker:you", "you:note"],
+            remove=["worker:lili"],
+            hired_hands=self._HIRED,
+        )
+        self.assertIsNone(err)
+
+    def test_worker_you_with_founder_gate_is_allowed(self) -> None:
+        err = check_mutation_starve_guard(
+            ["worker:lili"],
+            add=["worker:you", "gate:founder"],
+            remove=["worker:lili"],
+            hired_hands=self._HIRED,
+        )
+        self.assertIsNone(err)
+
+    def test_no_hired_hands_no_error(self) -> None:
+        err = check_mutation_starve_guard(
+            [],
+            add=["worker:you"],
+            hired_hands=None,
+        )
+        self.assertIsNone(err)
+
+    def test_removing_you_kind_from_worker_you_ticket_is_error(self) -> None:
+        # Existing: worker:you + you:note. Remove you:note → bare worker:you.
+        err = check_mutation_starve_guard(
+            ["worker:you", "you:note"],
+            remove=["you:note"],
+            hired_hands=self._HIRED,
+        )
+        self.assertIsNotNone(err)
+        self.assertIn("starves", (err or "").lower())
+
+    def test_no_worker_you_no_error(self) -> None:
+        err = check_mutation_starve_guard(
+            ["worker:lili"],
+            add=["worker:terra"],
+            remove=["worker:lili"],
+            hired_hands=self._HIRED,
+        )
+        self.assertIsNone(err)
+
+    def test_already_classified_worker_you_retained(self) -> None:
+        # worker:you + you:todo already present; add another label — no error.
+        err = check_mutation_starve_guard(
+            ["worker:you", "you:todo"],
+            add=["priority:high"],
+            hired_hands=self._HIRED,
+        )
+        self.assertIsNone(err)
 
 
 if __name__ == "__main__":

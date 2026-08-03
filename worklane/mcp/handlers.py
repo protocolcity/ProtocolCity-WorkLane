@@ -15,9 +15,11 @@ from worklane.products import (
     default_product_slug,
     discover_products,
     get_product,
+    known_prefix_slug,
     prefixed_task_id,
     product_slugs,
     product_tracker,
+    resolve_write_task_id,
     split_task_id,
 )
 from worklane.trackers.protocol import Task, TaskStatus
@@ -100,15 +102,31 @@ class TPHandlers:
         return slug, tr
 
     def _resolve_task(
-        self, task_id: str, product: Optional[str] = None
+        self,
+        task_id: str,
+        product: Optional[str] = None,
+        *,
+        write: bool = False,
     ) -> Tuple[str, str, SQLiteTracker, Task]:
-        """Return (product_slug, raw_id, tracker, task)."""
+        """Return (product_slug, raw_id, tracker, task).
+
+        When ``write=True`` (wl-344): bare ids without an explicit
+        ``project``/``product`` are rejected — never silent default-store
+        writes. Reads keep the legacy default-product fallback.
+        """
         tid = (task_id or "").strip()
         if not tid:
             raise ToolError("task_id is required")
 
-        # Composite id wins over product param when prefix is known.
-        if "-" in tid and not tid.lstrip("-").isdigit():
+        if write:
+            try:
+                slug_from_id, raw = resolve_write_task_id(tid, product)
+            except ValueError as exc:
+                raise ToolError(str(exc)) from exc
+            slug, tr = self._tracker(slug_from_id)
+            raw_id = raw
+        elif known_prefix_slug(tid) is not None:
+            # Composite id wins over product param when prefix is known.
             slug_from_id, raw = split_task_id(tid)
             if product:
                 want = self._resolve_product(product)
@@ -347,7 +365,7 @@ class TPHandlers:
         MCP claim collapses both: single-ticket agents start work immediately.
         Soft-lock-only reserve remains available via the host CLI status path.
         """
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status == TaskStatus.DONE:
             raise ToolError(f"{self._public_id(slug, raw_id)} is already done")
         if task.status == TaskStatus.CANCELED:
@@ -415,7 +433,23 @@ class TPHandlers:
                 "Blocked comments must include a 'Next step:' line (PROTOCOL.md §5)"
             )
 
-        slug, raw_id, tr, _task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
+        # wl-347: refuse Completed: on umbrella/epic with uncovered children.
+        from worklane.epic_coverage import (  # noqa: PLC0415
+            body_is_done_closeout,
+            coverage_block_reason,
+        )
+
+        if body_is_done_closeout(body):
+            db_path = getattr(tr, "_db_path", None)
+            spec = get_product(slug)
+            prefix = spec.prefix if spec is not None else None
+            cov_err = coverage_block_reason(
+                task, tr, db_path=db_path, product_prefix=prefix
+            )
+            if cov_err:
+                raise ToolError(cov_err)
+
         comment = tr.add_comment(raw_id, body, author=self.author)
         fresh = tr.get_task(raw_id)
         return {
@@ -454,12 +488,24 @@ class TPHandlers:
                 "(PR URL, commit SHA, or repo-relative path)"
             )
 
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status not in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
             raise ToolError(
                 f"can only close from in_progress/in_review "
                 f"(current: {task.status})"
             )
+
+        # wl-347: umbrella/epic child-coverage before close-out lands.
+        from worklane.epic_coverage import coverage_block_reason  # noqa: PLC0415
+
+        db_path = getattr(tr, "_db_path", None)
+        spec = get_product(slug)
+        prefix = spec.prefix if spec is not None else None
+        cov_err = coverage_block_reason(
+            task, tr, db_path=db_path, product_prefix=prefix
+        )
+        if cov_err:
+            raise ToolError(cov_err)
 
         body = (
             f"Completed:\n{completed}\n\n"
@@ -492,7 +538,7 @@ class TPHandlers:
         With reason + next_step: posts a ``Blocked:`` comment (auto-returns
         to backlog). Without: explicit status move + short release note.
         """
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status not in (
             TaskStatus.IN_PROGRESS,
             TaskStatus.IN_REVIEW,
@@ -540,7 +586,26 @@ class TPHandlers:
         if not add_list and not remove_list:
             raise ToolError("at least one of 'add' or 'remove' is required")
 
-        slug, raw_id, tr, _task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, _task = self._resolve_task(task_id, product, write=True)
+
+        # wl-320: starve guard — label mutation must not bypass wl-315.
+        from worklane.routing_labels import (  # noqa: PLC0415
+            check_mutation_starve_guard,
+        )
+        try:
+            from worklane.api.tasks import _workforce_workers_for_product
+            _hired = _workforce_workers_for_product(slug)
+        except Exception:
+            _hired = []
+        _starve_err = check_mutation_starve_guard(
+            list(_task.labels or []),
+            add=add_list,
+            remove=remove_list,
+            hired_hands=_hired,
+        )
+        if _starve_err:
+            raise ToolError(_starve_err)
+
         updated = tr.update_labels(
             raw_id, add=add_list, remove=remove_list, actor=self.author
         )
@@ -591,7 +656,7 @@ class TPHandlers:
         if gate_type == "timer" and not gate_until:
             raise ToolError("gate_until is required when gate_type is 'timer'")
 
-        slug, raw_id, tr, _task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, _task = self._resolve_task(task_id, product, write=True)
         updated = tr.update_task(
             raw_id,
             title=title_s,
@@ -617,7 +682,7 @@ class TPHandlers:
         if not reason_s:
             raise ToolError("reason is required — cancel needs a short rationale")
 
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status == TaskStatus.CANCELED:
             raise ToolError(f"{self._public_id(slug, raw_id)} is already canceled")
         if task.status == TaskStatus.DONE:
@@ -648,7 +713,7 @@ class TPHandlers:
         reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Reopen a closed ticket (done/canceled → backlog)."""
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status not in (TaskStatus.DONE, TaskStatus.CANCELED):
             raise ToolError(
                 f"can only reopen from done/canceled "
@@ -685,7 +750,7 @@ class TPHandlers:
         PROTOCOL.md §2 step 2/3 — reserve while reading or park siblings in a
         bundle. Promote later with ``wl_claim``.
         """
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status == TaskStatus.IN_REVIEW:
             # Idempotent re-reserve: repost marker, stay in_review.
             pass
@@ -737,7 +802,7 @@ class TPHandlers:
         can be promoted via ``wl_claim`` without releasing the parked one
         back to the free pool.
         """
-        slug, raw_id, tr, task = self._resolve_task(task_id, product)
+        slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status == TaskStatus.IN_REVIEW:
             # Already parked — idempotent note only.
             pass
@@ -888,10 +953,12 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
     project_prop = {
         "type": "string",
         "description": (
-            "Project store slug (e.g. tradeos, worklane) — canonical "
+            "Project store slug (e.g. worklane, tradeos) — canonical "
             "name (wl-64). 'product' is a silent back-compat alias for this "
             "same field; passing both with different values is an error. "
-            "Omit to use connect-time default (WL_PROJECT / WL_PROJECT or tradeos). "
+            "On write tools with a bare task_id, project= is required (wl-344) — "
+            "connect-time default alone is not enough. With a composite id, "
+            "omit or pass the matching store. "
             "wl_list/wl_ready/wl_mine/wl_counts also accept 'all'."
         ),
     }
@@ -905,8 +972,10 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
     task_id_prop = {
         "type": "string",
         "description": (
-            "Ticket id — composite (wl-19, t-1095) or bare numeric for the "
-            "selected product"
+            "Ticket id — prefer composite (wl-328, ts-12). Bare numeric ids "
+            "on write tools require an explicit project= (or product= alias); "
+            "default-store fallback is refused to stop cross-store bleed (wl-344). "
+            "Reads may still omit project when the connect-time default is intended."
         ),
     }
 
@@ -1016,8 +1085,9 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                         "items": {"type": "string"},
                         "description": (
                             "Prefer include worker:<hand-id> so scheduled hands "
-                            "drain the ticket. If omitted, create stamps "
-                            "needs:routing (visible unrouted ready — not silent)."
+                            "drain the ticket. Required when hands are hired for "
+                            "this product — omit a seat and create is rejected "
+                            "with valid seat options. Pre-hire: stamps needs:routing."
                         ),
                     },
                     "intake": {

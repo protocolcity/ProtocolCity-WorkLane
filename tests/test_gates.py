@@ -209,8 +209,10 @@ class HttpGateTest(unittest.TestCase):
 
     def test_patch_sets_gate(self) -> None:
         t = self.tracker.create_task(title="HTTP gate")
+        # wl-344: write paths require composite id (or project=); bare raw ids
+        # no longer default-store write.
         r = self.client.patch(
-            f"/api/admin/tasks/{t.id}",
+            f"/api/admin/tasks/t-{t.id}",
             json={"gate_type": "human", "gate_note": "founder call"},
         )
         self.assertEqual(r.status_code, 200)
@@ -221,7 +223,7 @@ class HttpGateTest(unittest.TestCase):
     def test_patch_deferred_gate(self) -> None:
         t = self.tracker.create_task(title="HTTP deferred gate")
         r = self.client.patch(
-            f"/api/admin/tasks/{t.id}",
+            f"/api/admin/tasks/t-{t.id}",
             json={"gate_type": "deferred", "gate_note": "thaw when epic ships"},
         )
         self.assertEqual(r.status_code, 200)
@@ -231,7 +233,9 @@ class HttpGateTest(unittest.TestCase):
 
     def test_patch_timer_gate_without_until_is_400(self) -> None:
         t = self.tracker.create_task(title="HTTP gate")
-        r = self.client.patch(f"/api/admin/tasks/{t.id}", json={"gate_type": "timer"})
+        r = self.client.patch(
+            f"/api/admin/tasks/t-{t.id}", json={"gate_type": "timer"}
+        )
         self.assertEqual(r.status_code, 400)
 
     def test_ready_endpoint_excludes_deferred_gated(self) -> None:

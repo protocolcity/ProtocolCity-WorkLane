@@ -251,6 +251,32 @@ def _insert_task_raw(
     return str(new_pk)
 
 
+_INACTIVE_STATUSES = frozenset({"done", "canceled"})
+
+
+def _apply_import_routing(obj: Dict[str, Any]) -> Dict[str, Any]:
+    """Stamp needs:routing on live imported tickets that arrive without a seat.
+
+    Done/canceled tickets are not in any queue — no stamp needed.
+    Import never rejects (pre-hire soft path only): malformed routing is
+    preserved as-is so archival restores always succeed.
+    """
+    status = str(obj.get("status") or "backlog").lower()
+    if status in _INACTIVE_STATUSES:
+        return obj
+    from worklane.routing_labels import ensure_create_labels
+
+    raw_labels = obj.get("labels") or []
+    if not isinstance(raw_labels, list):
+        raw_labels = []
+    routed, _, err = ensure_create_labels(raw_labels, hard_when_hands=False)
+    if err or routed == raw_labels:
+        return obj
+    mutated = dict(obj)
+    mutated["labels"] = routed
+    return mutated
+
+
 def import_jsonl(
     lines: Iterable[str],
     product: str,
@@ -262,6 +288,10 @@ def import_jsonl(
     Collisions: if a line carries a non-empty ``ext_id`` that already exists
     in the destination store, the line is skipped and listed in
     ``report.collisions``. Malformed lines raise :class:`PortabilityError`.
+
+    Routing law (wl-338): live imported tickets without a ``worker:*`` seat
+    get ``needs:routing`` stamped so they appear in the unrouted feed rather
+    than silently draining no-one's queue.
     """
     tr = tracker if tracker is not None else _tracker_for_product(product)
     report = ImportReport()
@@ -283,7 +313,7 @@ def import_jsonl(
                     if _ext_id_exists(conn, str(ext_id)):
                         report.collisions.append(old_id)
                         continue
-                new_id = _insert_task_raw(conn, obj)
+                new_id = _insert_task_raw(conn, _apply_import_routing(obj))
                 report.created.append((old_id, new_id))
 
     return report

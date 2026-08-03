@@ -230,23 +230,38 @@ class OverviewScopeTest(unittest.TestCase):
         self.assertIn("/admin/tickets/", body)
 
     def test_attention_attributes_non_default_store(self) -> None:
-        # wl-144: in-flight work in a non-default store must surface with its
-        # own store's composite id — _merged_in_flight_tasks used to return
-        # bare ids, which split_task_id attributes to the DEFAULT store,
-        # mislabeling the item and linking /admin/tasks/<n> to the wrong
-        # ticket entirely.
+        # wl-144: founder attention items in a non-default store must surface
+        # with that store's composite id. Gold is human-gate (not bare
+        # in_review — 2026-07-30 scarce For You / file=decided).
         t = self.beta.create_task(title="beta review", description="x")
         self.beta.update_status(t.id, TaskStatus.IN_PROGRESS)
-        self.beta.update_status(t.id, TaskStatus.IN_REVIEW)
+        self.beta.update_task(
+            t.id, gate_type="human", gate_note="approve beta ship", actor="test"
+        )
         j = self.client.get("/api/dev/attention").json()
-        match = [i for i in j["items"]
-                 if i["kind"] == "in_review" and i["title"] == "beta review"]
+        match = [
+            i for i in j["items"]
+            if i.get("title") == "beta review"
+            and i.get("kind") == "human_gate"
+        ]
         self.assertEqual(len(match), 1, j["items"])
         it = match[0]
         self.assertEqual(it["product"], "beta")
         self.assertNotEqual(str(it["id"]), str(t.id))  # composite, never bare
         self.assertTrue(str(it["id"]).endswith(f"-{t.id}"), it["id"])
         self.assertEqual(it["url"], f"/admin/desk?open={it['id']}")
+
+    def test_bare_in_review_not_in_attention(self) -> None:
+        # 2026-07-30: reserve/soft-lock must not gold For You.
+        t = self.beta.create_task(title="beta reserved only", description="x")
+        self.beta.update_status(t.id, TaskStatus.IN_PROGRESS)
+        self.beta.update_status(t.id, TaskStatus.IN_REVIEW)
+        j = self.client.get("/api/dev/attention").json()
+        match = [
+            i for i in j["items"]
+            if i.get("title") == "beta reserved only"
+        ]
+        self.assertEqual(match, [], j["items"])
 
     def test_add_project_warns_without_neighborhood_folder(self) -> None:
         # wl-155: founding-path guardrail — slug must match a neighborhood

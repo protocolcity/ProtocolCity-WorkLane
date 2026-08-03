@@ -20,7 +20,6 @@ from worklane.devqueue.conflicts import (
 from worklane.devqueue.queue import (
     WorkQueue,
     build_dispatch_prompt,
-    find_orphans,
     parse_blockers,
 )
 from worklane.devqueue.shutdown import (
@@ -160,9 +159,6 @@ class WorkQueueBehaviorTest(unittest.TestCase):
 
         orphans = WorkQueue(self.tracker).orphans()
         self.assertEqual([t.id for t in orphans], [ip.id])
-
-        via_helper = find_orphans(self.tracker)
-        self.assertEqual([t.id for t in via_helper], [ip.id])
 
     def test_label_filter(self) -> None:
         a = self.tracker.create_task(title="a", labels=["lane:grok"])

@@ -1,6 +1,14 @@
 # WorkLane Process Guide
 
-Operational rulebook for how agents and humans work tickets in WL. System design rationale lives in `workqueue-coordination-system-design.md`.
+Operational rulebook for how agents and humans work **work orders** in
+WorkLane (engine docs may still say ticket). System design rationale lives in
+`workqueue-coordination-system-design.md`.
+
+> **Start here (citizen / Agents / host AI):**  
+> [`docs/CITIZEN_PROTOCOL.md`](docs/CITIZEN_PROTOCOL.md) — short path only.  
+> This full PROCESS is the **engine + maintainer** rulebook.  
+> Taught verb: **`wl`**. Surface noun: **work order**.  
+> Foundation v2: dual register in ProtocolCity `SUITE_VOCABULARY.md`.
 
 ## 1) Core Model
 
@@ -62,6 +70,41 @@ Multi-agent routing on WL is a negative-space default, not an explicit gate. Thi
   `worker:felix` label places the ticket on that hand's schedule. Do not put two
   `worker:*` labels on one ticket.
 - **Cross-store mismatch guard (wl-296, 2026-07-29).** On create and on label-add, if the roster lists `worker:<id>` with a `queue_url` for a *different* product than the ticket's store, the engine emits a `routing_warning` (the ticket would never reach that hand's feed). Set env `WL_WORKER_PRODUCT_HARD_REJECT=1` to hard-reject instead. `worker:you` is exempt — it is a personal seat, not a roster lane.
+- **Starve guard (wl-315, 2026-08-01).** Scheduled hands drain **only**
+  `worker:<persona>` ready feeds. **`worker:you` never drains while You are
+  away.** When lanes are hired, create rejects **bare** `worker:you` (no
+  `you:note|remind|todo|host` and no founder/publish gate label). Coord must
+  route implement work to a hand seat, or classify the You park intentionally.
+  Anti-pattern: defaulting “fix this” tickets to `worker:you` / `you:host`
+  as a dump — that starves every queue.
+- **Assign vs escalate (do not mix).** Default **assign** = `worker:<persona>`.
+  **Your list** = `worker:you` + you-kind. **Escalate to You** (hand blocked /
+  needs decision / failed close) = **keep** `worker:<persona>` and set
+  `gate_type=human` or a `Blocked:` + Next step note — **do not** re-seat the
+  ticket to `worker:you`. Marshal ghost release returns work to **backlog on
+  the same hand seat**, not onto You. Gold For You is the escalate signal;
+  Your list is a different quiet seat.
+- **Chief-of-staff may stamp `needs:routing` → `worker:<hand>` (wf-133,
+  2026-08-03; function seat pc-367).** Re-route is otherwise a human/coord
+  act. The workspace **chief-of-staff** seat (function-named job, not a
+  product lane) is the sole scheduled exception: it may place exactly one
+  `worker:<hand>` on a ticket that currently carries `needs:routing`, then
+  drop `needs:routing`. Constraints (all required):
+  - **Same-store only** — the hand's roster `queue_url` product must match
+    the ticket's store (wl-296 cross-store guard). Never stamp a seat that
+    would never drain this store.
+  - **Lane-fit** — choose the hand whose neighborhood `AGENTS.md` /
+    CONTRACT take-list covers the work. Do not invent a seat or dump
+    implement work onto `worker:you`.
+  - **Never FOUNDER / gated** — leave alone any ticket titled `FOUNDER · …`,
+    labeled `needs:founder-decision`, carrying an active `gate_type=human`
+    (or publish gate), or otherwise reserved for You / founder attention.
+  - **Log every move** — post a signed comment on the ticket
+    (`Routed: needs:routing → worker:<hand> — <why>`) before or with the
+    label change. Silent re-seats are a process violation.
+  - **Ambiguous → leave (anti-abuse)** — if lane-fit is unclear, comment the
+    ambiguity and **leave `needs:routing` in place**. Do not guess. Do not
+    mass-route; do not strip `needs:routing` without a valid seat stamp.
 - **>24h no-activity demotion.** A `worker:*` label with no activity for more than 24 hours is treated as stale: the default-worker pool may pick the ticket up as if it were unlabeled. Narrower-scope agents don't need to strip the label themselves — the pool's own scan handles the fallback.
 - **Why labels aren't mandatory.** Requiring a worker label on every ticket would turn the label into a routing gate: a fresh, unlabeled ticket would be invisible to every agent until someone triaged it, adding a failure mode where tickets belong to nobody and rot. The unlabeled-default guarantees every ticket always has an owner-of-last-resort. (Ratified as DECISION (recommendation-default) 2026-07-11, wl-53 — founder may veto.)
 
@@ -78,6 +121,12 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
     free; shipping code/docs/config without a ticket id is a process
     violation. Host-as-hand claims as **you** (or the citizen id). Coord
     still must not steal `worker:*` feeds when hands are armed.
+1c. **Re-route is human/coord — CoS exception only** (wf-133, 2026-08-03) —
+    ordinary hands do not re-seat tickets. The workspace chief-of-staff
+    seat may stamp `worker:<hand>` on `needs:routing` under the constraints
+    in §2.1 (same-store, lane-fit, never FOUNDER/gated, comment every move;
+    ambiguous = leave `needs:routing`). Everyone else: create-time seat,
+    profile self-service (§2.1 addendum), or human/coord triage.
 2. **Single live owner** — `in_progress` is one ticket per agent at a time.
 3. **Status is truth** — ticket status matches actual work state.
 4. **Comment trail** — blockers, decisions, and completion evidence go in comments.
@@ -85,6 +134,12 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
 6. **Declare dependencies** — use `Depends on #NNN` in the description so the queue guard can freeze siblings.
 7. **Recommendation-default decisions** (founder-ratified 2026-07-09) — when a ticket hits a decision point, the agent records its recommendation as the decision (`DECISION (recommendation-default): <choice> — <why>` comment) and keeps working; the founder reviews and can veto after the fact. `needs:founder-decision` is reserved for the escalation class only: real-money gates (LIVE flips, risk-limit widening, new broker/credential enablement, moving money, gate bypasses), reversals of ratified ADRs/product direction, and public-facing or expensive-to-reverse actions. Everything else — including strategy-intent on paper/bench plays and exposure-reducing enforcement — proceeds on the recommendation. Decisions must be logged in ticket comments so the veto window is real.
 7a. **File = decided** (BluePrint product law, 2026-07-28) — when **You** file a work order (ordinary backlog, not a `FOUNDER ·` publish/gate ticket), that **is** the decision. Hands and coord sessions **work it** — they do not re-ask for permission, re-open design debate, or park as “waiting for You to pick.” Route with `worker:<id>` so schedules drain. **For You** remains scarce (rule 9): roadblocks only. This is expected behavior in every WorkLane-backed city, not host-private air traffic.
+7b. **Ship → close done · no founder accept step** (2026-07-30 founder — For You dump) — For ordinary implement work orders You filed:
+    - Hand claims → implements → posts structured `Completed:` / `Verification:` / `Links:` / `Follow-ups:` → status **`done`**.
+    - **Do not** leave finished work in `in_review` for You to “accept.” That status is **soft-lock / reserve / bundle park** (§4), not a sign-off queue.
+    - **Do not** set `gate_type=human` just because work landed. Human gates are act-now only (rule 9).
+    - Map gold / “needs You” must stay scarce. Dumping every closed or reserved ticket into For You is a process + engine violation (attention membership: human gates + founder-decision labels + stalled inflight + timers — **not** bare `in_review`).
+    - If You truly must sign off: file or update with `gate_type=human` + concrete `gate_note` (what to decide / what clears it) — never silent `in_review`.
 8. **Sign every comment** (2026-07-10) — pass the author flag (`--author "<agent-id>"` on the CLI, `author` on the API) on every comment you post, using your canonical agent id from §5.2. The `Owner:` line inside the body documents the claim; the author *field* is what the board byline, filters, and ghost-audits key on. The two must carry the same id. An unsigned (empty-author) comment is a process violation, not a default.
 9. **Gate classes — Ready · For You · Deferred** (engine wl-261, 2026-07-27; For You law wl-257, 2026-07-16) — Three attention/ready classes govern how a ticket surfaces to You:
 
@@ -112,6 +167,10 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
 12. **Umbrella epic discipline — file gated, never claim** (2026-07-29, wl-297) — A ticket that decomposes into child slices is a coordination wrapper, not a unit of dispatchable work. Two hard rules:
     - **File epics gated.** Before filing children, set `gate_type=deferred` + label `umbrella` on the parent. An epic filed without these is a filing error; the hand that encounters it must park it (`gate_type=deferred` + `umbrella` label, no claim), not work it. Claiming an umbrella without shipping the entire phase it represents is a process violation.
     - **Do not claim umbrella tickets.** A ticket labeled `umbrella` or `epic`, or whose deferred gate note contains "umbrella" or "epic", is a wrapper — take a child slice instead. Engine defense-in-depth: the ready feed (`wl_ready` / `WorkQueue.ready()`) excludes all `umbrella`-labeled tickets regardless of gate state, so a mis-filed epic also drops out of dispatch automatically.
+    - **Child-coverage on close (wl-347 / pc-978).** When an epic's body invents a child inventory, keep prose and the board honest:
+      - Prefer a structured `## Children` (or `## Child tickets` / `## Child list`) section: every list row must carry a filed ticket id (`- [ ] wl-N: title`). Close-path **refuses** wrappers whose Children rows lack ids or cite unknown ids.
+      - Children labeled `parent:<epic-id>` / `slice-of:<epic-id>` (or a `parent-child` relation) that are still open also **block** parent close until done/canceled.
+      - Free-form Done-when prose without a `## Children` section is not hard-parsed (false-positive risk); use the section when the inventory is load-bearing. Engine: `worklane/epic_coverage.py`.
     The work-order board is how You and agents coordinate. **Closing a ticket hides the work.** Residual work that still needs a return visit must remain **visible as open tickets**, not only as prose in a `Completed:` or `Follow-ups:` note.
     - **`Follow-ups: none` means none.** Not “tabled in my head,” not “hard-stops listed in the close comment,” not “re-file later.”
     - **If residual work exists at close:** either (a) **keep the parent open** and comment progress, or (b) **file child tickets first** (imperative titles, parent linked with `blocks:parent` / body “Parent: **id**”), list those ids under `Follow-ups:`, **then** close only the slice that actually shipped.
@@ -141,6 +200,54 @@ Auto-transitions (lifecycle guard):
 ## 5) Intake and Closeout
 
 **Intake** — concise imperative title, clear problem, expected outcome (with the kind of link expected at close), `area:*` / `sys:*` labels, priority (`1` urgent → `4` low). If follow-up work surfaces mid-ticket, file a child immediately and link it in a comment on the parent.
+
+**Citizen glance (2026-07-30 founder — digestible WOs):** You read Map / For You
+on a phone-width glance. Bodies full of design essays dump attention. **Required
+shape for new descriptions** (hands + coord sessions):
+
+```text
+## Glance
+One sentence: what breaks / what ships. Optional second line: why you care.
+
+## Where
+project-or-path (city-relative: register/app · ProtocolCity/suite/suite-paper.js)
+optional second line: paper path, prototype HTML, or external URL
+
+## Done when
+- bullet (checkable)
+
+## Detail
+(longer context, design notes, code pointers — optional; fold under this heading)
+```
+
+Rules:
+- **Title** carries the verb + surface (`Map: agent cards don't thrash`).
+- **Glance** ≤ ~280 chars total — if You only read that, the WO still makes sense.
+- **Where** (2026-07-30 / pc-752) — the place of work so Map can pivot You there.
+  Prefer city-relative paths (one path per line). Suite renders **On Map** +
+  **Finder** from product always; `## Where` paths/papers/URLs refine the jump.
+  Omit only when the product root *is* the surface (still fine — chrome falls
+  back to project dig-in).
+- **Done when** is the acceptance list hands close against.
+- **Detail** may be long; never put the only “what is this?” sentence below the fold.
+- Publish gates: Glance = “Push public export of X at HEAD abc” + 3-line evidence;
+  full diffstat stays in Detail. Where = export path / public repo when relevant.
+- Violating shape is not a hard API reject (v1) but is a process miss — rewrite on
+  claim if the body is wall-of-text with no Glance (and add Where when the
+  change surface is not obvious from product alone).
+
+**Host chat = Glance only (2026-07-30 founder):** when a coord/host session
+(Claude / Grok / Cursor / …) **summarizes work orders for You in chat**, do
+**not** paste full descriptions, Done-when lists, or Detail essays.
+
+- **Default:** one line per WO — status + Glance sentence (or title if Glance
+  missing). Enough to decide “ignore / dig in / ask for more.”
+- **Ids:** include the task id (`wl-302`, `pc-713`). Optional short Map/Desk
+  link **when one or two WOs** matter; do **not** dump a link farm for every
+  row in a multi-item pulse (noisy).
+- **Detail:** expand only when You ask (“open that”, “full body”, “why”,
+  dig-in on one id) or when a **human gate** needs the concrete decision text.
+- Same bar for status digests and “what’s open” pulses — Glance rows, not walls.
 
 Enforced at the API: creation requires a signed
 `author` (§3.8 applies to every write, not just comments) and a non-empty
@@ -291,9 +398,10 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `carl` | **RETIRED 2026-07-27** for the host product Web Designer seat (succeeded by `kayda` → `cheshire` 2026-07-28; earlier `codex` 2026-07-14 — history retained). Re-hired 2026-07-27 as Carl · Software Engineer at ProtocolCity (renamed pc-532, succeeds `drew`). Papers at `ProtocolCity/workers/carl/`. Do not use `carl` for the host product. |
 | `kayda` | **RETIRED 2026-07-28** — succeeded by `cheshire`. Was: Kayda · Web Designer (succeeded `carl` 2026-07-27). History retained — comments signed by `kayda` remain valid record. |\n| `cheshire` | Cheshire · Web Designer. Succeeds `kayda` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `carl` / `codex` also valid history). Visuals/content production; contract at host repo `workers/cheshire-lane/`. |
 | `riley` | **RETIRED 2026-07-27** — succeeded by `trinity`. Was: Riley · City Hall Desk, ProtocolCity docs/planning (succeeded `claude-protocolcity` 2026-07-14). History retained — comments signed by `riley` remain valid record. |
-| `trinity` | Trinity · ProtocolCity. Succeeds `riley` (retired 2026-07-27, history retained — comments signed by the old id remain valid record; earlier `claude-protocolcity` also valid history). ProtocolCity docs/planning desk. Papers at `ProtocolCity/workers/trinity/`. |
+| `trinity` | **RETIRED 2026-07-28** — succeeded by `blossom` (pc-577). Was: Trinity · ProtocolCity (succeeded `riley` 2026-07-27). History retained — comments signed by `trinity` remain valid record; earlier `riley` / `claude-protocolcity` also valid history. |
+| `blossom` | Blossom · City Clerk. Succeeds `trinity` (retired 2026-07-28, pc-577, history retained — comments signed by the old id remain valid record; earlier `riley` / `claude-protocolcity` also valid history). ProtocolCity docs/planning desk. Papers at `ProtocolCity/workers/blossom/`. |
 | `drew` | **RETIRED 2026-07-27** — succeeded by `carl` (ProtocolCity Software Engineer, pc-532). Was: Drew · Software Engineer, ProtocolCity code lane (new hire 2026-07-21). History retained — comments signed by `drew` remain valid record. |
-| `bryce` | Bryce · Suite Engineer. ProtocolCity suite/citylens/CLI packaging lane (renamed pc-533 2026-07-27; succeeded the ProtocolCity `codex` CLI slot — distinct from the the host product `codex` seat retired 2026-07-14). Papers at `ProtocolCity/workers/bryce/`. |
+| `bryce` | **RETIRED 2026-07-28** — succeeded by `figaro` (pc-577). Was: Bryce · Suite Engineer (renamed pc-533 2026-07-27; succeeded the ProtocolCity `codex` CLI slot — distinct from the the host product `codex` seat retired 2026-07-14). History retained — comments signed by `bryce` remain valid record. |
 | `claude-socials` | **RETIRED 2026-07-14** — succeeded by `iris`. Was: Claude CLI lane, socials drafting desk (added 2026-07-14). History retained. |
 | `iris` | **RETIRED 2026-07-27** — succeeded by `kenzie`, then `mittens` (so-17). Was: Iris · Content Writer (succeeded `claude-socials` 2026-07-14). History retained — comments signed by `iris` remain valid record. |
 | `kenzie` | **RETIRED 2026-07-28** — succeeded by `mittens` (so-17 / pc-564 cat slate). Was: Kenzie · Content Writer (succeeded `iris` 2026-07-27, so-16). History retained — comments signed by `kenzie` remain valid record; earlier `iris` / `claude-socials` also valid history. |
@@ -310,9 +418,25 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `correspondent` | Correspondent — city-wide reporting job (job, not a claiming lane; hired pc-32, armed pc-502 2026-07-26). Signs briefs only; never claims backlog. Canonical papers: `.protocolcity/ops/workers/correspondent/` (pc-461). |
 | `github-desk` | GitHub Desk · Public Issues — BP suite public issue **intake + close** job (job, not a claiming lane; hired 2026-07-27). Exclusive owner of `gh issue comment/close` on protocolcity org issue boards for BluePrint/WorkLane/WorkForce/homebrew-tap. Never implements suite code; never pushes public org git. Canonical papers: `.protocolcity/ops/workers/github-desk/`. |
 | `ship-desk` | Ship Desk · Releases — BP suite **daily release** job (job, not a claiming lane; hired 2026-07-27). Runs `scripts/stage_daily_ship.sh` with launch-ramp default `SHIP_AUTO=1` (PyPI + homebrew-tap + local `blueprint update`). Opt out `SHIP_AUTO=0` for stage-only. Canonical papers: `.protocolcity/ops/workers/ship-desk/`. |
+| `chief-of-staff` | Duchess · Chief of Staff — workspace city-ops coordination job (job, not a claiming lane; ratified wf-133, hired wf-139 2026-08-03). Mode B envelope only: stamps `worker:<hand>` on `needs:routing` tickets (same-store, lane-fit, every move commented), stages capacity re-pin diffs (never applies — citizen runs `workforce repin --apply`), triages For You candidates into a daily digest. Never cancels, never crosses founder/publish gates, never edits law files, never hires/fires. Function-named; not retired. Canonical papers: `.protocolcity/ops/workers/chief-of-staff/`. |
 | `reed` | **RETIRED 2026-07-27** — succeeded by `zach` (conn-7), then `jiji` (conn-8). Was: Reed · Connector Desk (new hire 2026-07-27, no predecessor). History retained — comments signed by `reed` remain valid record. |
 | `zach` | **RETIRED 2026-07-28** — succeeded by `jiji` (conn-8 / pc-564 cat slate). Was: Zach · Connector Desk (succeeded `reed` 2026-07-27, conn-7). History retained — comments signed by `zach` remain valid record. |
 | `jiji` | Jiji · Connector Desk. Succeeds `zach` (retired 2026-07-28, history retained — comments signed by the old id remain valid record; earlier `reed` also valid history). Connector product generalist — design, law, bootstrap. Papers at `connector/workers/jiji/`. Feed `worker:jiji`. |
+| `efficiency-pass` | Daily the host product efficiency/drift job (hired 2026-07-31) — small safe cleanups or files build-lane tickets; never trading-path; never claims backlog as a lane. Papers at `the host product/workers/efficiency-pass/`. Function-named; not retired. |
+| `suite-efficiency` | Daily BluePrint suite efficiency/drift job (hired 2026-07-31) — small safe suite cleanups or files suite-lane tickets; never claims backlog as a lane. Papers at `ProtocolCity/workers/suite-efficiency/`. Function-named; not retired. |
+| `efficiency-worklane` | Daily WorkLane efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:lili` tickets; never claims backlog as a lane. Papers at `worklane/workers/efficiency-worklane/`. Function-named; not retired. |
+| `efficiency-workforce` | Daily WorkForce efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:salem` tickets; never claims backlog as a lane. Papers at `workforce/workers/efficiency-workforce/`. Function-named; not retired. |
+| `efficiency-connector` | Daily Connector efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:jiji` tickets; never claims backlog as a lane. Papers at `connector/workers/efficiency-connector/`. Function-named; not retired. |
+| `efficiency-register` | Daily Register efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:ring`/`worker:stock` tickets; never claims backlog as a lane. Papers at `register/workers/efficiency-register/`. Function-named; not retired. |
+| `efficiency-gridfinity` | Weekly (Saturday) Gridfinity efficiency/drift job (hired 2026-07-31, pc-796) — small safe tool cleanups or files `project=gridfinity` tickets; never claims backlog as a lane. Papers at `gridfinity/workers/efficiency-gridfinity/`. Function-named; not retired. |
+| `toulouse` | Toulouse · Product Engineer. Gridfinity claiming lane (new hire 2026-08-02 — no predecessor; first gridfinity lane). Drawer designs, tools, skills, project papers; never touches vendored lib, calibration, or STL generation. Papers at `gridfinity/workers/toulouse/`. Feed `worker:toulouse`. |
+| `tom` | Tom · Software Engineer. Succeeds `carl` (ProtocolCity Software Engineer seat, retired 2026-07-28, pc-577, history retained — comments signed by `carl` remain valid record; earlier `drew` also valid history). ProtocolCity code lane — suite, citylens, CLI packaging, city-hall operational tooling. Papers at `ProtocolCity/workers/tom/`. Feed `worker:tom`. |
+| `figaro` | Figaro · Suite Engineer. Succeeds `bryce` (retired 2026-07-28, pc-577, history retained — comments signed by `bryce` remain valid record; earlier `codex` ProtocolCity seat also valid history). ProtocolCity suite code lane. Papers at `ProtocolCity/workers/figaro/`. Feed `worker:figaro`. |
+| `sylvester` | Sylvester · Suite Engineer. ProtocolCity suite implementation lane — Map / glass / user-report fixes (new hire 2026-08-02 — no predecessor). Papers at `ProtocolCity/workers/sylvester/`. Feed `worker:sylvester`. |
+| `vera` | Vera · Suite Quality · solid feel. ProtocolCity suite polish/stability lane — end-to-end solid feel, first-run coherence (new hire 2026-07-31 — no predecessor). Papers at `ProtocolCity/workers/vera/`. Feed `worker:vera`. |
+| `brand` | Brand · Brand Coordinator. ProtocolCity visual register and suite chrome language lane (new hire 2026-07-31 — no predecessor). Papers at `ProtocolCity/workers/brand/`. Feed `worker:brand`. |
+| `ring` | Ring · Till & POS UI. Register store lane — till/POS UI, payment UX, receipt/tender flows, time clock floor shell (new hire 2026-08-02 — no predecessor). Papers at `register/workers/ring/`. Feed `worker:ring`. |
+| `stock` | Stock · Inventory & catalog. Register store lane — inventory adjust/transfer, pocket inventory floor UX, catalog, stock moves (new hire 2026-08-02 — no predecessor). Papers at `register/workers/stock/`. Feed `worker:stock`. |
 
 #### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
 
@@ -357,12 +481,15 @@ them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
 | `felix` | Felix · Software Engineer | `kc` (retired 2026-07-28; earlier `kai` 2026-07-27 / `grok` 2026-07-14 — history retained) |\n| `kc` | **RETIRED 2026-07-28** → `felix` | `kai` (retired 2026-07-27; earlier `grok` 2026-07-14 — history retained) |
 | `nala` | Nala · Technical Writer | `beatriz` (retired 2026-07-28; earlier `ellis` 2026-07-27 / `cursor` 2026-07-14 — history retained) |\n| `beatriz` | **RETIRED 2026-07-28** → `nala` | `ellis` (retired 2026-07-27; earlier `cursor` 2026-07-14 — history retained) |
 | `cheshire` | Cheshire · Web Designer (the host product) | `kayda` (retired 2026-07-28; earlier `carl` the host product seat 2026-07-27 / `codex` 2026-07-14 — history retained) |\n| `kayda` | **RETIRED 2026-07-28** → `cheshire` | `carl` the host product seat (retired 2026-07-27; earlier `codex` 2026-07-14 — history retained) |
-| `trinity` | Trinity · ProtocolCity | `riley` (retired 2026-07-27; earlier `claude-protocolcity` 2026-07-14 — history retained) |
-| `carl` | Carl · Software Engineer (ProtocolCity) | `drew` (retired 2026-07-27, pc-532 — history retained). Note: the host product `carl` seat separately RETIRED → `kayda` → `cheshire`. |
+| `blossom` | Blossom · City Clerk | `trinity` (retired 2026-07-28, pc-577; earlier `riley` 2026-07-27 / `claude-protocolcity` 2026-07-14 — history retained) |
+| `trinity` | **RETIRED 2026-07-28** → `blossom` (pc-577) | `riley` (retired 2026-07-27; earlier `claude-protocolcity` 2026-07-14 — history retained) |
+| `carl` | **RETIRED 2026-07-28** → `tom` (pc-577). Was: Carl · Software Engineer (ProtocolCity). History retained. | `drew` (retired 2026-07-27, pc-532 — history retained). Note: the host product `carl` seat separately RETIRED → `kayda` → `cheshire`. |
+| `tom` | Tom · Software Engineer (ProtocolCity) | `carl` (ProtocolCity SE seat, retired 2026-07-28, pc-577; earlier `drew` 2026-07-27 — history retained) |
 | `mittens` | Mittens · Content Writer | `kenzie` (retired 2026-07-28, so-17; earlier `iris` 2026-07-27 / `claude-socials` 2026-07-14 — history retained) |
 | `maru` | Maru · Market Analyst | `aniya` (retired 2026-07-28; earlier `neo` 2026-07-14 — history retained) |\n| `aniya` | **RETIRED 2026-07-28** → `maru` | `neo` (retired 2026-07-27, no predecessor before neo — history retained) |
 | `jiji` | Jiji · Connector Desk | `zach` (retired 2026-07-28, history retained; earlier `reed` also valid history) |
-| `bryce` | Bryce · Suite Engineer (ProtocolCity) | ProtocolCity `codex` CLI slot (renamed pc-533 2026-07-27; distinct from the host product `codex` → `carl` → `kayda` → `cheshire` chain) |
+| `bryce` | **RETIRED 2026-07-28** → `figaro` (pc-577). Was: Bryce · Suite Engineer (ProtocolCity). History retained. | ProtocolCity `codex` CLI slot (renamed pc-533 2026-07-27; distinct from the host product `codex` → `carl` → `kayda` → `cheshire` chain) |
+| `figaro` | Figaro · Suite Engineer (ProtocolCity) | `bryce` (retired 2026-07-28, pc-577; earlier ProtocolCity `codex` CLI slot — history retained) |
 | `lili` | Lili · Desk Engineer | `tierra` (retired 2026-07-28; earlier `tess` 2026-07-27 / `claude-worklane` 2026-07-14 — history retained) |
 | `salem` | Salem · Systems Engineer | `melanie` (retired 2026-07-28; earlier `otto` 2026-07-27 / `claude-orchestrator` 2026-07-14 — history retained) |
 | `tierra` | **RETIRED 2026-07-28** → `lili` | `tess` (retired 2026-07-27) |
