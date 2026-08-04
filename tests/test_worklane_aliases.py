@@ -1,9 +1,9 @@
-"""WorkLane public verb aliases (wl-176 / wl-143) — CLI + MCP.
+"""WorkLane public verb aliases (wl-176 / wl-143 / wl-384) — CLI + MCP.
 
-CLI (private catalog): `wl` + `worklane` + canonical short `wl` share one
-main. `tk` was fully retired 2026-08-03 (wl-327 ruling B / wl-342) — tests
-guard against re-introduction. MCP: `wl_*` aliases of `wl_*` on private
-checkouts.
+CLI surface: canonical short `wl` + long form `worklane` share one main.
+`tk` fully retired 2026-08-03 (wl-327 ruling B / wl-342). `wl` retired as a
+silent CLI alias 2026-08-04 (wl-384) — deprecation shim only, exits nonzero.
+MCP: `wl_*` aliases of `wl_*` on private checkouts (tool dual-catalog stays).
 
 The WorkLane public export rewrites `wl`/`wl_*` → `wl`/`wl_*` wholesale, so
 dual-prefix MCP assertions only apply when the private catalog is present.
@@ -25,6 +25,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover — py39/py310
     tomllib = None  # type: ignore
 
+from worklane.cli import legacy_cli_shim
 from worklane.cli import wl as wl_cli
 from worklane.mcp.handlers import (
     TPHandlers,
@@ -60,45 +61,98 @@ def _core_is_internal() -> bool:
 
 
 class CliEntrypointAliasTest(unittest.TestCase):
-    """console_scripts: worklane + wl → same main as wl (private)."""
+    """console_scripts: live CLI mains; retired names non-silent / absent."""
 
     def test_pyproject_declares_worklane_and_wl_scripts(self) -> None:
         raw = _PYPROJECT.read_text(encoding="utf-8")
+        # Concat so export branding cannot rewrite retired-name checks.
+        retired_cli = "t" + "p"
         if tomllib is not None:
             data = tomllib.loads(raw)
             scripts = data["project"]["scripts"]
-            cli_vals = [v for v in scripts.values() if ".cli." in v]
-            # Private WL (wl-176/wl-143): wl + worklane + wl share one CLI
-            # main. Public export rebuilds scripts (export strips the
-            # private multi-alias block and emits worklane/wl).
             # wl-342: tk must stay absent (founder ruling B on wl-327).
             self.assertNotIn(
                 "tk",
                 scripts,
                 msg="tk console_script was retired 2026-08-03 (wl-342)",
             )
-            self.assertGreaterEqual(len(cli_vals), 1)
-            if len(cli_vals) >= 2:
+            # Live ticket CLI = paths under .cli. (public: only wl;
+            # private: wl + long-form worklane; worklane server is not .cli.).
+            cli_entries = {
+                k: v for k, v in scripts.items() if ".cli." in v
+            }
+            self.assertIn("wl", cli_entries)
+            self.assertTrue(
+                cli_entries["wl"].endswith(":main"),
+                msg=f"wl must dispatch a CLI main, got {cli_entries!r}",
+            )
+            self.assertNotIn(
+                "legacy_cli_shim",
+                cli_entries["wl"],
+                msg="wl must not point at the deprecation shim",
+            )
+            if "worklane" in cli_entries:
                 self.assertEqual(
-                    len(set(cli_vals)),
-                    1,
-                    msg="private CLI aliases must share one main target",
+                    cli_entries["worklane"],
+                    cli_entries["wl"],
+                    msg="private long-form CLI must share wl's main",
                 )
-                for name in ("worklane", "wl", "wl"):
-                    self.assertIn(name, scripts)
-                    self.assertIn(".cli.", scripts[name])
-            else:
-                self.assertTrue(
-                    any(v.endswith(":main") for v in cli_vals),
-                    msg=f"expected a CLI console script, got {scripts!r}",
+            # wl-384: retired name may ship only as a non-silent shim.
+            if retired_cli in scripts:
+                self.assertIn(
+                    "legacy_cli_shim",
+                    scripts[retired_cli],
+                    msg="retired CLI must not silently dispatch the real main",
+                )
+                self.assertNotEqual(
+                    scripts[retired_cli],
+                    cli_entries["wl"],
+                    msg="retired CLI must not be a silent alias of wl",
                 )
         else:
-            # py39 fallback: at least one cli module entry exists; no tk.
-            self.assertRegex(raw, r"\.cli\.\w+:main")
+            # py39 fallback without tomllib.
+            self.assertRegex(raw, r'(?m)^wl\s*=\s*".*\.cli\.\w+:main"')
             self.assertIsNone(
                 re.search(r"^tk\s*=", raw, re.M),
                 msg="tk console_script must not reappear in pyproject",
             )
+            retired_line = re.search(
+                r"(?m)^" + re.escape(retired_cli) + r'\s*=\s*"([^"]+)"',
+                raw,
+            )
+            if retired_line is not None:
+                self.assertIn(
+                    "legacy_cli_shim",
+                    retired_line.group(1),
+                    msg="retired CLI must not silently dispatch the real main",
+                )
+
+    def test_argparse_prog_is_wl(self) -> None:
+        """wl-384: help/errors brand as the taught verb, never the retired one."""
+        parser = wl_cli._build_parser()
+        self.assertEqual(parser.prog, "wl")
+        help_text = parser.format_help()
+        self.assertIn("usage: wl", help_text)
+        # Concat so export branding cannot rewrite the retired prog token.
+        retired_prog = "t" + "p"
+        self.assertNotIn("usage: " + retired_prog, help_text)
+
+    def test_tp_shim_exits_nonzero_and_points_at_wl(self) -> None:
+        """wl-384: retired CLI binary must not execute ticket commands silently."""
+        # Skip on public export if the shim module was not shipped (public
+        # pyproject rebuilds scripts without a retired binary).
+        if not hasattr(legacy_cli_shim, "main"):
+            self.skipTest("legacy shim not present in this checkout")
+        retired = "t" + "p"
+        buf = io.StringIO()
+        with mock.patch("sys.argv", [retired, "list", "--status", "backlog"]):
+            with mock.patch("sys.stderr", buf):
+                with self.assertRaises(SystemExit) as cm:
+                    legacy_cli_shim.main(["list", "--status", "backlog"])
+        self.assertEqual(cm.exception.code, 2)
+        err = buf.getvalue()
+        self.assertIn("retired", err.lower())
+        self.assertIn("wl list --status backlog", err)
 
     def test_main_dispatch_identical_under_alias_prog_names(self) -> None:
         """argv tokens drive routing — prog name does not fork behavior."""

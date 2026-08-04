@@ -11,7 +11,14 @@ import os
 import sys
 from typing import List, Optional
 
-from worklane.products import default_product_slug_with_source, discover_products, wl_data_dir
+from worklane.products import (
+    default_product_slug_with_source,
+    discover_products,
+    emit_empty_runtime_override_warning,
+    is_empty_runtime_override,
+    runtime_root,
+    wl_data_dir,
+)
 from worklane.task_server import create_app
 
 app = create_app()
@@ -79,11 +86,17 @@ def main(argv: Optional[List[str]] = None) -> None:
             sys.exit(1)
         # No stores in data_dir: fresh install or wrong working directory.
         print(
-            f"WARNING: product registry empty — no .db stores in {data_dir}. "
-            f"If unexpected, verify WORKLANE_RUNTIME_DIR and that "
+            f"WARNING: product registry empty — no .db stores in {data_dir} "
+            f"(runtime_dir={runtime_root()}). "
+            f"If unexpected, verify WORKLANE_RUNTIME_DIR / "
+            f"WORKLANE_RUNTIME_DIR and that "
             f"this server is run from the correct checkout.",
             file=sys.stderr,
         )
+    elif is_empty_runtime_override():
+        # wl-374: override pin + empty store still surfaces tradeos via the
+        # default-always-present path — warn loudly so miswires are not silent.
+        emit_empty_runtime_override_warning(stream=sys.stderr)
 
     uvicorn.run(app, host=host, port=port)
 

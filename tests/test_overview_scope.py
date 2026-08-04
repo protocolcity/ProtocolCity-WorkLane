@@ -58,6 +58,9 @@ class OverviewScopeTest(unittest.TestCase):
         import worklane.api.scene as _scene_api  # noqa: PLC0415
         _scene_api._scene_cache_ts = 0.0
         _scene_api._scene_cache_payload = None
+        # wl-353 / pc-881: same for /api/dev/attention single-flight cache.
+        import worklane.api.tasks as _tasks_api  # noqa: PLC0415
+        _tasks_api._invalidate_attention_cache()
 
     def tearDown(self) -> None:
         for k, v in self._env_before.items():

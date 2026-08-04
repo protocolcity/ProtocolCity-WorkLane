@@ -361,7 +361,14 @@ Uncommitted work in an abandoned working copy is how finished fixes get destroye
    The `git status --porcelain` check from step 1 is where you catch this: if
    it shows dirty files outside your ticket's scope, leave them unstaged and
    name them in your close-out comment rather than silently sweeping them in.
-7. **One active publish gate per dest repo (wl-298, 2026-07-29).** When filing a `FOUNDER · publish <repo> sync` ticket, first search open `gate_type=human` tickets for any with the same title pattern (`FOUNDER · publish <repo>`). If prior ones exist: post a `superseded by <new-id> HEAD <sha>` comment on each and cancel them. The newest HEAD is the only actionable one; stale gates dilute For You attention and shadow the live action. `export_worklane.sh` (and sibling export scripts) warn about prior gates when the local WL server is reachable.
+7. **One active publish gate per dest repo (wl-298, 2026-07-29).** When filing a `FOUNDER · publish <repo> sync` ticket, first search open `gate_type=human` tickets for any with the same title pattern (`FOUNDER · publish <repo>`). If prior ones exist: post a `superseded by <new-id>` comment on each and cancel them. The newest restage is the only actionable one; stale gates dilute For You attention and shadow the live action. `export_worklane.sh` (and sibling export scripts) warn about prior gates when the local WL server is reachable.
+8. **Publish commit message is marker-derived (wl-351, 2026-08-03).** `scripts/export_worklane.sh` writes `DEST/.sync-head` on every export: line 1 is the full internal HEAD sha staged into that tree; further lines carry `short=` and `staged_at=` metadata. The founder commit in the generated repo **must** read the marker — never a hand-authored sha from a gate ticket (stale-message incident 2026-08-03: message named b43c98b while the tree was 8ad1ce7). Taught command:
+
+   ```bash
+   cd <DEST> && git add -A && git commit -m "sync: worklane internal HEAD $(head -n1 .sync-head)"
+   ```
+
+   Gate tickets teach that command (and may cite the short sha as *evidence* in the body). Do not put a literal sha in the founder commit-message instruction. Title form: `FOUNDER · publish ProtocolCity-WorkLane sync` (sha optional in body/evidence only).
 
 ### 5.2) Identity and attribution (all agents)
 
@@ -418,6 +425,7 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `correspondent` | Correspondent — city-wide reporting job (job, not a claiming lane; hired pc-32, armed pc-502 2026-07-26). Signs briefs only; never claims backlog. Canonical papers: `.protocolcity/ops/workers/correspondent/` (pc-461). |
 | `github-desk` | GitHub Desk · Public Issues — BP suite public issue **intake + close** job (job, not a claiming lane; hired 2026-07-27). Exclusive owner of `gh issue comment/close` on protocolcity org issue boards for BluePrint/WorkLane/WorkForce/homebrew-tap. Never implements suite code; never pushes public org git. Canonical papers: `.protocolcity/ops/workers/github-desk/`. |
 | `ship-desk` | Ship Desk · Releases — BP suite **daily release** job (job, not a claiming lane; hired 2026-07-27). Runs `scripts/stage_daily_ship.sh` with launch-ramp default `SHIP_AUTO=1` (PyPI + homebrew-tap + local `blueprint update`). Opt out `SHIP_AUTO=0` for stage-only. Canonical papers: `.protocolcity/ops/workers/ship-desk/`. |
+| `health-patrol` | Health Patrol — workspace health-patrol job (renamed from `marshal` 2026-08-03 per pc-987 function-naming ruling; history under the old id remains valid record). Twice-daily workday patrol; never claims backlog. Canonical papers: `.protocolcity/ops/workers/health-patrol/`. Function-named; not retired. |
 | `chief-of-staff` | Duchess · Chief of Staff — workspace city-ops coordination job (job, not a claiming lane; ratified wf-133, hired wf-139 2026-08-03). Mode B envelope only: stamps `worker:<hand>` on `needs:routing` tickets (same-store, lane-fit, every move commented), stages capacity re-pin diffs (never applies — citizen runs `workforce repin --apply`), triages For You candidates into a daily digest. Never cancels, never crosses founder/publish gates, never edits law files, never hires/fires. Function-named; not retired. Canonical papers: `.protocolcity/ops/workers/chief-of-staff/`. |
 | `reed` | **RETIRED 2026-07-27** — succeeded by `zach` (conn-7), then `jiji` (conn-8). Was: Reed · Connector Desk (new hire 2026-07-27, no predecessor). History retained — comments signed by `reed` remain valid record. |
 | `zach` | **RETIRED 2026-07-28** — succeeded by `jiji` (conn-8 / pc-564 cat slate). Was: Zach · Connector Desk (succeeded `reed` 2026-07-27, conn-7). History retained — comments signed by `zach` remain valid record. |

@@ -196,7 +196,9 @@ def _insert_task_raw(
     """Insert one task + comments without lifecycle side effects.
 
     Preserves status, labels, timestamps, and ext_id from the export payload.
-    Does **not** merge product-default labels (export is authoritative).
+    Does **not** merge tracker product-default labels here — live imports
+    receive missing ``product:<dest>`` via :func:`_apply_import_routing`
+    (wl-364); existing ``product:*`` on the payload stays authoritative.
     """
     now = _now_iso()
     ext_id = obj.get("ext_id")
@@ -254,12 +256,32 @@ def _insert_task_raw(
 _INACTIVE_STATUSES = frozenset({"done", "canceled"})
 
 
-def _apply_import_routing(obj: Dict[str, Any]) -> Dict[str, Any]:
-    """Stamp needs:routing on live imported tickets that arrive without a seat.
+def _has_product_label(labels: List[Any]) -> bool:
+    """True when any label is ``product:<slug>`` (case-insensitive prefix)."""
+    for lab in labels or []:
+        if str(lab).strip().lower().startswith("product:"):
+            return True
+    return False
+
+
+def _apply_import_routing(
+    obj: Dict[str, Any],
+    dest_product: str = "",
+    *,
+    hard_when_hands: bool = False,
+    hired_hands: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Stamp routing + product attribution on live imported tickets.
+
+    - ``needs:routing`` when no ``worker:*`` seat (wl-338 soft pre-hire path).
+    - ``product:<dest>`` when no ``product:*`` label (wl-364 Map attribution).
 
     Done/canceled tickets are not in any queue — no stamp needed.
-    Import never rejects (pre-hire soft path only): malformed routing is
-    preserved as-is so archival restores always succeed.
+    Default is soft: archival restores never reject. Opt-in hard-B
+    (``hard_when_hands=True`` with hired hands) rejects bare seats via
+    :class:`PortabilityError` so live city re-imports can match create law
+    (wl-367). Existing ``product:*`` labels are left untouched (export
+    authoritative when present).
     """
     status = str(obj.get("status") or "backlog").lower()
     if status in _INACTIVE_STATUSES:
@@ -269,11 +291,29 @@ def _apply_import_routing(obj: Dict[str, Any]) -> Dict[str, Any]:
     raw_labels = obj.get("labels") or []
     if not isinstance(raw_labels, list):
         raw_labels = []
-    routed, _, err = ensure_create_labels(raw_labels, hard_when_hands=False)
-    if err or routed == raw_labels:
+    labs: List[Any] = list(raw_labels)
+    changed = False
+
+    dest = (dest_product or "").strip().lower()
+    if dest and not _has_product_label(labs):
+        labs = labs + ["product:" + dest]
+        changed = True
+
+    routed, _, err = ensure_create_labels(
+        labs,
+        hired_hands=hired_hands,
+        hard_when_hands=hard_when_hands,
+    )
+    if err:
+        raise PortabilityError(err)
+    if routed != labs:
+        labs = routed
+        changed = True
+
+    if not changed:
         return obj
     mutated = dict(obj)
-    mutated["labels"] = routed
+    mutated["labels"] = labs
     return mutated
 
 
@@ -282,6 +322,8 @@ def import_jsonl(
     product: str,
     *,
     tracker: Optional[SQLiteTracker] = None,
+    hard_when_hands: bool = False,
+    hired_hands: Optional[Sequence[str]] = None,
 ) -> ImportReport:
     """Create tickets from JSONL lines into ``product``; never update/delete.
 
@@ -291,10 +333,20 @@ def import_jsonl(
 
     Routing law (wl-338): live imported tickets without a ``worker:*`` seat
     get ``needs:routing`` stamped so they appear in the unrouted feed rather
-    than silently draining no-one's queue.
+    than silently draining no-one's queue. Default is always soft
+    (``hard_when_hands=False``) so archival restores succeed.
+
+    Opt-in hard-B (wl-367): pass ``hard_when_hands=True`` with the destination
+    product's hired hands so bare seats reject like create-path hard-B when
+    hands exist. Use for live city re-imports only.
+
+    Product attribution (wl-364): live imported tickets missing ``product:*``
+    receive ``product:<destination-slug>`` for Map store attribution.
+    Existing ``product:*`` labels are preserved.
     """
     tr = tracker if tracker is not None else _tracker_for_product(product)
     report = ImportReport()
+    dest_slug = (product or "").strip().lower()
 
     # Materialize so we can fail fast on parse before writing anything when
     # the whole stream is bad; still process line-by-line for collisions.
@@ -313,7 +365,20 @@ def import_jsonl(
                     if _ext_id_exists(conn, str(ext_id)):
                         report.collisions.append(old_id)
                         continue
-                new_id = _insert_task_raw(conn, _apply_import_routing(obj))
+                try:
+                    routed_obj = _apply_import_routing(
+                        obj,
+                        dest_slug,
+                        hard_when_hands=hard_when_hands,
+                        hired_hands=hired_hands,
+                    )
+                except PortabilityError as exc:
+                    raise PortabilityError(
+                        "line {0} (source id {1}): {2}".format(
+                            line_no, old_id, exc
+                        )
+                    ) from exc
+                new_id = _insert_task_raw(conn, routed_obj)
                 report.created.append((old_id, new_id))
 
     return report

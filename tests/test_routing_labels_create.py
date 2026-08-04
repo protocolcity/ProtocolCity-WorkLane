@@ -6,6 +6,7 @@ import unittest
 from worklane.routing_labels import (
     NEEDS_ROUTING_LABEL,
     ensure_create_labels,
+    foreign_seat_error,
     has_worker_label,
 )
 
@@ -96,6 +97,47 @@ class EnsureCreateLabelsTest(unittest.TestCase):
         self.assertIsNone(err)
         self.assertFalse(stamped)
         self.assertIn("worker:drew", labs)
+
+    def test_foreign_seat_rejected_when_hands_exist(self) -> None:
+        """wl-372: worker hired elsewhere (or unknown) is not a valid seat here."""
+        labs, stamped, err = ensure_create_labels(
+            ["worker:sylvester", "suite"],
+            hired_hands=["worker:lili", "worker:drew"],
+        )
+        self.assertIsNotNone(err)
+        self.assertIn("worker:sylvester", err or "")
+        self.assertIn("not a hired seat", err or "")
+        self.assertIn("worker:lili", err or "")
+        self.assertIn("worker:you", err or "")
+        self.assertFalse(stamped)
+
+    def test_foreign_seat_ok_pre_hire(self) -> None:
+        """Pre-hire cannot check membership — leave soft path alone."""
+        labs, stamped, err = ensure_create_labels(
+            ["worker:sylvester", "suite"],
+            hired_hands=[],
+        )
+        self.assertIsNone(err)
+        self.assertFalse(stamped)
+        self.assertIn("worker:sylvester", labs)
+
+    def test_foreign_seat_soft_import_skips_check(self) -> None:
+        """Import soft path (hard_when_hands=False) never hard-rejects seats."""
+        labs, stamped, err = ensure_create_labels(
+            ["worker:sylvester"],
+            hired_hands=["worker:lili"],
+            hard_when_hands=False,
+        )
+        self.assertIsNone(err)
+        self.assertIn("worker:sylvester", labs)
+
+    def test_foreign_seat_error_helper(self) -> None:
+        err = foreign_seat_error(["sylvester"], ["worker:lili"])
+        self.assertIsNotNone(err)
+        self.assertIn("worker:sylvester", err or "")
+        self.assertIsNone(foreign_seat_error(["lili"], ["worker:lili"]))
+        self.assertIsNone(foreign_seat_error(["you"], ["worker:lili"]))
+        self.assertIsNone(foreign_seat_error(["ghost"], []))
 
     def test_dual_worker_rejected(self) -> None:
         labs, stamped, err = ensure_create_labels(

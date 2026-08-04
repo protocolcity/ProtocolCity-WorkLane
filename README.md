@@ -67,11 +67,19 @@ curl -X POST localhost:8799/api/admin/tasks \
   -H "Content-Type: application/json" \
   -d '{"surface": "worklane", "author": "founder",
        "title": "Try WorkLane",
-       "description": "Problem: my agents collide. Outcome: they stop."}'
+       "description": "Problem: my agents collide. Outcome: they stop.",
+       "labels": ["worker:you", "you:host"]}'
 ```
 
 Every write is signed (`author` is required — the protocol has no anonymous
 actions), and every ticket needs a real problem statement by construction.
+
+**Route on create.** When a product has hired lane hands, create also requires
+exactly one `worker:*` seat label (`worker:<hand>`, or `worker:you` plus a
+you-kind: `you:note` / `you:remind` / `you:todo` / `you:host`). Omit the seat
+post-hire → **HTTP 400** / MCP ToolError listing valid seats. Pre-hire (no
+lanes yet) the engine stamps `needs:routing` instead. Never two `worker:*`
+labels. Full law: [PROTOCOL.md](PROTOCOL.md) (create-path routing).
 
 ## Give your agents tools (MCP)
 
@@ -109,12 +117,16 @@ import anything:
 
 ```bash
 export WL_AGENT_ID=my-agent
+wl create --title "Try WorkLane" --description "..." --project worklane \
+  --author my-agent --label worker:you --label you:host
 wl list --project worklane --status backlog
 wl show wl-1
 wl status wl-1 in_progress
 wl comment wl-1 "Owner: my-agent — claiming" --author my-agent
 wl doctor  # optional Charter compliance check — reports, never blocks
 ```
+
+`wl create` / `wl_create` use the same author + seat rules as HTTP above.
 
 ## The protocol in 60 seconds
 

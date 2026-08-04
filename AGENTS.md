@@ -37,6 +37,7 @@ these rows; entries missing here render unmapped.
 
 | Path | What it is |
 |---|---|
+| `ARCHITECTURE.md` | Project architecture paper (L1) — layers, SoT, invariants; anchors the package paper |
 | `worklane/` | **Package path** (legacy name) — server, board, trackers, MCP, archival; `local/` runtime state |
 | `docs/` | The records — design docs, decisions, audits |
 | `scripts/` | Export/release/backup/migration scripts (the WorkLane export seam lives here) |

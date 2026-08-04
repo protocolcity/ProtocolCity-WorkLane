@@ -209,27 +209,62 @@ class WorkerProductGuardHTTPTest(unittest.TestCase):
         self.assertIn("mismatch", err)
 
     def test_create_worker_you_never_flagged(self) -> None:
-        """worker:you is always a valid human seat — no cross-product check."""
+        """worker:you is always a valid human seat — no cross-product check.
+
+        Starve guard (wl-315): bare worker:you is rejected when hands are
+        hired. Pair with a you-kind so create is allowed; the product-guard
+        under test still must not flag the You seat as a mismatch.
+        """
         mock_resp = _workforce_response([_worker_entry("lili", "worklane")])
         with patch("urllib.request.urlopen", return_value=mock_resp):
-            r = self._post(labels=["worker:you", "intake"])
+            r = self._post(labels=["worker:you", "you:host", "intake"])
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data["ok"])
         self.assertIsNone(data.get("routing_warning"))
 
-    def test_create_unknown_worker_no_warning(self) -> None:
-        """A worker not in the roster is not flagged — absence ≠ wrong."""
+    def test_create_unknown_worker_rejected_when_hands_hired(self) -> None:
+        """wl-372: unknown / foreign seat is a hard reject when this store has hands.
+
+        Replaces the pre-wl-372 "absence ≠ wrong" soft path for create: a seat
+        not in the hired list for the target store is dead queue (sylvester
+        incident). Pre-hire (no hands) still allows unknown seats.
+        """
         mock_resp = _workforce_response([_worker_entry("lili", "worklane")])
         with patch("urllib.request.urlopen", return_value=mock_resp):
             r = self._post(labels=["worker:ghost", "intake"])
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.status_code, 400)
         data = r.json()
-        self.assertTrue(data["ok"])
-        self.assertIsNone(data.get("routing_warning"))
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:ghost", err)
+        self.assertIn("not a hired seat", err)
+        self.assertIn("worker:lili", err)
 
-    def test_create_roster_fallback_warns_on_mismatch(self) -> None:
-        """Local roster fallback (wl-287) also triggers the guard."""
+    def test_create_foreign_seat_rejected(self) -> None:
+        """wl-372 repro: hand hired for another store only → 400 + seat list."""
+        mock_resp = _workforce_response([
+            _worker_entry("lili", "worklane"),
+            _worker_entry("sylvester", "protocolcity"),
+        ])
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            r = self._post(labels=["worker:sylvester", "intake"], surface="worklane")
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:sylvester", err)
+        self.assertIn("not a hired seat", err)
+        self.assertIn("worker:lili", err)
+        self.assertIn("worker:you", err)
+
+    def test_create_roster_fallback_rejects_foreign_seat(self) -> None:
+        """Local roster fallback (wl-287) + wl-372: foreign seat → 400.
+
+        When the store has hired hands (lili on worklane), tom (protocolcity
+        only) is rejected as not a hired seat — same outcome whether the
+        roster came from the daemon or the local file.
+        """
         import urllib.error
         roster_file = self.root / "roster.json"
         roster_file.write_text(json.dumps({
@@ -253,6 +288,31 @@ class WorkerProductGuardHTTPTest(unittest.TestCase):
         os.environ["WL_WORKFORCE_ROSTER"] = str(roster_file)
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             r = self._post(labels=["worker:tom", "intake"])
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:tom", err)
+        self.assertIn("not a hired seat", err)
+
+    def test_create_roster_fallback_warns_when_pre_hire(self) -> None:
+        """wl-296 soft warning still fires when this store has no hired hands."""
+        import urllib.error
+        roster_file = self.root / "roster.json"
+        roster_file.write_text(json.dumps({
+            "workers": {
+                "tom": {
+                    "kind": "lane",
+                    "queue_url": (
+                        "http://127.0.0.1:8799/api/admin/tasks/ready"
+                        "?product=protocolcity&worker=tom"
+                    ),
+                },
+            }
+        }))
+        os.environ["WL_WORKFORCE_ROSTER"] = str(roster_file)
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+            r = self._post(labels=["worker:tom", "intake"])
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data["ok"])
@@ -269,8 +329,12 @@ class WorkerProductGuardHTTPTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         return r.json()["task"]["id"]
 
-    def test_label_add_wrong_product_emits_warning(self) -> None:
-        """Adding worker:tom (protocolcity) to a worklane ticket → warning."""
+    def test_label_add_wrong_product_rejects_foreign_seat(self) -> None:
+        """Adding worker:tom (protocolcity only) to a worklane ticket → 400.
+
+        wl-372: when this store has hired hands, a seat not among them is a
+        hard reject (replaces the soft wl-296 warning for the common case).
+        """
         lili_resp = _workforce_response([_worker_entry("lili", "worklane")])
         ticket_id = self._create_ticket(lili_resp)
 
@@ -283,12 +347,12 @@ class WorkerProductGuardHTTPTest(unittest.TestCase):
                 f"/api/admin/tasks/{ticket_id}/labels",
                 json={"add": ["worker:tom"], "remove": ["worker:lili"]},
             )
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.status_code, 400)
         data = r.json()
-        self.assertTrue(data["ok"])
-        warn = data.get("routing_warning") or ""
-        self.assertIn("worker:tom", warn)
-        self.assertIn("protocolcity", warn)
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:tom", err)
+        self.assertIn("not a hired seat", err)
 
     def test_label_add_correct_product_no_warning(self) -> None:
         """Swapping to another worklane worker → no warning."""
@@ -310,7 +374,12 @@ class WorkerProductGuardHTTPTest(unittest.TestCase):
         self.assertIsNone(data.get("routing_warning"))
 
     def test_label_add_wrong_product_hard_reject(self) -> None:
-        """WL_WORKER_PRODUCT_HARD_REJECT=1 rejects the label update."""
+        """WL_WORKER_PRODUCT_HARD_REJECT=1 rejects the label update.
+
+        Pre-wl-372 this exercised product-map hard reject. With wl-372 the
+        foreign seat is rejected first (tom not hired for worklane) — still
+        400, error cites hired-seat membership rather than mismatch map.
+        """
         lili_resp = _workforce_response([_worker_entry("lili", "worklane")])
         ticket_id = self._create_ticket(lili_resp)
 
@@ -322,12 +391,38 @@ class WorkerProductGuardHTTPTest(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=tom_resp):
             r = self.client.patch(
                 f"/api/admin/tasks/{ticket_id}/labels",
-                json={"add": ["worker:tom"]},
+                json={"add": ["worker:tom"], "remove": ["worker:lili"]},
             )
         self.assertEqual(r.status_code, 400)
         data = r.json()
         self.assertFalse(data.get("ok", True))
-        self.assertIn("mismatch", data.get("error") or "")
+        err = data.get("error") or ""
+        # wl-372 membership reject runs before wl-296 mismatch hard-reject.
+        self.assertTrue(
+            "not a hired seat" in err or "mismatch" in err,
+            msg=err,
+        )
+
+    def test_label_add_foreign_seat_rejected(self) -> None:
+        """wl-372: swapping to a hand not hired for this store → 400."""
+        lili_resp = _workforce_response([_worker_entry("lili", "worklane")])
+        ticket_id = self._create_ticket(lili_resp)
+
+        foreign_resp = _workforce_response([
+            _worker_entry("lili", "worklane"),
+            _worker_entry("sylvester", "protocolcity"),
+        ])
+        with patch("urllib.request.urlopen", return_value=foreign_resp):
+            r = self.client.patch(
+                f"/api/admin/tasks/{ticket_id}/labels",
+                json={"add": ["worker:sylvester"], "remove": ["worker:lili"]},
+            )
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:sylvester", err)
+        self.assertIn("not a hired seat", err)
 
 
 if __name__ == "__main__":

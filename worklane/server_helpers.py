@@ -146,18 +146,28 @@ def _merged_in_flight_tasks(scope: str = "") -> List[Task]:
     """in_progress + in_review tasks aggregated across the in-scope product
     trackers (wl-40; "" = all), sorted newest-updated first. See
     _merged_ready_count for the local-SQLite-only scope note.
+
+    wl-353: status-filtered + slim rows (no description). Avoids WorkQueue's
+    default limit=500 full-table materialization per store.
     """
     out: List[Task] = []
     for spec, tracker in _scoped_product_trackers(scope):
-        out.extend(
-            # Composite ids, same convention as list_tasks_for_scope_multi
-            # (wl-144): bare store-local ids fall back to the DEFAULT store
-            # in split_task_id, mis-attributing every non-default store's
-            # in-flight work downstream (attention feed, in-flight API).
-            replace(t, id=f"{spec.prefix}-{t.id}")
-            for t in WorkQueue(tracker).all_tasks
-            if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW)
-        )
+        for status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+            try:
+                batch = tracker.list_tasks(
+                    status=status, include_description=False,
+                )
+            except TypeError:
+                # Non-SQLite adapters that don't accept include_description.
+                batch = tracker.list_tasks(status=status)
+            out.extend(
+                # Composite ids, same convention as list_tasks_for_scope_multi
+                # (wl-144): bare store-local ids fall back to the DEFAULT store
+                # in split_task_id, mis-attributing every non-default store's
+                # in-flight work downstream (attention feed, in-flight API).
+                replace(t, id=f"{spec.prefix}-{t.id}")
+                for t in batch
+            )
     out.sort(key=lambda t: t.updated_at or "", reverse=True)
     return out
 
@@ -506,6 +516,35 @@ def _human_gate_is_parked(gate_note: Optional[str]) -> bool:
     return any(m in n for m in markers)
 
 
+def _attention_seed_tasks_for_store(spec: ProductSpec, tracker: Any) -> List[Task]:
+    """Per-store seed rows for founder attention (wl-353).
+
+    Prefers SQLite's slim SQL (no description blobs, only candidate statuses/
+    gates/labels). Falls back to a full list + Python filter for adapters that
+    lack ``list_attention_seed_tasks``.
+    """
+    if hasattr(tracker, "list_attention_seed_tasks"):
+        seeds = tracker.list_attention_seed_tasks()
+    else:
+        try:
+            all_rows = tracker.list_tasks(include_description=False)
+        except TypeError:
+            all_rows = tracker.list_tasks()
+        seeds = []
+        for t in all_rows:
+            if t.status in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+                seeds.append(t)
+                continue
+            if t.status in (TaskStatus.DONE, TaskStatus.CANCELED):
+                continue
+            labels = set(t.labels or [])
+            if labels & _FOUNDER_DECISION_LABELS:
+                seeds.append(t)
+            elif t.gate_type in ("human", "timer"):
+                seeds.append(t)
+    return [replace(t, id=f"{spec.prefix}-{t.id}") for t in seeds]
+
+
 def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
     """Everything blocked on the founder *now*, all stores (wl-135 / wl-257):
 
@@ -521,13 +560,21 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
     - parked human gates (deferred:/umbrella/post-northstar etc.) — they still
       withhold ready, but must not gold-paint For You.
 
-    Each open task counts once; first match wins (founder_decision before
-    human_gate before stalled).
+    Each open task counts once. Code order (preserved): stalled in-flight first,
+    then founder_decision / human_gate / timer on remaining open seeds.
+
+    wl-353: walks slim per-store attention seeds instead of loading every
+    ticket (and multi-MB description blobs) via ``_merged_scope_tasks_for_filters``.
     """
     items: List[Dict[str, Any]] = []
     counted: set = set()
+    seeds: List[Task] = []
+    for spec, tracker in product_trackers():
+        seeds.extend(_attention_seed_tasks_for_store(spec, tracker))
 
-    for t in _merged_in_flight_tasks(""):
+    for t in seeds:
+        if t.status not in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
+            continue
         prod_slug, _ = split_task_id(t.id)
         # in_review is no longer auto-gold (was misread as founder accept).
         # Still surface stalled in_progress/in_review after 90m silence.
@@ -538,7 +585,7 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
                 f"no update {_pulse_relative_time(t.updated_at, now=now)}", since, now,
             ))
             counted.add(t.id)
-    for t in _merged_scope_tasks_for_filters(""):
+    for t in seeds:
         if t.id in counted or t.status in (TaskStatus.DONE, TaskStatus.CANCELED):
             continue
         prod_slug, _ = split_task_id(t.id)
@@ -549,6 +596,7 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
             counted.add(t.id)
         elif t.gate_type == "deferred":
             # Deferred gate: withholds ready but never enters For You (wl-261).
+            # Seed query already skips pure-deferred; keep for fallback path.
             continue
         elif t.gate_type == "human":
             if _human_gate_is_parked(t.gate_note):

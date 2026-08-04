@@ -25,10 +25,30 @@ import json
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, TypeVar
+
+T = TypeVar("T")
+
+# Transient FS/lock failures under concurrent Map + WorkForce polling (wl-357).
+# ``disk I/O error`` on macOS is often not permanent media failure — all stores
+# integrity_check clean after the 2026-08-03 incident. Retry with a fresh
+# connection; non-matching OperationalError still raises immediately.
+_TRANSIENT_SQLITE_RE = re.compile(
+    r"disk i/o error|database is locked|database is busy|unable to open database file",
+    re.IGNORECASE,
+)
+_SQLITE_IO_ATTEMPTS = 4
+_SQLITE_IO_BASE_SLEEP_S = 0.05
+
+
+def _is_transient_sqlite_error(exc: BaseException) -> bool:
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    return bool(_TRANSIENT_SQLITE_RE.search(str(exc)))
 
 from worklane._ref_parse import (
     _BLOCKER_DECL_RE,
@@ -263,14 +283,42 @@ class SQLiteTracker(ProjectTracker):
     def _ensure_dir(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _run_with_io_retry(
+        self, op: Callable[[sqlite3.Connection], T]
+    ) -> T:
+        """Run *op(conn)*, reopening the connection on transient I/O/lock errors.
+
+        Hot read paths (list/count/get) call this so a single flaky open or
+        page read does not 500 the whole desk under poll pile-up (wl-357).
+        """
+        last: Optional[BaseException] = None
+        for attempt in range(_SQLITE_IO_ATTEMPTS):
+            try:
+                with self._connect() as conn:
+                    return op(conn)
+            except sqlite3.OperationalError as exc:
+                last = exc
+                if (
+                    not _is_transient_sqlite_error(exc)
+                    or attempt >= _SQLITE_IO_ATTEMPTS - 1
+                ):
+                    raise
+                time.sleep(_SQLITE_IO_BASE_SLEEP_S * (2 ** attempt))
+        assert last is not None
+        raise last
+
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         self._ensure_dir()
         key = str(self._db_path.resolve())
         fresh = key not in _initialized_dbs
-        conn = sqlite3.connect(str(self._db_path), timeout=5.0)
+        # 10s busy wait (was 5s) — concurrent writers under Map poll load.
+        conn = sqlite3.connect(str(self._db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
         try:
+            # Always: connect(timeout=) is seconds of busy wait, but the
+            # PRAGMA is the portable control and applies after open.
+            conn.execute("PRAGMA busy_timeout=10000")
             if fresh:
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
@@ -363,24 +411,26 @@ class SQLiteTracker(ProjectTracker):
 
     # ── ProjectTracker API ───────────────────────────────────────────
 
-    def list_tasks(
+    def _task_filter_sql(
         self,
         *,
         status: Optional[str] = None,
         label: Optional[str] = None,
         priority: Optional[int] = None,
         gate_type: Optional[str] = None,
-        limit: Optional[int] = None,
-    ) -> List[Task]:
-        sql = "SELECT * FROM tasks"
+    ) -> Tuple[List[str], List[object]]:
+        """Shared WHERE clauses for list_tasks / count_tasks_by_status.
+
+        Label match is a JSON-blob substring (``%"label"%``) — same contract
+        as list_tasks historically; a full inverted index is overkill at
+        O(1k–4k) task counts.
+        """
         clauses: List[str] = []
         params: List[object] = []
         if status:
             clauses.append("status = ?")
             params.append(status)
         if label:
-            # Simple substring match on the JSON blob — a full inverted
-            # index is overkill at task counts we expect (O(1k) max).
             clauses.append("labels LIKE ?")
             params.append(f'%"{label}"%')
         if priority is not None:
@@ -392,6 +442,31 @@ class SQLiteTracker(ProjectTracker):
             else:
                 clauses.append("gate_type = ?")
                 params.append(gate_type)
+        return clauses, params
+
+    def list_tasks(
+        self,
+        *,
+        status: Optional[str] = None,
+        label: Optional[str] = None,
+        priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
+        limit: Optional[int] = None,
+        include_description: bool = True,
+    ) -> List[Task]:
+        # wl-353: attention / in-flight rollups only need metadata — skip the
+        # multi-MB description blobs that dominate cold SELECT * across stores.
+        if include_description:
+            sql = "SELECT * FROM tasks"
+        else:
+            sql = (
+                "SELECT id, ext_id, title, '' AS description, status, priority, "
+                "labels, created_at, updated_at, gate_type, gate_until, gate_note, "
+                "intake FROM tasks"
+            )
+        clauses, params = self._task_filter_sql(
+            status=status, label=label, priority=priority, gate_type=gate_type,
+        )
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY updated_at DESC"
@@ -399,16 +474,87 @@ class SQLiteTracker(ProjectTracker):
             sql += " LIMIT ?"
             params.append(int(limit))
 
-        with self._connect() as conn:
-            rows = conn.execute(sql, params).fetchall()
+        def _op(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+            return conn.execute(sql, params).fetchall()
+
+        rows = self._run_with_io_retry(_op)
         return [_row_to_task(r) for r in rows]
 
+    def list_attention_seed_tasks(self) -> List[Task]:
+        """Slim rows that can appear on the founder-attention feed (wl-353).
+
+        One indexed-friendly WHERE instead of materializing every ticket:
+        in_progress/in_review (stalled check), open human/timer gates, and
+        open founder-decision labels. Descriptions are empty — attention
+        cards only need id/title/labels/gate/timestamps.
+        """
+        sql = (
+            "SELECT id, ext_id, title, '' AS description, status, priority, "
+            "labels, created_at, updated_at, gate_type, gate_until, gate_note, "
+            "intake FROM tasks "
+            "WHERE status IN ('in_progress', 'in_review') "
+            "   OR ("
+            "        status NOT IN ('done', 'canceled') "
+            "        AND ("
+            "            gate_type IN ('human', 'timer') "
+            "            OR labels LIKE '%\"needs:founder-decision\"%' "
+            "            OR labels LIKE '%\"founder-decision\"%'"
+            "        )"
+            "   ) "
+            "ORDER BY updated_at DESC"
+        )
+
+        def _op(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+            return conn.execute(sql).fetchall()
+
+        rows = self._run_with_io_retry(_op)
+        return [_row_to_task(r) for r in rows]
+
+    def count_tasks_by_status(
+        self,
+        *,
+        status: Optional[str] = None,
+        label: Optional[str] = None,
+        priority: Optional[int] = None,
+        gate_type: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """Per-status counts via SQL GROUP BY — never materializes full rows.
+
+        Hot path for ``/api/admin/tasks`` scope_counts / column_counts
+        (wl-354). Full ``SELECT *`` + Python counting was O(all tickets ×
+        description bytes) on every list, which wedged the single-threaded
+        desk under concurrent WorkForce preflights.
+        """
+        sql = "SELECT status, COUNT(*) AS n FROM tasks"
+        clauses, params = self._task_filter_sql(
+            status=status, label=label, priority=priority, gate_type=gate_type,
+        )
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " GROUP BY status"
+        counts: Dict[str, int] = {s: 0 for s in TaskStatus.ALL}
+
+        def _op(conn: sqlite3.Connection) -> Dict[str, int]:
+            out = dict(counts)
+            for row in conn.execute(sql, params):
+                st = row[0] or TaskStatus.BACKLOG
+                if st in out:
+                    out[st] = int(row[1])
+            return out
+
+        return self._run_with_io_retry(_op)
+
     def get_task(self, task_id: str) -> Optional[Task]:
-        with self._connect() as conn:
-            row = conn.execute(
+        tid = self._maybe_int(task_id)
+        sid = str(task_id)
+
+        def _op(conn: sqlite3.Connection) -> Optional[sqlite3.Row]:
+            return conn.execute(
                 "SELECT * FROM tasks WHERE id = ? OR ext_id = ? LIMIT 1",
-                (self._maybe_int(task_id), str(task_id)),
+                (tid, sid),
             ).fetchone()
+
+        row = self._run_with_io_retry(_op)
         return _row_to_task(row) if row else None
 
     def create_task(

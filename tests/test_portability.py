@@ -41,14 +41,15 @@ class PortabilityTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def _seed_rich(self) -> None:
-        # Alpha is a live backlog ticket with a proper worker seat so it
-        # round-trips cleanly (routing stamp not applied when seat is present).
+        # Alpha is a live backlog ticket with a proper worker seat + product
+        # label so it round-trips cleanly (routing/product stamps not applied
+        # when both are already present — wl-338 / wl-364).
         t1 = self.src.create_task(
             title="Alpha",
             description="First ticket",
             status="backlog",
             priority=2,
-            labels=["area:data", "worker:grok"],
+            labels=["area:data", "worker:grok", "product:fixture"],
             ext_id="EXT-alpha",
         )
         self.src.add_comment(str(t1.id), "hello from seed", author="grok")
@@ -326,6 +327,233 @@ class ImportRoutingTest(unittest.TestCase):
             }
         )
         self.assertEqual(task["labels"].count("needs:routing"), 1)
+
+
+class ImportStrictRoutingTest(unittest.TestCase):
+    """Opt-in hard-B import mode (wl-367).
+
+    Default remains soft under hired hands. With hard_when_hands=True and a
+    non-empty hired_hands list, bare seats reject; worker:lili is accepted.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dst = SQLiteTracker(
+            db_path=Path(self._tmp.name) / "dst.db", product_default=""
+        )
+        self._hired = ["worker:lili"]
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _line(self, labels: List[str], *, task_id: str = "1") -> str:
+        return json.dumps(
+            {
+                "id": task_id,
+                "ext_id": None,
+                "title": "StrictImport",
+                "description": "wl-367 strict routing case",
+                "status": "backlog",
+                "priority": 3,
+                "labels": labels,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            separators=(",", ":"),
+        )
+
+    def test_default_soft_under_hired_hands_stamps_needs_routing(self) -> None:
+        """Default hard_when_hands=False never rejects even when hands exist."""
+        report = portability.import_jsonl(
+            [self._line(["area:backend"])],
+            "fixture",
+            tracker=self.dst,
+            # omit hard flag — soft default
+            hired_hands=self._hired,
+        )
+        self.assertEqual(len(report.created), 1)
+        labs = list(self.dst.list_tasks()[0].labels or [])
+        self.assertIn("needs:routing", labs)
+        self.assertNotIn("worker:lili", labs)
+
+    def test_strict_bare_under_hired_hands_rejects(self) -> None:
+        with self.assertRaises(portability.PortabilityError) as ctx:
+            portability.import_jsonl(
+                [self._line(["area:backend"])],
+                "fixture",
+                tracker=self.dst,
+                hard_when_hands=True,
+                hired_hands=self._hired,
+            )
+        msg = str(ctx.exception)
+        self.assertIn("worker:* required", msg)
+        self.assertIn("worker:lili", msg)
+        self.assertEqual(self.dst.list_tasks(), [])
+
+    def test_strict_worker_lili_accepted(self) -> None:
+        report = portability.import_jsonl(
+            [self._line(["worker:lili", "area:backend"])],
+            "fixture",
+            tracker=self.dst,
+            hard_when_hands=True,
+            hired_hands=self._hired,
+        )
+        self.assertEqual(len(report.created), 1)
+        labs = list(self.dst.list_tasks()[0].labels or [])
+        self.assertIn("worker:lili", labs)
+        self.assertNotIn("needs:routing", labs)
+
+    def test_strict_without_hired_hands_still_soft(self) -> None:
+        """Hard flag alone with empty roster is pre-hire soft stamp."""
+        report = portability.import_jsonl(
+            [self._line(["area:backend"])],
+            "fixture",
+            tracker=self.dst,
+            hard_when_hands=True,
+            hired_hands=[],
+        )
+        self.assertEqual(len(report.created), 1)
+        labs = list(self.dst.list_tasks()[0].labels or [])
+        self.assertIn("needs:routing", labs)
+
+    def test_cli_strict_routing_flag_wired(self) -> None:
+        from worklane.cli import wl as wl_cli
+
+        parser = wl_cli._build_parser()
+        args = parser.parse_args(
+            ["import", "x.jsonl", "--project", "fixture", "--strict-routing"]
+        )
+        self.assertTrue(args.strict_routing)
+        args_off = parser.parse_args(["import", "x.jsonl", "--project", "fixture"])
+        self.assertFalse(args_off.strict_routing)
+
+
+class ImportProductStampTest(unittest.TestCase):
+    """product:<dest> attribution on import (wl-364).
+
+    Live tickets missing product:* get product:<destination-slug>.
+    Existing product:* is left untouched. Done/canceled are exempt.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dst = SQLiteTracker(
+            db_path=Path(self._tmp.name) / "dst.db", product_default=""
+        )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _import_one(
+        self, obj: Dict[str, Any], product: str = "fixture"
+    ) -> Dict[str, Any]:
+        line = json.dumps(obj, separators=(",", ":"))
+        portability.import_jsonl([line], product, tracker=self.dst)
+        tasks = self.dst.list_tasks()
+        self.assertEqual(len(tasks), 1)
+        return tasks[0].__dict__
+
+    def test_live_missing_product_gets_dest_stamp(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "NoProduct",
+                "description": "live, no product label",
+                "status": "backlog",
+                "priority": 3,
+                "labels": ["area:backend"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            product="worklane",
+        )
+        self.assertIn("product:worklane", task["labels"])
+        self.assertEqual(
+            sum(1 for l in task["labels"] if str(l).startswith("product:")), 1
+        )
+        # Seat law still applies alongside product stamp.
+        self.assertIn("needs:routing", task["labels"])
+
+    def test_existing_product_label_preserved(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "HasProduct",
+                "description": "export product is authoritative",
+                "status": "backlog",
+                "priority": 3,
+                "labels": ["product:othercity", "worker:lili"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            product="worklane",
+        )
+        self.assertIn("product:othercity", task["labels"])
+        self.assertNotIn("product:worklane", task["labels"])
+        self.assertEqual(task["labels"].count("product:othercity"), 1)
+
+    def test_product_stamp_not_doubled_when_already_present(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "AlreadyProduct",
+                "description": "already product:fixture",
+                "status": "backlog",
+                "priority": 3,
+                "labels": ["product:fixture", "worker:lili"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            product="fixture",
+        )
+        self.assertEqual(task["labels"].count("product:fixture"), 1)
+
+    def test_done_ticket_without_product_is_not_stamped(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "DoneNoProduct",
+                "description": "done, no product",
+                "status": "done",
+                "priority": 3,
+                "labels": ["area:legacy"],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            product="worklane",
+        )
+        self.assertFalse(
+            any(str(l).startswith("product:") for l in task["labels"])
+        )
+
+    def test_canceled_ticket_without_product_is_not_stamped(self) -> None:
+        task = self._import_one(
+            {
+                "id": "1",
+                "ext_id": None,
+                "title": "CanceledNoProduct",
+                "description": "canceled, no product",
+                "status": "canceled",
+                "priority": 3,
+                "labels": [],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            product="worklane",
+        )
+        self.assertFalse(
+            any(str(l).startswith("product:") for l in task["labels"])
+        )
 
 
 if __name__ == "__main__":

@@ -11,6 +11,12 @@ def _disable_ntfy(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _disable_wake_nudge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent any test from POSTing WorkForce /api/wake (wl-359)."""
+    monkeypatch.setenv("WL_WAKE_DISABLE", "1")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_workforce(monkeypatch: pytest.MonkeyPatch) -> None:
     """Block the WorkForce lookup and roster fallback for all tests (wl-282, wl-287, wl-306).
 

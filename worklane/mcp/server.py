@@ -42,7 +42,11 @@ from worklane.mcp.tool_aliases import (
     canonical_tool_name,
     with_wl_tool_aliases,
 )
-from worklane.products import default_product_slug
+from worklane.products import (
+    default_product_slug,
+    empty_runtime_override_warning,
+    emit_empty_runtime_override_warning,
+)
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "worklane"
@@ -102,7 +106,7 @@ class MCPServer:
             if self._internal_catalog
             else ""
         )
-        return (
+        base = (
             f"WorkLane MCP. Signed as author="
             f"{self.handlers.author!r}, default product="
             f"{self.handlers.default_product!r}. "
@@ -113,6 +117,12 @@ class MCPServer:
             "Triage: wl_label/wl_update/wl_cancel/wl_reopen. "
             "Session: wl_mine, wl_counts."
         )
+        # wl-374: surface empty RUNTIME_DIR override at connect so clients
+        # do not mistake a silent tradeos-only registry for a live multi-store.
+        warn = empty_runtime_override_warning()
+        if warn:
+            return f"{base} {warn}"
+        return base
 
     # ── request handling ─────────────────────────────────────────────
 
@@ -300,6 +310,8 @@ def main(argv: Optional[list] = None) -> None:
         f"project={handlers.default_product!r}",
         file=sys.stderr,
     )
+    # wl-374: loud boot when RUNTIME_DIR override is empty / miswired.
+    emit_empty_runtime_override_warning(stream=sys.stderr)
     server = MCPServer(handlers)
     raise SystemExit(server.serve_forever())
 

@@ -14,6 +14,8 @@ from worklane.devqueue.queue import WorkQueue
 from worklane.products import (
     default_product_slug,
     discover_products,
+    empty_runtime_override_warning,
+    emit_empty_runtime_override_warning,
     get_product,
     known_prefix_slug,
     prefixed_task_id,
@@ -21,6 +23,7 @@ from worklane.products import (
     product_tracker,
     resolve_write_task_id,
     split_task_id,
+    unknown_product_message,
 )
 from worklane.trackers.protocol import Task, TaskStatus
 from worklane.trackers.sqlite import SQLiteTracker
@@ -69,6 +72,19 @@ class TPHandlers:
             .strip()
             .lower()
         )
+        # wl-374: one-shot empty RUNTIME_DIR override hint for tool clients.
+        # Startup log is emitted by mcp.server.main / server.main; this flag
+        # lets the first tool result also carry the path when miswired.
+        self._empty_override_hint: Optional[str] = empty_runtime_override_warning()
+        self._empty_override_hint_sent = False
+
+    def _consume_empty_override_hint(self) -> Optional[str]:
+        """Return the one-time empty-override tool hint, then clear it."""
+        if self._empty_override_hint_sent or not self._empty_override_hint:
+            return None
+        self._empty_override_hint_sent = True
+        emit_empty_runtime_override_warning()
+        return self._empty_override_hint
 
     # ── resolution helpers ───────────────────────────────────────────
 
@@ -88,7 +104,7 @@ class TPHandlers:
         # is a footgun.
         if slug != "tradeos" and get_product(slug) is None:
             known = product_slugs() or ["tradeos"]
-            raise ToolError(f"unknown product {slug!r}; known: {known}")
+            raise ToolError(unknown_product_message(slug, known))
         return slug
 
     def _tracker(self, product: str) -> Tuple[str, SQLiteTracker]:
@@ -341,6 +357,21 @@ class TPHandlers:
             )
         # re-fetch for updated_at after intake comment
         fresh = tr.get_task(str(task.id)) or task
+        # wl-359: claimable worker:<hand> create → WorkForce wake nudge.
+        try:
+            from worklane.wake_nudge import gate_of, maybe_wake_hand
+
+            pub = self._public_id(slug, str(fresh.id))
+            maybe_wake_hand(
+                list(fresh.labels or labs),
+                status=fresh.status,
+                gate_type=gate_of(fresh),
+                only_on_seat_change=True,
+                previous_hand=None,
+                task_id=pub,
+            )
+        except Exception:
+            pass
         out = {"ok": True, "task": self._task_dict(slug, fresh)}
         if stamped_nr:
             out["routing_warning"] = (
@@ -562,6 +593,20 @@ class TPHandlers:
                 tr.update_status(raw_id, TaskStatus.BACKLOG, actor=self.author)
 
         fresh = tr.get_task(raw_id)
+        # wl-359: release → ready on a seated hand → wake.
+        if fresh is not None:
+            try:
+                from worklane.wake_nudge import gate_of, maybe_wake_hand
+
+                maybe_wake_hand(
+                    list(fresh.labels or []),
+                    status=fresh.status,
+                    gate_type=gate_of(fresh),
+                    only_on_seat_change=False,
+                    task_id=self._public_id(slug, raw_id),
+                )
+            except Exception:
+                pass
         return {
             "ok": True,
             "task": self._task_dict(slug, fresh) if fresh else None,
@@ -589,7 +634,9 @@ class TPHandlers:
         slug, raw_id, tr, _task = self._resolve_task(task_id, product, write=True)
 
         # wl-320: starve guard — label mutation must not bypass wl-315.
+        # wl-372: foreign-seat guard — reject worker:<hand> not hired here.
         from worklane.routing_labels import (  # noqa: PLC0415
+            check_mutation_foreign_seat,
             check_mutation_starve_guard,
         )
         try:
@@ -605,12 +652,41 @@ class TPHandlers:
         )
         if _starve_err:
             raise ToolError(_starve_err)
+        _foreign_err = check_mutation_foreign_seat(
+            list(_task.labels or []),
+            add=add_list,
+            remove=remove_list,
+            hired_hands=_hired,
+        )
+        if _foreign_err:
+            raise ToolError(_foreign_err)
+
+        try:
+            from worklane.wake_nudge import previous_hand_from_labels
+
+            _prev_hand = previous_hand_from_labels(list(_task.labels or []))
+        except Exception:
+            _prev_hand = None
 
         updated = tr.update_labels(
             raw_id, add=add_list, remove=remove_list, actor=self.author
         )
         if updated is None:
             raise ToolError(f"task not found: {task_id}")
+        # wl-359: seat gain / re-route on claimable ticket → wake.
+        try:
+            from worklane.wake_nudge import gate_of, maybe_wake_hand
+
+            maybe_wake_hand(
+                list(updated.labels or []),
+                status=updated.status,
+                gate_type=gate_of(updated),
+                only_on_seat_change=True,
+                previous_hand=_prev_hand,
+                task_id=self._public_id(slug, raw_id),
+            )
+        except Exception:
+            pass
         return {"ok": True, "task": self._task_dict(slug, updated)}
 
     def wl_update(
@@ -669,6 +745,20 @@ class TPHandlers:
         )
         if updated is None:
             raise ToolError(f"task not found: {task_id}")
+        # wl-359: gate-clear on seated ready ticket → wake.
+        if gate_type is not None and str(gate_type).strip() == "":
+            try:
+                from worklane.wake_nudge import gate_of, maybe_wake_hand
+
+                maybe_wake_hand(
+                    list(updated.labels or []),
+                    status=updated.status,
+                    gate_type=gate_of(updated),
+                    only_on_seat_change=False,
+                    task_id=self._public_id(slug, raw_id),
+                )
+            except Exception:
+                pass
         return {"ok": True, "task": self._task_dict(slug, updated)}
 
     def wl_cancel(
@@ -728,6 +818,20 @@ class TPHandlers:
         comment = tr.add_comment(raw_id, body, author=self.author)
         tr.update_status(raw_id, TaskStatus.BACKLOG, actor=self.author)
         fresh = tr.get_task(raw_id)
+        # wl-359: reopen → backlog on a seated hand → wake.
+        if fresh is not None:
+            try:
+                from worklane.wake_nudge import gate_of, maybe_wake_hand
+
+                maybe_wake_hand(
+                    list(fresh.labels or []),
+                    status=fresh.status,
+                    gate_type=gate_of(fresh),
+                    only_on_seat_change=False,
+                    task_id=self._public_id(slug, raw_id),
+                )
+            except Exception:
+                pass
         return {
             "ok": True,
             "task": self._task_dict(slug, fresh) if fresh else None,
@@ -1445,4 +1549,13 @@ def dispatch_tool(handlers: TPHandlers, name: str, arguments: Dict[str, Any]) ->
     # Drop unknown keys so clients sending extra fields don't TypeError.
     sig = inspect.signature(fn)
     accepted = {k: v for k, v in args.items() if k in sig.parameters}
-    return fn(**accepted)
+    result = fn(**accepted)
+    # wl-374: one-time tool-result hint naming the resolved runtime dir when
+    # an empty RUNTIME_DIR override would otherwise look like a healthy
+    # single-product registry.
+    hint = handlers._consume_empty_override_hint()
+    if hint and isinstance(result, dict):
+        out = dict(result)
+        out["runtime_warning"] = hint
+        return out
+    return result

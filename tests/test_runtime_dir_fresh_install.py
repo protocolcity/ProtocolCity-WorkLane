@@ -89,5 +89,120 @@ class FreshInstallDbFilenameTest(unittest.TestCase):
         self.assertEqual(tracker._db_path, missing)
 
 
+class EmptyRuntimeOverrideTest(unittest.TestCase):
+    """wl-374: empty RUNTIME_DIR override must fail loud / self-diagnose."""
+
+    _ENV_KEYS = (
+        "WORKLANE_RUNTIME_DIR",
+        "WORKLANE_RUNTIME_DIR",
+        "WL_DEFAULT_PROJECT",
+        "WL_DEFAULT_PRODUCT",
+        "WL_PROJECT",
+        "WL_PRODUCT",
+        "WL_DEFAULT_PROJECT",
+        "WL_DEFAULT_PRODUCT",
+        "WL_PROJECT",
+        "WL_PRODUCT",
+    )
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._env_before = {k: os.environ.get(k) for k in self._ENV_KEYS}
+        for k in self._ENV_KEYS:
+            os.environ.pop(k, None)
+        products.reset_empty_runtime_override_warning_for_tests()
+
+    def tearDown(self) -> None:
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        products.reset_empty_runtime_override_warning_for_tests()
+        self._tmp.cleanup()
+
+    def test_empty_override_detected_and_warns(self) -> None:
+        empty = self.root / "empty-runtime"
+        empty.mkdir()
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(empty)
+        # Default env would still invent tradeos — that is the silent
+        # single-product trap; empty-override detection must still fire.
+        os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+
+        self.assertTrue(products.is_empty_runtime_override())
+        warn = products.empty_runtime_override_warning()
+        assert warn is not None
+        self.assertIn(str(empty), warn)
+        self.assertIn("empty RUNTIME_DIR", warn)
+
+        # One-shot emit
+        self.assertTrue(products.emit_empty_runtime_override_warning())
+        self.assertFalse(products.emit_empty_runtime_override_warning())
+
+    def test_override_with_products_json_not_empty(self) -> None:
+        rt = self.root / "with-config"
+        (rt / "config").mkdir(parents=True)
+        (rt / "config" / "products.json").write_text(
+            '{"default": "tradeos"}', encoding="utf-8"
+        )
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(rt)
+        self.assertFalse(products.is_empty_runtime_override())
+        self.assertIsNone(products.empty_runtime_override_warning())
+
+    def test_override_with_product_db_not_empty(self) -> None:
+        rt = self.root / "with-db"
+        data = rt / "data"
+        data.mkdir(parents=True)
+        (data / "worklane.db").write_bytes(b"")  # presence is enough
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(rt)
+        self.assertFalse(products.is_empty_runtime_override())
+
+    def test_no_override_never_flags_empty(self) -> None:
+        # Even with no env pin, do not treat package/checkout defaults as miswired.
+        self.assertEqual(products.runtime_dir_override(), "")
+        self.assertFalse(products.is_empty_runtime_override())
+
+    def test_unknown_product_message_includes_runtime_dir(self) -> None:
+        empty = self.root / "miswired"
+        empty.mkdir()
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(empty)
+        os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+
+        msg = products.unknown_product_message("protocolcity", ["tradeos"])
+        self.assertIn("unknown product 'protocolcity'", msg)
+        self.assertIn("known: ['tradeos']", msg)
+        self.assertIn(f"runtime_dir={empty}", msg)
+        self.assertIn("empty RUNTIME_DIR override", msg)
+
+    def test_mcp_handler_unknown_product_includes_runtime_and_one_time_hint(self) -> None:
+        from worklane.mcp.handlers import (
+            TPHandlers,
+            ToolError,
+            dispatch_tool,
+        )
+
+        empty = self.root / "mcp-empty"
+        empty.mkdir()
+        os.environ["WORKLANE_RUNTIME_DIR"] = str(empty)
+        os.environ["WL_DEFAULT_PRODUCT"] = "tradeos"
+        # Avoid inheriting a live DB path from the host env.
+        os.environ.pop("WORKLANE_DB", None)
+        os.environ.pop("TRADEOS_TRACKER_DB", None)
+
+        h = TPHandlers(author="lili", default_product="tradeos")
+        with self.assertRaises(ToolError) as cm:
+            h.wl_counts(product="protocolcity")
+        self.assertIn("runtime_dir=", cm.exception.message)
+        self.assertIn(str(empty), cm.exception.message)
+
+        # First successful tool result carries one-time runtime_warning.
+        first = dispatch_tool(h, "wl_counts", {"product": "tradeos"})
+        self.assertIn("runtime_warning", first)
+        self.assertIn(str(empty), first["runtime_warning"])
+        second = dispatch_tool(h, "wl_counts", {"product": "tradeos"})
+        self.assertNotIn("runtime_warning", second)
+
+
 if __name__ == "__main__":
     unittest.main()

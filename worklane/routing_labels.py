@@ -8,6 +8,11 @@ Law (BluePrint cities + this engine):
 - **Hard B (wl-274, 2026-07-28):** when the product has ≥1 hired *lane*
   hand, create **requires** a ``worker:*`` seat — reject, do not soft-stamp
   as steady state. Pre-hire (no hired lanes): stamp ``needs:routing``.
+- **Foreign seat (wl-372, 2026-08-04):** when hired lanes exist, a
+  ``worker:<hand>`` that is not among those seats is rejected with the
+  same valid-seat list as the missing-seat error. Stops dead seats
+  (hand hired for another store only) from sitting READY while every
+  lane probe misses them. ``worker:you`` is always allowed.
 - **Starve guard (wl-315, 2026-08-01):** bare ``worker:you`` (no ``you:kind``
   and no founder gate label) is rejected when hands are hired — it parks
   implement work on a seat cron never drains. Require ``you:note|remind|todo|host``
@@ -126,6 +131,33 @@ def format_seat_help(hired: Sequence[str]) -> str:
     )
 
 
+def foreign_seat_error(
+    worker_ids: Sequence[str],
+    hired_hands: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """Return an error when a lane seat is not hired for this product (wl-372).
+
+    ``worker:you`` is never foreign. Pre-hire (empty hired list) returns None
+    — membership cannot be checked without a seat roster for the store.
+    """
+    hired = normalize_hired_hands(hired_hands)
+    if not hired:
+        return None
+    hired_set = set(hired)
+    for wid in worker_ids:
+        w = str(wid).strip().lower()
+        if not w or w == "you":
+            continue
+        seat = "worker:" + w
+        if seat not in hired_set:
+            return (
+                seat
+                + " is not a hired seat for this product. "
+                + format_seat_help(hired)
+            )
+    return None
+
+
 def ensure_create_labels(
     labels: Sequence[str] | None,
     *,
@@ -139,6 +171,8 @@ def ensure_create_labels(
     - If any ``worker:*`` present → drop redundant ``needs:routing``.
     - If dual ``worker:*`` → error.
     - If no ``worker:*`` and hired lanes exist and hard_when_hands → error (B).
+    - If a ``worker:<hand>`` is not among hired seats (hard_when_hands) → error
+      (wl-372 foreign seat).
     - If no ``worker:*`` and no hired lanes → stamp ``needs:routing`` (pre-hire).
     """
     labs = _coerce_labels(labels)
@@ -169,6 +203,11 @@ def ensure_create_labels(
                 + format_seat_help(hired)
                 + " + you:note|you:host|you:todo|you:remind",
             )
+        # wl-372: reject seats not hired for this product (same UX as omit).
+        if hard_when_hands and hired:
+            foreign = foreign_seat_error(ids, hired)
+            if foreign:
+                return cleaned, False, foreign
         return cleaned, False, None
 
     if hard_when_hands and hired:
@@ -215,6 +254,25 @@ def reconcile_routing_after_mutation(
     return labs + [NEEDS_ROUTING_LABEL], True, False
 
 
+def _labels_after_mutation(
+    current_labels: Sequence[str],
+    *,
+    add: Optional[Sequence[str]] = None,
+    remove: Optional[Sequence[str]] = None,
+) -> List[str]:
+    """Apply add/remove to a copy of current labels (mutation preview)."""
+    labs = list(_coerce_labels(current_labels))
+    for lb in add or []:
+        lb_s = str(lb).strip()
+        if lb_s and lb_s not in labs:
+            labs.append(lb_s)
+    for lb in remove or []:
+        lb_s = str(lb).strip()
+        if lb_s in labs:
+            labs.remove(lb_s)
+    return labs
+
+
 def check_mutation_starve_guard(
     current_labels: Sequence[str],
     *,
@@ -232,15 +290,7 @@ def check_mutation_starve_guard(
     if not hired:
         return None  # pre-hire: no guard applies
 
-    labs = list(_coerce_labels(current_labels))
-    for lb in (add or []):
-        lb_s = str(lb).strip()
-        if lb_s and lb_s not in labs:
-            labs.append(lb_s)
-    for lb in (remove or []):
-        lb_s = str(lb).strip()
-        if lb_s in labs:
-            labs.remove(lb_s)
+    labs = _labels_after_mutation(current_labels, add=add, remove=remove)
 
     if not worker_you_is_classified(labs):
         return (
@@ -251,6 +301,26 @@ def check_mutation_starve_guard(
             + " + you:note|you:host|you:todo|you:remind"
         )
     return None
+
+
+def check_mutation_foreign_seat(
+    current_labels: Sequence[str],
+    *,
+    add: Optional[Sequence[str]] = None,
+    remove: Optional[Sequence[str]] = None,
+    hired_hands: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """wl-372: foreign-seat guard for label *mutations*.
+
+    Returns an error when the post-mutation set would carry a ``worker:<hand>``
+    that is not hired for this product. ``worker:you`` is always allowed.
+    Pre-hire (no hired hands) returns None.
+    """
+    hired = normalize_hired_hands(hired_hands)
+    if not hired:
+        return None
+    labs = _labels_after_mutation(current_labels, add=add, remove=remove)
+    return foreign_seat_error(worker_ids_from_labels(labs), hired)
 
 
 def check_worker_product_mismatch(

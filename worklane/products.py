@@ -18,9 +18,11 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, TextIO, Tuple
 
 
 # Slugs with curated display names / short id prefixes. Anything else
@@ -46,6 +48,12 @@ _IGNORED_DB_STEMS = {"ops_tickets"}
 # has explicitly registered it in the products.json config overlay.
 _SCRATCH_DB_GLOBS = ("*.pre-*", "*.backup*", "*bak*", "zzz*")
 
+# Same grammar as POST /api/admin/products (wl-12). Discovery must refuse
+# anything outside it — sync/copy collision suffixes like
+# ``protocolcity 992.db`` / ``worklane 348.db`` (space + digits) otherwise
+# register as bogus products (wl-377).
+_PRODUCT_SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
+
 
 def _is_scratch_db_stem(stem: str) -> bool:
     """True when ``stem`` looks like a backup/scratch artifact, not a
@@ -59,6 +67,11 @@ def _is_product_db_stem(stem: str) -> bool:
     if not s or s in _IGNORED_DB_STEMS:
         return False
     if s.endswith("_archive"):
+        return False
+    # wl-377: refuse collision-suffixed / non-slug stems (whitespace, dots,
+    # leading digits, over-long names). Explicit products.json registration
+    # cannot override this — a stem outside slug grammar is never a product.
+    if not _PRODUCT_SLUG_RE.match(s):
         return False
     if _is_scratch_db_stem(s) and s not in _config_overrides():
         return False
@@ -81,6 +94,19 @@ def _is_source_checkout() -> bool:
     return (Path(__file__).resolve().parents[1] / ".git").exists()
 
 
+def runtime_dir_override() -> str:
+    """Absolute override path from WORKLANE_RUNTIME_DIR or WORKLANE_RUNTIME_DIR.
+
+    Empty string when neither env is set — callers treat that as "use
+    package/checkout defaults" rather than an operator pin.
+    """
+    return (
+        os.environ.get("WORKLANE_RUNTIME_DIR")
+        or os.environ.get("WORKLANE_RUNTIME_DIR")
+        or ""
+    ).strip()
+
+
 def wl_data_dir() -> Path:
     """Runtime data dir (honors WORKLANE_RUNTIME_DIR; or WORKLANE_RUNTIME_DIR).
 
@@ -90,12 +116,126 @@ def wl_data_dir() -> Path:
     package) falls back to a user-level directory instead of writing
     inside site-packages, where it would be wiped on reinstall/upgrade.
     """
-    override = (os.environ.get("WORKLANE_RUNTIME_DIR") or os.environ.get("WORKLANE_RUNTIME_DIR") or "").strip()
+    override = runtime_dir_override()
     if override:
         return Path(override) / "data"
     if _is_source_checkout():
         return Path(__file__).parent / "local" / "data"
     return Path.home() / ".worklane" / "data"
+
+
+def runtime_root() -> Path:
+    """Resolved runtime root (parent of the data dir).
+
+    When WORKLANE_RUNTIME_DIR / WORKLANE_RUNTIME_DIR is set this
+    is that path; otherwise it is the parent of the package/user data dir.
+    Surfaced in unknown-product errors so a miswired override is
+    self-diagnosing (wl-374).
+    """
+    return wl_data_dir().parent
+
+
+# One-shot empty-override boot warning (wl-374). Process-global so server
+# + MCP + first tool path share a single loud line rather than spamming.
+_empty_override_warned: bool = False
+
+
+def on_disk_product_db_stems() -> List[str]:
+    """Sorted stems of real product ``.db`` files under the data dir.
+
+    Scratch/ignored stems are filtered the same way as discovery — a
+    backup artifact does not count as a live store.
+    """
+    data = wl_data_dir()
+    if not data.is_dir():
+        return []
+    return sorted(
+        p.stem.strip().lower()
+        for p in data.glob("*.db")
+        if _is_product_db_stem(p.stem)
+    )
+
+
+def is_empty_runtime_override() -> bool:
+    """True when an explicit RUNTIME_DIR override is set but the store is empty.
+
+    Miswire pattern (wl-374): city-generated ``.mcp.json`` pins
+    WORKLANE_RUNTIME_DIR / WORKLANE_RUNTIME_DIR at an empty
+    directory while the live multi-product store lives in the source
+    checkout. Without a config/products.json and without any product
+    ``.db`` on disk, discovery still surfaces the built-in default
+    (tradeos) — callers then see ``unknown product 'X'; known: ['tradeos']``
+    with no hint the override is wrong.
+
+    Returns False when no override is set (package/checkout defaults are
+    not "miswired"), when products.json exists, or when at least one
+    product store file is on disk.
+    """
+    if not runtime_dir_override():
+        return False
+    if products_config_path().is_file():
+        return False
+    return not on_disk_product_db_stems()
+
+
+def empty_runtime_override_warning() -> Optional[str]:
+    """Human-readable warning when :func:`is_empty_runtime_override`, else None."""
+    if not is_empty_runtime_override():
+        return None
+    root = runtime_root()
+    data = wl_data_dir()
+    override = runtime_dir_override()
+    return (
+        f"WARNING: empty RUNTIME_DIR override at {root} "
+        f"(env pin: {override}). No config/products.json and no product "
+        f".db files under {data}. Registry will only serve the built-in "
+        f"default (tradeos) — other slugs fail with 'unknown product'. "
+        f"Point WORKLANE_RUNTIME_DIR / WORKLANE_RUNTIME_DIR at "
+        f"the live checkout runtime root (…/worklane/local) or "
+        f"bootstrap stores into {data}."
+    )
+
+
+def emit_empty_runtime_override_warning(
+    stream: Optional[TextIO] = None,
+) -> bool:
+    """Print the empty-override warning once per process. Returns True if emitted."""
+    global _empty_override_warned
+    msg = empty_runtime_override_warning()
+    if not msg or _empty_override_warned:
+        return False
+    _empty_override_warned = True
+    print(msg, file=stream if stream is not None else sys.stderr)
+    return True
+
+
+def reset_empty_runtime_override_warning_for_tests() -> None:
+    """Test helper: allow the one-shot warning to fire again."""
+    global _empty_override_warned
+    _empty_override_warned = False
+
+
+def unknown_product_message(
+    slug: str, known: Optional[List[str]] = None
+) -> str:
+    """Self-diagnosing unknown-product / unknown-surface error (wl-374).
+
+    Always names the resolved runtime root so a miswired override is
+    obvious. When the empty-override pattern is active, appends an
+    explicit bootstrap/miswire hint.
+    """
+    known_list = list(known) if known is not None else (product_slugs() or ["tradeos"])
+    base = (
+        f"unknown product {slug!r}; known: {known_list}; "
+        f"runtime_dir={runtime_root()}"
+    )
+    if is_empty_runtime_override():
+        base += (
+            f" (empty RUNTIME_DIR override — no products.json / product "
+            f".dbs under {wl_data_dir()}; check WORKLANE_RUNTIME_DIR / "
+            f"WORKLANE_RUNTIME_DIR)"
+        )
+    return base
 
 
 def products_config_path() -> Path:

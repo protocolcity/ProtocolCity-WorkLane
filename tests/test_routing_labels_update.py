@@ -12,6 +12,7 @@ from pathlib import Path
 
 from worklane.routing_labels import (
     NEEDS_ROUTING_LABEL,
+    check_mutation_foreign_seat,
     check_mutation_starve_guard,
     reconcile_routing_after_mutation,
 )
@@ -66,6 +67,47 @@ class ReconcileRoutingAfterMutationTest(unittest.TestCase):
         self.assertTrue(stamped)
         self.assertFalse(dropped)
         self.assertIn(NEEDS_ROUTING_LABEL, labs)
+
+
+class CheckMutationForeignSeatTest(unittest.TestCase):
+    """wl-372: label mutations must not introduce a seat not hired here."""
+
+    def test_add_foreign_seat_rejects(self) -> None:
+        err = check_mutation_foreign_seat(
+            ["worker:lili", "suite"],
+            add=["worker:sylvester"],
+            remove=["worker:lili"],
+            hired_hands=["worker:lili"],
+        )
+        self.assertIsNotNone(err)
+        self.assertIn("worker:sylvester", err or "")
+        self.assertIn("not a hired seat", err or "")
+
+    def test_add_local_seat_ok(self) -> None:
+        err = check_mutation_foreign_seat(
+            ["worker:lili"],
+            add=["worker:drew"],
+            remove=["worker:lili"],
+            hired_hands=["worker:lili", "worker:drew"],
+        )
+        self.assertIsNone(err)
+
+    def test_worker_you_never_foreign(self) -> None:
+        err = check_mutation_foreign_seat(
+            ["worker:lili"],
+            add=["worker:you", "you:host"],
+            remove=["worker:lili"],
+            hired_hands=["worker:lili"],
+        )
+        self.assertIsNone(err)
+
+    def test_pre_hire_skips(self) -> None:
+        err = check_mutation_foreign_seat(
+            ["suite"],
+            add=["worker:ghost"],
+            hired_hands=[],
+        )
+        self.assertIsNone(err)
 
 
 class UpdateLabelsRestampTest(unittest.TestCase):

@@ -27,14 +27,13 @@ from worklane.board import (
     _claim_stale_minutes,
     _load_preview_comments_multi,
     _render_task_card,
-    _wq_column_counts,
-    _wq_status_counts,
+    column_counts_for_scope_multi,
     get_ops_ticket_tracker,
-    list_tasks_for_scope_multi,
     ops_tickets_db_path,
     parse_wq_priority,
     parse_wq_product,
     resolve_wq_product,
+    status_counts_for_scope_multi,
 )
 from worklane.devqueue import (
     WorkQueue,
@@ -83,6 +82,11 @@ from worklane.trackers import (
     TaskStatus,
     get_default_tracker,
     task_is_gated,
+)
+from worklane.wake_nudge import (
+    gate_of,
+    maybe_wake_hand,
+    previous_hand_from_labels,
 )
 
 logger = logging.getLogger(__name__)
@@ -641,7 +645,7 @@ async def api_create_task(request: Request) -> JSONResponse:
 
     # Create-path routing (wl-274 B): hard-require worker:* when hired hands exist;
     # pre-hire still soft-stamps needs:routing. worker:you is a valid seat.
-    from worklane.routing_labels import ensure_create_labels, has_worker_label
+    from worklane.routing_labels import ensure_create_labels
 
     hired = _workforce_workers_for_product(surface)
     labels, stamped_nr, route_err = ensure_create_labels(
@@ -663,13 +667,6 @@ async def api_create_task(request: Request) -> JSONResponse:
                 else ""
             )
         )
-    elif not has_worker_label(labels) and hired:
-        # Should not reach here under hard B
-        routing_warning = (
-            "no worker:* routing label — this product has hired hands: "
-            + ", ".join(hired)
-            + ". Add one (or worker:you)."
-        )
 
     # wl-296: cross-product mismatch guard — warn/reject when the worker's
     # roster queue_url points at a different product than the ticket's store.
@@ -687,6 +684,20 @@ async def api_create_task(request: Request) -> JSONResponse:
                 return JSONResponse({"ok": False, "error": _mismatch}, status_code=400)
             routing_warning = (_mismatch + " | " + routing_warning) if routing_warning else _mismatch
 
+    def _wake_after_create(public_id: str, task_labels: list, st: str, gt: Optional[str] = None) -> None:
+        # wl-359: route-event nudge — create with a claimable worker:<hand> seat.
+        maybe_wake_hand(
+            task_labels,
+            status=st,
+            gate_type=gt,
+            only_on_seat_change=True,
+            previous_hand=None,
+            task_id=public_id,
+        )
+
+    create_gate = payload.get("gate_type")
+    create_gate_s = str(create_gate).strip() if create_gate not in (None, "") else None
+
     if surface in ("ops", "op"):
         tracker = get_ops_ticket_tracker()
         prefix = TASK_ID_PREFIX_OPS
@@ -703,14 +714,20 @@ async def api_create_task(request: Request) -> JSONResponse:
         _sign_intake(tracker, task.id)
         out = task.to_dict()
         out["id"] = f"{prefix}-{task.id}"
+        _wake_after_create(out["id"], labels, status_val, create_gate_s or gate_of(task))
         return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
     spec = get_product(surface)
     if spec is None:
+        from worklane.products import unknown_product_message
+
         return JSONResponse(
             {
                 "ok": False,
-                "error": f"unknown ticket surface {surface!r} — no {surface}.db project store",
+                "error": (
+                    f"unknown ticket surface {surface!r} — no "
+                    f"{surface}.db project store; {unknown_product_message(surface)}"
+                ),
             },
             status_code=400,
         )
@@ -730,6 +747,7 @@ async def api_create_task(request: Request) -> JSONResponse:
         _sign_intake(tracker, task.id)
         out = task.to_dict()
         out["id"] = f"{spec.prefix}-{task.id}"
+        _wake_after_create(out["id"], labels, status_val, create_gate_s or gate_of(task))
         return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
     if _tradeos_tickets_use_http_feed():
@@ -758,6 +776,7 @@ async def api_create_task(request: Request) -> JSONResponse:
         out = dict(tm) if isinstance(tm, dict) else {}
         rid = str(out.get("id") or "")
         out["id"] = f"{TASK_ID_PREFIX_TRADEOS}-{rid}"
+        _wake_after_create(out["id"], labels, status_val, create_gate_s)
         return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
     tracker = get_default_tracker()
@@ -773,6 +792,7 @@ async def api_create_task(request: Request) -> JSONResponse:
     _sign_intake(tracker, task.id)
     out = task.to_dict()
     out["id"] = f"{TASK_ID_PREFIX_TRADEOS}-{task.id}"
+    _wake_after_create(out["id"], labels, status_val, create_gate_s or gate_of(task))
     return JSONResponse({"ok": True, "task": out, "routing_warning": routing_warning})
 
 
@@ -1254,6 +1274,15 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
         if new_status == TaskStatus.DONE:
             notify_done(task_id, updated.title or "")
+        # wl-359: release / reopen → backlog on a seated hand → wake.
+        if new_status == TaskStatus.BACKLOG:
+            maybe_wake_hand(
+                list(updated.labels or []),
+                status=updated.status,
+                gate_type=gate_of(updated),
+                only_on_seat_change=False,
+                task_id=task_id,
+            )
         out = updated.to_dict()
         out["id"] = task_id
         return JSONResponse({"ok": True, "task": out})
@@ -1343,6 +1372,15 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
         )
         if updated is None:
             return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
+        # wl-359: gate-clear on a seated ready ticket → wake the hand.
+        if gate_type is not None and str(gate_type).strip() == "":
+            maybe_wake_hand(
+                list(updated.labels or []),
+                status=updated.status,
+                gate_type=gate_of(updated),
+                only_on_seat_change=False,
+                task_id=task_id,
+            )
         out = updated.to_dict()
         out["id"] = task_id
         return JSONResponse({"ok": True, "task": out})
@@ -1392,7 +1430,9 @@ async def api_update_labels(task_id: str, request: Request) -> JSONResponse:
 
     # wl-320: starve guard — label mutation must not bypass wl-315 by
     # creating a ticket with a valid seat and then swapping to bare worker:you.
+    # wl-372: foreign-seat guard — reject worker:<hand> not hired for this store.
     from worklane.routing_labels import (  # noqa: PLC0415
+        check_mutation_foreign_seat,
         check_mutation_starve_guard,
         check_worker_product_mismatch,
         worker_ids_from_labels,
@@ -1409,6 +1449,14 @@ async def api_update_labels(task_id: str, request: Request) -> JSONResponse:
     )
     if _starve_err:
         return JSONResponse({"ok": False, "error": _starve_err}, status_code=400)
+    _foreign_err = check_mutation_foreign_seat(
+        list(_existing_task.labels or []),
+        add=add_labels,
+        remove=remove_labels,
+        hired_hands=_hired,
+    )
+    if _foreign_err:
+        return JSONResponse({"ok": False, "error": _foreign_err}, status_code=400)
 
     # wl-296: cross-product mismatch guard on newly added worker:* labels.
     _added_wids = worker_ids_from_labels(add_labels)
@@ -1421,9 +1469,19 @@ async def api_update_labels(task_id: str, request: Request) -> JSONResponse:
             if _hard:
                 return JSONResponse({"ok": False, "error": _mismatch_warn}, status_code=400)
 
+    _prev_hand = previous_hand_from_labels(list(_existing_task.labels or []))
     updated = tracker.update_labels(raw_id, add=add_labels, remove=remove_labels)
     if updated is None:
         return JSONResponse({"ok": False, "error": "task not found"}, status_code=404)
+    # wl-359: seat gain / re-route on a claimable ticket → wake the new hand.
+    maybe_wake_hand(
+        list(updated.labels or []),
+        status=updated.status,
+        gate_type=gate_of(updated),
+        only_on_seat_change=True,
+        previous_hand=_prev_hand,
+        task_id=task_id,
+    )
     out = updated.to_dict()
     out["id"] = task_id
     return JSONResponse({"ok": True, "task": out, "routing_warning": _mismatch_warn})
@@ -1640,13 +1698,17 @@ def api_list_tasks(
             t, previews.get(str(t.id), {}), scope_product
         )
 
-    scope_tasks = list_tasks_for_scope_multi(products, prod, limit=None)
-    scope_counts = _wq_status_counts(scope_tasks)
+    # wl-354: SQL GROUP BY counts — never SELECT * every store for chips.
+    # Full-row materialization was O(all tickets × description bytes) on
+    # every list and wedged the single-threaded desk under concurrent
+    # WorkForce preflights (project=all&status=backlog&limit=1).
+    scope_counts = status_counts_for_scope_multi(products, prod)
     scope_total = sum(scope_counts.get(s, 0) for s in TaskStatus.ALL)
     # wl-47: board column headers show the filtered-scope truth, not the
     # capped fetch; chips keep the unfiltered scope_counts.
-    column_counts = _wq_column_counts(
-        scope_tasks,
+    column_counts = column_counts_for_scope_multi(
+        products,
+        prod,
         status=status or None,
         label=label or None,
         priority=prio_int,
@@ -1896,10 +1958,19 @@ def api_dev_allocation(window_days: int = 7, scope: str = "all") -> JSONResponse
 
 # pc-881: Map + suite soft-poll stampede /api/dev/attention (~1s rebuild).
 # Short single-flight cache keeps For You truthful without re-walking every store.
+# wl-353: rebuild itself is now slim-seed (sub-100ms cold on ~4k tickets); TTL
+# still absorbs soft-poll stampede.
 _ATTENTION_CACHE_TTL_S = 4.0
 _attention_lock = threading.Condition()
 _attention_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _attention_inflight: Dict[int, bool] = {}
+
+
+def _invalidate_attention_cache() -> None:
+    """Drop cached attention payloads (snooze / gate truth must not lag TTL)."""
+    with _attention_lock:
+        _attention_cache.clear()
+        _attention_lock.notify_all()
 
 
 def _build_attention_payload(include_snoozed: int = 0) -> Dict[str, Any]:
@@ -2053,6 +2124,8 @@ async def api_dev_attention_snooze(request: Request) -> JSONResponse:
     snoozes.append(entry)
     prefs["snoozes"] = snoozes
     _save_attention_prefs(prefs)
+    # Snooze mutes must apply on the next GET — don't wait out the 4s TTL.
+    _invalidate_attention_cache()
     all_items = _collect_founder_attention_items(now=now)
     visible, hidden, active = _partition_attention_items(all_items, now=now)
     return JSONResponse({
@@ -2110,6 +2183,7 @@ async def api_dev_attention_unsnooze(request: Request) -> JSONResponse:
                 return False
             prefs["snoozes"] = [s for s in snoozes if not _drop(s)]
         _save_attention_prefs(prefs)
+    _invalidate_attention_cache()
     all_items = _collect_founder_attention_items(now=now)
     visible, hidden, active = _partition_attention_items(all_items, now=now)
     return JSONResponse({

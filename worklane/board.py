@@ -319,6 +319,86 @@ def list_tasks_for_scope_multi(
     return merged
 
 
+def status_counts_for_scope_multi(
+    products: List[Tuple[ProductSpec, Any]],
+    product: str,
+) -> Dict[str, int]:
+    """Unfiltered per-status counts across product stores (wl-354).
+
+    Uses SQL GROUP BY when the tracker exposes ``count_tasks_by_status``;
+    falls back to full list materialization only for non-SQLite adapters.
+    """
+    counts: Dict[str, int] = {s: 0 for s in TaskStatus.ALL}
+    p = (product or "").strip().lower()
+    for spec, tracker in products:
+        if p and spec.slug != p:
+            continue
+        part = _tracker_status_counts(tracker)
+        for s, n in part.items():
+            if s in counts:
+                counts[s] += int(n)
+    return counts
+
+
+def column_counts_for_scope_multi(
+    products: List[Tuple[ProductSpec, Any]],
+    product: str,
+    *,
+    status: Optional[str] = None,
+    label: Optional[str] = None,
+    priority: Optional[int] = None,
+    gate_type: Optional[str] = None,
+) -> Dict[str, int]:
+    """Filtered per-status counts for board column headers (wl-354).
+
+    Mirrors ``_wq_column_counts`` / list_tasks filter semantics without
+    loading full task rows when the tracker supports SQL aggregates.
+    """
+    counts: Dict[str, int] = {s: 0 for s in TaskStatus.ALL}
+    p = (product or "").strip().lower()
+    for spec, tracker in products:
+        if p and spec.slug != p:
+            continue
+        part = _tracker_status_counts(
+            tracker,
+            status=status,
+            label=label,
+            priority=priority,
+            gate_type=gate_type,
+        )
+        for s, n in part.items():
+            if s in counts:
+                counts[s] += int(n)
+    return counts
+
+
+def _tracker_status_counts(
+    tracker: Any,
+    *,
+    status: Optional[str] = None,
+    label: Optional[str] = None,
+    priority: Optional[int] = None,
+    gate_type: Optional[str] = None,
+) -> Dict[str, int]:
+    count_fn = getattr(tracker, "count_tasks_by_status", None)
+    if callable(count_fn):
+        return count_fn(
+            status=status,
+            label=(label or "").strip() or None,
+            priority=priority,
+            gate_type=gate_type,
+        )
+    # Non-SQL adapter fallback — materialize then count in Python.
+    tasks = tracker.list_tasks(
+        status=status,
+        label=(label or "").strip() or None,
+        priority=priority,
+        gate_type=gate_type,
+        limit=None,
+    )
+    return _wq_status_counts(tasks)
+
+
 # Ownership marker line per PROTOCOL.md §3 — `Owner: <agent-id> (<model>)`.
 # The parenthetical and anything after it is presentation, not identity.
 # The id itself is bounded to PROTOCOL.md §5.2's kebab-case charset (never

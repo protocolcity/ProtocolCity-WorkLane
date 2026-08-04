@@ -25,6 +25,8 @@ Usage:
     wl import <FILE> --project <slug>
     wl doctor [--path PATH] [--project SLUG] [--json]
 
+    Long form: worklane (same main). Retired binaries: tk (absent), wl (shim).
+
 Base URL:  WL_BASE_URL env var (or WL_BASE_URL), default http://127.0.0.1:8799
 Project:   --project flag, default WL_PROJECT env var (or WL_PROJECT), else server default
            (--product / WL_PRODUCT / WL_PRODUCT are silent back-compat aliases, wl-64)
@@ -417,9 +419,24 @@ def cmd_import(args: argparse.Namespace) -> None:
     if not path.is_file():
         print(f"Error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
+    hard = bool(getattr(args, "strict_routing", False))
+    hired: Optional[List[str]] = None
+    if hard:
+        hired = []
+        try:
+            from worklane.api.tasks import _workforce_workers_for_product
+
+            hired = _workforce_workers_for_product(str(product).strip().lower())
+        except Exception:
+            hired = []
     try:
         with path.open("r", encoding="utf-8") as fh:
-            report = portability.import_jsonl(fh, product)
+            report = portability.import_jsonl(
+                fh,
+                product,
+                hard_when_hands=hard,
+                hired_hands=hired,
+            )
     except portability.PortabilityError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -432,6 +449,8 @@ def cmd_import(args: argparse.Namespace) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    # wl-384: brand help/errors as the taught verb. Long-form `worklane` still
+    # dispatches the same main; prog stays `wl` so agents never re-learn `wl`.
     parser = argparse.ArgumentParser(
         prog="wl",
         description="Host-neutral WorkLane CLI (HTTP API client)",
@@ -585,6 +604,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--product",
         default=os.environ.get("WL_PRODUCT") or os.environ.get("WL_PRODUCT", ""),
         help="Back-compat alias for --project (or set WL_PRODUCT / WL_PRODUCT)",
+    )
+    p_import.add_argument(
+        "--strict-routing",
+        action="store_true",
+        default=False,
+        help=(
+            "Hard-B routing for live city re-imports: reject bare seats when "
+            "hired hands exist for the destination product (lists valid seats). "
+            "Default is soft (stamp needs:routing) so archival restores never fail. "
+            "Requires WorkForce roster visibility; if no hands are visible, falls "
+            "back to soft stamp."
+        ),
     )
 
     return parser

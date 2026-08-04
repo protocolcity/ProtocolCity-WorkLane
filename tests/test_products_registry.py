@@ -110,6 +110,31 @@ class ProductRegistryTest(unittest.TestCase):
         self.assertIsNone(products.get_product("tradeos.pre-tp7-backfill.1720000000"))
         self.assertIsNone(products.get_product("zzzdryrun"))
 
+    def test_collision_suffixed_db_is_ignored(self) -> None:
+        """wl-377: Finder/sync collision suffixes (space + digits) and other
+        non-slug stems must not register as products."""
+        data = self.root / "data"
+        # Spaces in stem — classic copy-collision artifact
+        for name in ("protocolcity 992.db", "protocolcity 1028.db", "worklane 348.db"):
+            p = data / name
+            SQLiteTracker(db_path=p).list_tasks(limit=1)
+        # Other non-slug stems that could land via backup tools
+        (data / "123bad.db").write_bytes(b"")
+        (data / "has.dots.db").write_bytes(b"")
+        self._seed("protocolcity", "real")
+        self._seed("worklane", "real")
+        slugs = [s.slug for s in products.discover_products()]
+        self.assertEqual(slugs, ["tradeos", "protocolcity", "worklane"])
+        for bogus in (
+            "protocolcity 992",
+            "protocolcity 1028",
+            "worklane 348",
+            "123bad",
+            "has.dots",
+        ):
+            self.assertIsNone(products.get_product(bogus), bogus)
+            self.assertFalse(products._is_product_db_stem(bogus), bogus)
+
     def test_scratch_db_still_discovered_if_explicitly_registered(self) -> None:
         self._seed("zzzreal", "explicitly registered scratch-looking slug")
         cfg = self.root / "config" / "products.json"
