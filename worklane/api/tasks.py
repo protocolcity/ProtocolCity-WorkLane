@@ -1783,6 +1783,27 @@ def api_dev_tasks(status: str = "", label: str = "", limit: int = 200) -> JSONRe
     })
 
 
+def _activity_store_context(project: str) -> Tuple[Any, str, str]:
+    """Resolve (tracker, store_slug, prefix) for /api/dev/activity (wl-387).
+
+    Matches the historical degrade rule: omitted or unknown ``project``
+    falls back to the server default tracker rather than erroring. Stamp
+    values always describe the store the feed is actually reading so
+    wire consumers (Map comment-theater, cross-store pollers) get the same
+    composite task id + store slug contract as ``/api/events`` (wl-348).
+    """
+    prod = (project or "").strip().lower()
+    spec = get_product(prod) if prod else None
+    if spec is not None:
+        return product_tracker(spec), spec.slug, spec.prefix
+    tracker = get_default_tracker()
+    slug = default_product_slug() or "tradeos"
+    default_spec = get_product(slug)
+    if default_spec is not None:
+        return tracker, default_spec.slug, default_spec.prefix
+    return tracker, slug, "t"
+
+
 @router.get("/api/dev/activity")
 def api_dev_activity(limit: int = 30, project: str = "") -> JSONResponse:
     """Recent comments + status changes across all tasks, newest first.
@@ -1795,8 +1816,15 @@ def api_dev_activity(limit: int = 30, project: str = "") -> JSONResponse:
     project it signs into — tradeOS t-1327). Omitted or unknown → the
     server default tracker (``product_tracker`` falls back for an unknown
     slug, so a stale ?project= degrades to today's behavior, never errors).
+
+    Wire contract (wl-348 / wl-387): every entry carries ``store`` (product
+    slug) and composite ``task_id`` (``<prefix>-<rowid>``), matching
+    ``/api/events`` / ``/api/events/stream``. Existing fields retained for
+    the board activity widget.
     """
-    tracker = product_tracker(project) if project else get_default_tracker()
+    from worklane.api.events_stream import _composite_task_id
+
+    tracker, store_slug, prefix = _activity_store_context(project)
     if not hasattr(tracker, "_connect"):
         return JSONResponse({"entries": []})
     with tracker._connect() as conn:
@@ -1833,9 +1861,11 @@ def api_dev_activity(limit: int = 30, project: str = "") -> JSONResponse:
 
     entries = []
     for r in comment_rows:
+        composite_tid = _composite_task_id(prefix, r["task_id"])
         entries.append({
             "id": r["id"],
-            "task_id": str(r["task_id"]),
+            "task_id": composite_tid,
+            "store": store_slug,
             "body": r["body"],
             "author": r["author"],
             "created_at": r["created_at"],
@@ -1844,9 +1874,11 @@ def api_dev_activity(limit: int = 30, project: str = "") -> JSONResponse:
             "new_status": "",
         })
     for r in status_rows:
+        composite_tid = _composite_task_id(prefix, r["task_id"])
         entries.append({
             "id": f"sc-{r['task_id']}",
-            "task_id": str(r["task_id"]),
+            "task_id": composite_tid,
+            "store": store_slug,
             "body": "",
             "author": "",
             "created_at": r["created_at"],

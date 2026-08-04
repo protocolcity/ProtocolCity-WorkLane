@@ -317,6 +317,65 @@ class EventsFeedTest(unittest.TestCase):
         self.assertIn("t-%s" % t_trade.id, task_ids)
         self.assertIn("wl-%s" % t_wl.id, task_ids)
 
+    def test_dev_activity_stamps_composite_and_store(self) -> None:
+        """/api/dev/activity matches wl-348 wire contract (wl-387).
+
+        Non-default store entries must carry composite task_id + store slug
+        for both comment rows and inferred status_change (sc-*) rows — the
+        Map comment-theater poller keys dig-in on these fields.
+        """
+        career_db = self.root / "data" / "career.db"
+        career = SQLiteTracker(db_path=career_db)
+        t = career.create_task(title="career activity", description="x")
+        career.add_comment(t.id, body="label note", author="lili")
+        career.update_status(t.id, TaskStatus.IN_PROGRESS)
+
+        r = self.client.get("/api/dev/activity?project=career&limit=50")
+        self.assertEqual(r.status_code, 200)
+        entries = r.json()["entries"]
+        self.assertTrue(entries, "expected activity entries from career store")
+
+        comments = [e for e in entries if e.get("entry_type") == "comment"]
+        statuses = [e for e in entries if e.get("entry_type") == "status_change"]
+        self.assertTrue(comments, "expected comment entry")
+        self.assertTrue(statuses, "expected status_change entry")
+
+        expected_tid = "career-%s" % t.id
+        for e in comments + statuses:
+            self.assertEqual(
+                e.get("store"),
+                "career",
+                "store slug missing/wrong on %r" % (e,),
+            )
+            self.assertEqual(
+                e.get("task_id"),
+                expected_tid,
+                "composite task_id missing/wrong on %r" % (e,),
+            )
+            # Must not emit bare internal numeric ids (the Map dig-in 404 bug).
+            self.assertFalse(
+                str(e.get("task_id", "")).isdigit(),
+                "bare numeric task_id still present: %r" % (e,),
+            )
+
+        # status synthetic id stays store-local sc-<rowid>; task_id is composite.
+        sc = statuses[0]
+        self.assertEqual(sc["id"], "sc-%s" % t.id)
+        self.assertEqual(sc["task_id"], expected_tid)
+
+        # Default-store activity also stamps (tradeos prefix t-).
+        t_def = self.tracker.create_task(title="default activity", description="x")
+        self.tracker.add_comment(t_def.id, body="on default", author="lili")
+        r2 = self.client.get("/api/dev/activity?limit=50")
+        self.assertEqual(r2.status_code, 200)
+        default_comments = [
+            e
+            for e in r2.json()["entries"]
+            if e.get("entry_type") == "comment" and e.get("task_id") == "t-%s" % t_def.id
+        ]
+        self.assertTrue(default_comments)
+        self.assertEqual(default_comments[0]["store"], "tradeos")
+
 
 if __name__ == "__main__":
     unittest.main()
