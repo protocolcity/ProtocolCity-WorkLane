@@ -88,7 +88,9 @@ def _main_worktree_root() -> Path:
             gitdir = Path(text.split(":", 1)[1].strip())
             # gitdir points to <main>/.git/worktrees/<name>
             main_root = gitdir.parents[2]
-            if (main_root / "worklane").exists():
+            if (main_root / "worklane").exists() or (
+                main_root / "worklane"
+            ).exists():
                 return main_root
     return repo
 

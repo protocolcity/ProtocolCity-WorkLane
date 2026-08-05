@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from worklane.board import _claim_stale_minutes
 from worklane.products import discover_products, product_trackers
+from worklane.server_helpers import _activity_ts_sort_key
 from worklane.trackers import TaskStatus
 
 router = APIRouter()
@@ -33,24 +34,6 @@ _scene_lock = threading.Condition()
 _scene_cache_ts = 0.0
 _scene_cache_payload: Optional[Dict[str, Any]] = None
 _scene_inflight = False
-
-
-def _activity_ts_sort_key(raw: object) -> float:
-    """Parse mixed ISO/SQLite timestamps so merged feed sorts newest-first reliably."""
-    if raw is None:
-        return 0.0
-    s = str(raw).strip()
-    if not s:
-        return 0.0
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(s)
-    except ValueError:
-        return 0.0
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.timestamp()
 
 
 def _closeout_authors(slug: str) -> Dict[str, str]:

@@ -2,7 +2,11 @@
 __pycache__/
 *.pyc
 tasks.db*
+*.db
+*.db-shm
+*.db-wal
 *.egg-info/
 .venv/
 .local/
+worklane/local/
 dist/

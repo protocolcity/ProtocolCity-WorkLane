@@ -1,9 +1,10 @@
 # WorkLane — Project instructions (L1 CORE)
 
 **Product brand:** **WorkLane** (queue / work orders for BluePrint cities).  
-**Wire / package (legacy, keep working):** Python package folder
-`worklane/` · public export may still say WorkLane in
-places; **citizen and Map glass say WorkLane**. Store slug `worklane`
+**Wire / package:** Python package folder `worklane/` (renamed from
+`worklane/` — wl-280, 2026-08-05; untracked local symlink shim +
+dual-window console-script aliases retire after one release).
+**Citizen and Map glass say WorkLane**. Store slug `worklane`
 (legacy `worklane` still aliases) · prefix **`wl-`** (legacy `wl-`
 forever).
 
@@ -38,7 +39,7 @@ these rows; entries missing here render unmapped.
 | Path | What it is |
 |---|---|
 | `ARCHITECTURE.md` | Project architecture paper (L1) — layers, SoT, invariants; anchors the package paper |
-| `worklane/` | **Package path** (legacy name) — server, board, trackers, MCP, archival; `local/` runtime state |
+| `worklane/` | **Package path** — server, board, trackers, MCP, archival; `local/` runtime state |
 | `docs/` | The records — design docs, decisions, audits |
 | `scripts/` | Export/release/backup/migration scripts (the WorkLane export seam lives here) |
 | `github.public/` | Public-repo staging material for the WorkLane export |
