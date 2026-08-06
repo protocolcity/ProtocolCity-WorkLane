@@ -155,7 +155,7 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
    - **Deferred gates thaw freely.** Any agent or founder may clear a deferred gate (`PATCH gate_type=null`) when the track reopens. Human gates still require founder-present to clear (§5.2.1).
    - **No bulk sweeps.** Agents must not set any gate type on more than **three** tickets in a single shift unless a ticket they hold explicitly authorizes a named bulk re-gate (ids listed). Mass “park the pool so I look unwedged” is an automatic reject.
    - **Do not re-gate the already gated.** Leave existing gates; comment if the note is wrong.
-   - **Muted = snooze, not a gate.** You may snooze a product, kind, task, or all on Waiting on You to mute attention for a day without changing store gates. Snooze scopes: `product | kind | task | all`. Mechanical enforcement: **wl-205** (product/kind/all); **wl-251** adds per-ticket (`task`) scope. Snooze is a UI silence only — it does not block ready or change gate state.
+   - **Muted = snooze, not a gate.** You may snooze a product, kind, task, or all on Waiting on You to mute attention for a day without changing store gates. Snooze scopes: `product | kind | task | all`. Mechanical enforcement: **wl-205** (product/kind/all); **wl-251** adds per-ticket (`task`) scope. Snooze is a UI silence only — it does not block ready or change gate state. Do not conflate snooze with `gate_type=timer` or `you:remind` — **§5 Citizen glance · Three clocks**.
    - **Migration (legacy human+parked → deferred):** `PATCH gate_type=deferred`, drop or repurpose the `gate_note`. Use wl-264's batch script to convert the full pool.
 10. **No cancel without shipping · no mass cancel** (2026-07-26, founder — empty-BL thrash) —
     - **`wl_cancel` / cancel is rare.** Allowed only when work is **intentionally abandoned as product truth** (duplicate, wrong product forever, explicit founder “drop this”) — **not** as a way to make the board look empty.
@@ -236,6 +236,22 @@ Rules:
   claim if the body is wall-of-text with no Glance (and add Where when the
   change surface is not obvious from product alone).
 
+**Three clocks (do not conflate — pc-1146 / wl-397):** When muting gold, parking
+until a date, or filing a personal reminder, pick the clock that matches
+intent. **Do not** route personal scrap (`you:remind`) as `gate_type=human`
+Decide gold.
+
+| Clock | Mechanism | Citizen meaning |
+|---|---|---|
+| **Mute gold** | Snooze (server attention) | Hide notification; **same** gold returns; gates unchanged |
+| **Timed re-entry** | `gate_type=timer` + `gate_until` | Calendar + Watch “Opens {date}”; not gold until due |
+| **Quiet list (Note)** | `worker:you` + `you:note\|todo\|remind` **without** human gate | Note face — never gold |
+
+City-loop source: ProtocolCity `docs/specs/ALWAYS_WORK_PROTOCOL.md` § **Three
+clocks** (pc-1146). Gate *classes* (Ready / For You / Deferred) stay in §3
+rule 9; these clocks answer *time and attention shape*, not ready-pool
+membership alone. Act-now Decide remains `gate_type=human` only (scarce).
+
 **Host chat = Glance only (2026-07-30 founder):** when a coord/host session
 (Claude / Grok / Cursor / …) **summarizes work orders for You in chat**, do
 **not** paste full descriptions, Done-when lists, or Detail essays.
@@ -298,11 +314,22 @@ All four sections are mandatory, for **every** agent — narrative closers
 included. A prose headline may follow `Completed:` on the same line, but
 `Verification:` and `Links:` must still appear as their own literal sections:
 the lifecycle guard (§4) and the close-with-links rule (§3.5) key on those
-exact tokens. `Links:` needs at least one navigable reference (PR URL, commit
-SHA, or repo-relative path); a merge SHA buried in prose ("Merged: abc1234 …")
-does not satisfy it. `Follow-ups:` may be "none" **only when no residual
-work remains** (§3 rule 11). If more work is known, list open ticket ids
-(file them first if needed) — never prose-only “tabled / later / hard-stops.”
+exact tokens. `Links:` needs at least one navigable reference that includes a
+**landing commit SHA** (7–40 hex digits — short or full). Repo-relative paths
+and PR URLs may accompany it; path-only or prose-only Links are rejected by
+the engine (wl-396 / wf-171). A merge SHA buried outside the `Links:` section
+("Merged: abc1234 …" in Completed prose) does not satisfy it. The engine
+checks **presence** only; agents still verify the SHA is an ancestor of
+`origin/main` before close (§5.1.3). **Registered checks:** when a
+project lists deterministic checks in `local/config/closeout_checks.json`,
+implement-class close-outs must **cite** each check in `Verification:` with a
+result signal (e.g. `pytest … green` / `0 failed`). Projects with no file (or
+no entry for that slug) are unchanged. Labels `docs` / `research` / `notes` /
+`teaching` / `umbrella` / `epic` are exempt by default. The engine does not
+run the commands — it only requires the cite. `Follow-ups:` may be "none"
+**only when no residual work remains** (§3 rule 11). If more work is known,
+list open ticket ids (file them first if needed) — never prose-only “tabled /
+later / hard-stops.”
 
 **Blocked comment:**
 
@@ -435,7 +462,7 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `efficiency-worklane` | Daily WorkLane efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:lili` tickets; never claims backlog as a lane. Papers at `worklane/workers/efficiency-worklane/`. Function-named; not retired. |
 | `efficiency-workforce` | Daily WorkForce efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:salem` tickets; never claims backlog as a lane. Papers at `workforce/workers/efficiency-workforce/`. Function-named; not retired. |
 | `efficiency-connector` | Daily Connector efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:jiji` tickets; never claims backlog as a lane. Papers at `connector/workers/efficiency-connector/`. Function-named; not retired. |
-| `efficiency-register` | Daily Register efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:ring`/`worker:stock` tickets; never claims backlog as a lane. Papers at `register/workers/efficiency-register/`. Function-named; not retired. |
+| `efficiency-register` | Daily Register efficiency/drift job (hired 2026-07-31, pc-796) — small safe cleanups or files `worker:pepper`/`worker:binx` tickets; never claims backlog as a lane. Papers at `register/workers/efficiency-register/`. Function-named; not retired. |
 | `efficiency-gridfinity` | Weekly (Saturday) Gridfinity efficiency/drift job (hired 2026-07-31, pc-796) — small safe tool cleanups or files `project=gridfinity` tickets; never claims backlog as a lane. Papers at `gridfinity/workers/efficiency-gridfinity/`. Function-named; not retired. |
 | `toulouse` | Toulouse · Product Engineer. Gridfinity claiming lane (new hire 2026-08-02 — no predecessor; first gridfinity lane). Drawer designs, tools, skills, project papers; never touches vendored lib, calibration, or STL generation. Papers at `gridfinity/workers/toulouse/`. Feed `worker:toulouse`. |
 | `tom` | Tom · Software Engineer. Succeeds `carl` (ProtocolCity Software Engineer seat, retired 2026-07-28, pc-577, history retained — comments signed by `carl` remain valid record; earlier `drew` also valid history). ProtocolCity code lane — suite, citylens, CLI packaging, city-hall operational tooling. Papers at `ProtocolCity/workers/tom/`. Feed `worker:tom`. |
@@ -443,8 +470,10 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `sylvester` | Sylvester · Suite Engineer. ProtocolCity suite implementation lane — Map / glass / user-report fixes (new hire 2026-08-02 — no predecessor). Papers at `ProtocolCity/workers/sylvester/`. Feed `worker:sylvester`. |
 | `vera` | Vera · Suite Quality · solid feel. ProtocolCity suite polish/stability lane — end-to-end solid feel, first-run coherence (new hire 2026-07-31 — no predecessor). Papers at `ProtocolCity/workers/vera/`. Feed `worker:vera`. |
 | `brand` | Brand · Brand Coordinator. ProtocolCity visual register and suite chrome language lane (new hire 2026-07-31 — no predecessor). Papers at `ProtocolCity/workers/brand/`. Feed `worker:brand`. |
-| `ring` | Ring · Till & POS UI. Register store lane — till/POS UI, payment UX, receipt/tender flows, time clock floor shell (new hire 2026-08-02 — no predecessor). Papers at `register/workers/ring/`. Feed `worker:ring`. |
-| `stock` | Stock · Inventory & catalog. Register store lane — inventory adjust/transfer, pocket inventory floor UX, catalog, stock moves (new hire 2026-08-02 — no predecessor). Papers at `register/workers/stock/`. Feed `worker:stock`. |
+| `ring` | **RETIRED 2026-08-06** — succeeded by `pepper` (osp-504). Was: Ring · Till & POS UI. Register store lane — till/POS UI, payment UX, receipt/tender flows, time clock floor shell (new hire 2026-08-02 — no predecessor). History retained — comments signed by `ring` remain valid record. |
+| `pepper` | Pepper · Till & POS UI. Succeeds `ring` (retired 2026-08-06, osp-504, history retained — comments signed by the old id remain valid record). Register store lane — till/POS UI, payment UX, receipt/tender flows, time clock floor shell. Papers at `register/workers/pepper/` (host hire osp-517). Feed `worker:pepper`. |
+| `stock` | **RETIRED 2026-08-06** — succeeded by `binx` (osp-504). Was: Stock · Inventory & catalog. Register store lane — inventory adjust/transfer, pocket inventory floor UX, catalog, stock moves (new hire 2026-08-02 — no predecessor). History retained — comments signed by `stock` remain valid record. |
+| `binx` | Binx · Inventory & catalog. Succeeds `stock` (retired 2026-08-06, osp-504, history retained — comments signed by the old id remain valid record). Register store lane — inventory adjust/transfer, pocket inventory floor UX, catalog, stock moves. Papers at `register/workers/binx/` (host hire osp-517). Feed `worker:binx`. |
 
 #### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
 
@@ -517,6 +546,10 @@ them. Routing labels migrate `lane:<old-id>` → `worker:<persona>` via
 | `wren` | Wren | — (new hire 2026-07-14, no predecessor; specialist / future desk) |
 | `city-steward` | City Steward | — (new hire, no predecessor; patrol job) |
 | `founder-brief` | Founder Brief | — (new hire, no predecessor; report job) |
+| `pepper` | Pepper · Till & POS UI (Register / oneseo-pos) | `ring` (retired 2026-08-06, osp-504 — history retained) |
+| `binx` | Binx · Inventory & catalog (Register / oneseo-pos) | `stock` (retired 2026-08-06, osp-504 — history retained) |
+| `ring` | **RETIRED 2026-08-06** → `pepper` (osp-504). Was: Ring · Till & POS UI. History retained. | — (new hire 2026-08-02) |
+| `stock` | **RETIRED 2026-08-06** → `binx` (osp-504). Was: Stock · Inventory & catalog. History retained. | — (new hire 2026-08-02) |
 
 Patrols unchanged (function-named; not in the succession map): `doc-audit`,
 `backlog-snapshot`, `visual-sweep`.

@@ -37,6 +37,15 @@ WL is self-contained: no other repo, service, or database is required.
 
 ## 2. Install
 
+**Source product venv hygiene (wl-398 / pc-1150):** install **only** this
+checkout editable (`pip install -e .`). Do **not** also
+`pip install -e ../ProtocolCity-WorkLane` (or any export tree) into the same
+venv — both claim the top-level package name `worklane`, the export’s editable
+finder wins, and `wl` dies with `ModuleNotFoundError: worklane.cli.wl` (export
+still ships the old `worklane.cli.wl` module). Export trees are publish
+artifacts, never a second live install target beside the product source.
+
+
 ```bash
 python3 -m venv .venv        # required for launchd / ./ticketing on this host
 source .venv/bin/activate

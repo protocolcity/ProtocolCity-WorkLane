@@ -459,6 +459,14 @@ class TPHandlers:
                     "close-out comments must carry literal 'Verification:' and "
                     "'Links:' sections (PROTOCOL.md §5) — prefer wl_close"
                 )
+            # wl-396: Links must cite a landing commit SHA (cheap presence).
+            from worklane.closeout_links import (  # noqa: PLC0415
+                closeout_links_violation,
+            )
+
+            sha_err = closeout_links_violation(body)
+            if sha_err:
+                raise ToolError(sha_err)
         if first_line.startswith("Blocked") and "Next step:" not in body:
             raise ToolError(
                 "Blocked comments must include a 'Next step:' line (PROTOCOL.md §5)"
@@ -480,6 +488,16 @@ class TPHandlers:
             )
             if cov_err:
                 raise ToolError(cov_err)
+            # wl-339: registered close-out checks must be cited in Verification.
+            from worklane.closeout_checks import (  # noqa: PLC0415
+                closeout_checks_violation,
+            )
+
+            chk_err = closeout_checks_violation(
+                body, product=slug, labels=getattr(task, "labels", None)
+            )
+            if chk_err:
+                raise ToolError(chk_err)
 
         comment = tr.add_comment(raw_id, body, author=self.author)
         fresh = tr.get_task(raw_id)
@@ -518,6 +536,12 @@ class TPHandlers:
                 "links is required — at least one navigable reference "
                 "(PR URL, commit SHA, or repo-relative path)"
             )
+        # wl-396: reject path-only Links (landing SHA required).
+        from worklane.closeout_links import links_missing_landing_sha  # noqa: PLC0415
+
+        sha_err = links_missing_landing_sha(links)
+        if sha_err:
+            raise ToolError(sha_err)
 
         slug, raw_id, tr, task = self._resolve_task(task_id, product, write=True)
         if task.status not in (TaskStatus.IN_PROGRESS, TaskStatus.IN_REVIEW):
@@ -537,6 +561,19 @@ class TPHandlers:
         )
         if cov_err:
             raise ToolError(cov_err)
+
+        # wl-339: when product registers checks, Verification must cite them.
+        from worklane.closeout_checks import (  # noqa: PLC0415
+            verification_checks_violation,
+        )
+
+        chk_err = verification_checks_violation(
+            verification,
+            product=slug,
+            labels=getattr(task, "labels", None),
+        )
+        if chk_err:
+            raise ToolError(chk_err)
 
         body = (
             f"Completed:\n{completed}\n\n"

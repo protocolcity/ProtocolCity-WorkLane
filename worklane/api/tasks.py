@@ -1509,6 +1509,14 @@ def _comment_process_violation(body: str, author: str) -> Optional[str]:
     if first_line.startswith("Completed"):
         if "Verification:" not in body or "Links:" not in body:
             return _CLOSEOUT_HINT
+        # wl-396: Links must cite a landing commit SHA (cheap presence).
+        from worklane.closeout_links import (  # noqa: PLC0415
+            closeout_links_violation,
+        )
+
+        sha_err = closeout_links_violation(body)
+        if sha_err:
+            return sha_err
     if first_line.startswith("Blocked") and "Next step:" not in body:
         return (
             "Blocked comments must include a 'Next step:' line "
@@ -1607,6 +1615,17 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
         cov_err = _epic_coverage_block(current, tracker, product_slug=surf)
         if cov_err:
             return JSONResponse({"ok": False, "error": cov_err}, status_code=400)
+        # wl-339: when product registers checks, Verification must cite them
+        # (docs/notes/research exempt via registry). No registration → no-op.
+        from worklane.closeout_checks import (  # noqa: PLC0415
+            closeout_checks_violation,
+        )
+
+        chk_err = closeout_checks_violation(
+            body, product=surf, labels=getattr(current, "labels", None)
+        )
+        if chk_err:
+            return JSONResponse({"ok": False, "error": chk_err}, status_code=400)
 
     try:
         comment = tracker.add_comment(raw_id, body, author=author)

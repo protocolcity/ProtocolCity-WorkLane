@@ -201,7 +201,7 @@ class McpWriteAddressingTest(unittest.TestCase):
                 raw,
                 completed="x",
                 verification="y",
-                links="z",
+                links="abc1234",
             )
         self.assertIn("wl-344", ctx.exception.message)
 

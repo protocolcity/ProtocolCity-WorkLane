@@ -153,7 +153,7 @@ def seed_catalog() -> List[SeedTicket]:
                     "clone's board is non-empty.\n"
                     "Verification: pytest tests/test_demo.py green; opened "
                     "board tab for product demo and saw 4 columns populated.\n"
-                    "Links: local only (seed fixture)\n"
+                    "Links: d0e1f2a (local seed fixture)\n"
                     "Follow-ups: none",
                 ),
             ),

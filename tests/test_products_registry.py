@@ -793,7 +793,7 @@ class SurfaceRoutingTest(unittest.TestCase):
 
         ok_body = (
             "Completed:\n- the thing\n\nVerification:\n- pytest green\n\n"
-            "Links:\n- abc123 on main\n\nFollow-ups:\n- none"
+            "Links:\n- abc1234 on main\n\nFollow-ups:\n- none"
         )
         r = self.client.post(
             f"/api/admin/tasks/{tid}/comments",
@@ -844,7 +844,7 @@ class SurfaceRoutingTest(unittest.TestCase):
         tid = self._mk_task()
         ok_body = (
             "Completed:\n- the thing\n\nVerification:\n- pytest green\n\n"
-            "Links:\n- abc123 on main\n\nFollow-ups:\n- none"
+            "Links:\n- abc1234 on main\n\nFollow-ups:\n- none"
         )
         r = self.client.post(
             f"/api/admin/tasks/{tid}/comments",

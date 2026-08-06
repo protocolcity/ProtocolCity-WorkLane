@@ -218,7 +218,7 @@ class HandlersTest(unittest.TestCase):
             tid,
             completed="- handlers.py\n- server.py",
             verification="- pytest tests/test_mcp_server.py green",
-            links="- tests/test_mcp_server.py",
+            links="- abc1234 tests/test_mcp_server.py",
             follow_ups="none",
         )
         self.assertTrue(closed["ok"])
@@ -534,7 +534,7 @@ class HandlersTest(unittest.TestCase):
             tid,
             completed="- shipped",
             verification="- pytest green",
-            links="- tests/test_mcp_server.py",
+            links="- abc1234 tests/test_mcp_server.py",
         )
         reopened = self.h.wl_reopen(tid)
         self.assertEqual(reopened["task"]["status"], "backlog")
@@ -559,7 +559,7 @@ class HandlersTest(unittest.TestCase):
             tid,
             completed="- x",
             verification="- y",
-            links="- z",
+            links="- abc1234",
         )
         with self.assertRaises(ToolError) as ctx:
             self.h.wl_cancel(tid, reason="oops")
