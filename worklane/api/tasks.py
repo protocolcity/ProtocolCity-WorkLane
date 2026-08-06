@@ -58,6 +58,7 @@ from worklane.server_helpers import (
     _activity_ts_sort_key,
     _allocation_author_rows,
     _allocation_lane_rows,
+    _attention_band_counts,
     _collect_founder_attention_items,
     _get_task_hot_or_archive,
     _list_tasks_for_wq_multi_resolved,
@@ -2041,6 +2042,9 @@ def _build_attention_payload(include_snoozed: int = 0) -> Dict[str, Any]:
         {"author": a, "count": c}
         for a, c in sorted(gate_stats.items(), key=lambda x: -x[1])
     ]
+    # wl-405: band counts always tally the *visible* feed so Map/Overview KPIs
+    # cannot treat stalled + inbox-read rows as act-now decisions. sum == visible_count.
+    bands = _attention_band_counts(visible)
     return {
         "ok": True,
         "count": len(items) if include_snoozed else len(visible),
@@ -2052,6 +2056,9 @@ def _build_attention_payload(include_snoozed: int = 0) -> Dict[str, Any]:
         "updated_at": now.isoformat(),
         "human_gate_stats": human_gate_stats,
         "human_gate_stats_window_hours": 24,
+        "act_now_count": bands["act_now_count"],
+        "read_count": bands["read_count"],
+        "watch_count": bands["watch_count"],
     }
 
 

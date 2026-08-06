@@ -474,6 +474,64 @@ def _stale_inflight() -> timedelta:
 _FOUNDER_DECISION_LABELS = {"needs:founder-decision", "founder-decision"}
 
 
+def _is_inbox_report(labels: Optional[Any]) -> bool:
+    """True when any label is ``inbox-report`` or ``inbox-report:*``.
+
+    Canonical stamp from workspace ``report_to_for_you.py`` (wl-331 research).
+    Used to split For You **Read** from act-now **Decide** without a new
+    ``gate_type`` — both stay ``gate_type=human`` / ``kind=human_gate``.
+    """
+    for raw in labels or []:
+        lab = str(raw or "")
+        if lab == "inbox-report" or lab.startswith("inbox-report:"):
+            return True
+    return False
+
+
+def _derive_attention_face(kind: str, labels: Optional[Any] = None) -> str:
+    """Citizen face for Map/Overview: ``decide`` | ``read`` | ``watch`` (wl-405).
+
+    Additive only — engine ``kind`` strings stay stable for snooze scopes and
+    desk stamps. Rules (docs/research/attention-kinds-decide-read-note-wl-331.md):
+
+    - **read** — any ``inbox-report`` / ``inbox-report:*`` label (wins even when
+      kind is human_gate)
+    - **watch** — kind in {stalled, embargo}
+    - **decide** — default for human_gate / founder_decision gold
+    """
+    if _is_inbox_report(labels):
+        return "read"
+    if kind in ("stalled", "embargo"):
+        return "watch"
+    return "decide"
+
+
+def _attention_band_counts(items: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Tally visible attention rows by face for suite KPI SoT (wl-405).
+
+    ``act_now_count`` = decide face (Map You-pill “decisions waiting”).
+    Sum of the three bands equals ``len(items)`` when every item carries a face.
+    """
+    act_now = 0
+    read = 0
+    watch = 0
+    for it in items:
+        face = it.get("face")
+        if not face:
+            face = _derive_attention_face(str(it.get("kind") or ""), None)
+        if face == "read":
+            read += 1
+        elif face == "watch":
+            watch += 1
+        else:
+            act_now += 1
+    return {
+        "act_now_count": act_now,
+        "read_count": read,
+        "watch_count": watch,
+    }
+
+
 def _attention_item(
     t: Task, product: str, kind: str, note: str,
     since: Optional[datetime], now: datetime,
@@ -484,6 +542,7 @@ def _attention_item(
         "title": t.title,
         "priority": int(t.priority or 3),
         "kind": kind,
+        "face": _derive_attention_face(kind, t.labels),
         "note": note,
         "waiting_since": since.isoformat() if since else None,
         "age_minutes": int((now - since).total_seconds() // 60) if since else None,
