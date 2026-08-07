@@ -2,8 +2,9 @@
 
 **Product brand:** **WorkLane** (queue / work orders for BluePrint cities).  
 **Wire / package:** Python package folder `worklane/` (renamed from
-`worklane/` — wl-280, 2026-08-05; untracked local symlink shim +
-dual-window console-script aliases retire after one release).
+`worklane/` — wl-280, 2026-08-05; local `worklane`→`worklane`
+symlink shim retired wl-413; dual-window console-script aliases still open
+under wl-395/wl-414).
 **Citizen and Map glass say WorkLane**. Store slug `worklane`
 (legacy `worklane` still aliases) · prefix **`wl-`** (legacy `wl-`
 forever).
