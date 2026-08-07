@@ -3518,23 +3518,15 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
     in_review = [t for t in all_tasks if t.status == TaskStatus.IN_REVIEW]
     backlog = [t for t in all_tasks if t.status == TaskStatus.BACKLOG]
 
-    def _parse_ts(s: str) -> Optional[datetime]:
-        if not s:
-            return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00"))
-        except Exception:
-            return None
-
     done_today = [t for t in all_tasks if t.status == TaskStatus.DONE
-                  and (_parse_ts(t.updated_at) or now) >= today_start]
+                  and (_parse_task_date_utc(t.updated_at) or now) >= today_start]
 
     # Throughput sparkline — done tasks per hour over last 24h (24 buckets)
     hourly_buckets = [0] * 24
     for t in all_tasks:
         if t.status != TaskStatus.DONE:
             continue
-        ts = _parse_ts(t.updated_at)
+        ts = _parse_task_date_utc(t.updated_at)
         if ts is None or ts < day_ago:
             continue
         hours_ago = int((now - ts).total_seconds() // 3600)
@@ -3550,7 +3542,7 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
     # Activity ticker — last 20 tasks by updated_at, any status
     sorted_recent = sorted(
         all_tasks,
-        key=lambda t: _parse_ts(t.updated_at) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda t: _parse_task_date_utc(t.updated_at) or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )[:20]
 
@@ -3558,7 +3550,7 @@ def _render_pulse_page(scope: str = "", window_days: int = 14) -> str:
     inflight_tasks = sorted(
         in_progress + in_review,
         key=lambda t: (0 if t.status == TaskStatus.IN_PROGRESS else 1,
-                       _parse_ts(t.updated_at) or datetime.min.replace(tzinfo=timezone.utc)),
+                       _parse_task_date_utc(t.updated_at) or datetime.min.replace(tzinfo=timezone.utc)),
     )
 
     def _age(t: Task) -> str:

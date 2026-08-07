@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7 — 2026-08-07
+
+Post-0.1.6 stable: attention faces/bands, desk health harden, WorkLane rename cleanup (package path worklane), CLI wl brand, close-out evidence, seat rules, efficiency passes, export scrub.
+
 ## v0.1.6 — 2026-08-03
 
 Headline for host cities on PyPI: **route-event wake nudge** so hands pick up

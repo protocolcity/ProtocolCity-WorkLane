@@ -46,7 +46,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-_PRIORITY_NAMES = {1: "urgent", 2: "high", 3: "normal", 4: "low"}
+from worklane.cli._fmt import _fmt_labels, _fmt_priority
+
 _STATUS_CHOICES = ("backlog", "in_progress", "in_review", "done", "canceled")
 
 
@@ -89,14 +90,6 @@ def _request(method: str, path: str, params: Optional[Dict[str, Any]] = None,
     if not payload.get("ok", False):
         raise ApiError(200, str(payload.get("error", "unknown API error")))
     return payload
-
-
-def _fmt_priority(p: int) -> str:
-    return f"P{p} ({_PRIORITY_NAMES.get(p, '?')})"
-
-
-def _fmt_labels(labels: List[str]) -> str:
-    return ", ".join(labels) if labels else "(none)"
 
 
 def _resolve_author(cli_value: str) -> str:

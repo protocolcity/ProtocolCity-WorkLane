@@ -135,10 +135,6 @@ class BackfillReport:
         }
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def _norm_id(task_id: object) -> str:
     return str(task_id).strip()
 
@@ -281,7 +277,7 @@ def create_relation(
                     f"would close a cycle"
                 )
 
-        now = _now_iso()
+        now = datetime.now(timezone.utc).isoformat()
         try:
             with conn:
                 cur = conn.execute(
