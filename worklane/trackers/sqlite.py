@@ -88,9 +88,9 @@ def _main_worktree_root() -> Path:
             gitdir = Path(text.split(":", 1)[1].strip())
             # gitdir points to <main>/.git/worktrees/<name>
             main_root = gitdir.parents[2]
-            if (main_root / "worklane").exists() or (
-                main_root / "worklane"
-            ).exists():
+            # Package path is worklane/ forever after 0.1.7 (wl-280 rename;
+            # dual-window path fallback retired wl-415).
+            if (main_root / "worklane").exists():
                 return main_root
     return repo
 

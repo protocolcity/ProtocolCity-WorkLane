@@ -1,10 +1,12 @@
-"""Create-path routing matrix (wl-365 / ALWAYS_WORK §9 verification half).
+"""Create-path routing matrix (wl-365 / wl-417 / ALWAYS_WORK §9).
 
 One locked suite: HTTP POST /api/admin/tasks, MCP wl_create, CLI task create,
 and import_jsonl each prove routing law under hired hands:
 
-* bare create (no worker:*) → reject (HTTP/MCP/CLI) OR soft needs:routing (import only)
+* bare create (no worker:*) → reject (HTTP/MCP/CLI/import hard-B default)
 * create with worker:lili → accepted; seat preserved; no needs:routing
+* import soft override (hard_when_hands=False) → needs:routing stamp only
+  (archival restore path)
 
 Unit helpers live in test_routing_labels_create.py; per-path detail lives in
 test_create_task_routing_warning.py and test_portability.py. This file locks
@@ -261,9 +263,15 @@ class CliCreatePathMatrix(_MatrixEnv):
 
 
 class ImportCreatePathMatrix(_MatrixEnv):
-    """Import is soft-path only: never hard-B reject; stamp needs:routing."""
+    """Import hard-B default (wl-417); soft override for archival restore."""
 
-    def _import_one(self, labels: List[str]) -> Dict[str, Any]:
+    def _import_one(
+        self,
+        labels: List[str],
+        *,
+        hard_when_hands: bool = True,
+        hired_hands: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         from worklane import portability
 
         tr = SQLiteTracker(db_path=self.db_path, product_default="")
@@ -282,15 +290,55 @@ class ImportCreatePathMatrix(_MatrixEnv):
             },
             separators=(",", ":"),
         )
-        report = portability.import_jsonl([line], PRODUCT, tracker=tr)
+        if hired_hands is None and hard_when_hands:
+            hired_hands = [SEAT]
+        report = portability.import_jsonl(
+            [line],
+            PRODUCT,
+            tracker=tr,
+            hard_when_hands=hard_when_hands,
+            hired_hands=hired_hands,
+        )
         self.assertEqual(len(report.created), 1)
         tasks = tr.list_tasks()
         self.assertEqual(len(tasks), 1)
         return tasks[0].__dict__
 
-    def test_bare_under_hired_hands_soft_stamps_needs_routing(self) -> None:
-        # hard_when_hands=False on import — hired roster must not cause reject.
-        task = self._import_one([AREA])
+    def test_bare_under_hired_hands_hard_rejects(self) -> None:
+        from worklane import portability
+
+        tr = SQLiteTracker(db_path=self.db_path, product_default="")
+        line = json.dumps(
+            {
+                "id": "src-bare",
+                "ext_id": None,
+                "title": "matrix import bare",
+                "description": "hard-B bare seat",
+                "status": "backlog",
+                "priority": 3,
+                "labels": [AREA],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            separators=(",", ":"),
+        )
+        with self.assertRaises(portability.PortabilityError) as ctx:
+            portability.import_jsonl(
+                [line],
+                PRODUCT,
+                tracker=tr,
+                hard_when_hands=True,
+                hired_hands=[SEAT],
+            )
+        self.assertIn("worker:* required", str(ctx.exception))
+        self.assertEqual(tr.list_tasks(), [])
+
+    def test_soft_override_stamps_needs_routing(self) -> None:
+        # Archival restore path — hard_when_hands=False never rejects.
+        task = self._import_one(
+            [AREA], hard_when_hands=False, hired_hands=[SEAT]
+        )
         labs = list(task["labels"] or [])
         self.assertIn("needs:routing", labs)
         self.assertNotIn(SEAT, labs)

@@ -412,7 +412,11 @@ def cmd_import(args: argparse.Namespace) -> None:
     if not path.is_file():
         print(f"Error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
-    hard = bool(getattr(args, "strict_routing", False))
+    # wl-417: live import defaults to hard-B (same seat grammar as create).
+    # --soft-routing is archival-restore only; --strict-routing is a no-op
+    # synonym kept so older scripts that opted into hard-B keep working.
+    soft = bool(getattr(args, "soft_routing", False))
+    hard = not soft
     hired: Optional[List[str]] = None
     if hard:
         hired = []
@@ -428,7 +432,7 @@ def cmd_import(args: argparse.Namespace) -> None:
                 fh,
                 product,
                 hard_when_hands=hard,
-                hired_hands=hired,
+                hired_hands=hired if hard else None,
             )
     except portability.PortabilityError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -599,15 +603,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Back-compat alias for --project (or set WL_PRODUCT / WL_PRODUCT)",
     )
     p_import.add_argument(
+        "--soft-routing",
+        action="store_true",
+        default=False,
+        help=(
+            "Archival restore only: stamp needs:routing on bare live seats "
+            "instead of hard-B reject when hired hands exist. Live city "
+            "imports default to hard-B (wl-417) — same seat grammar as create."
+        ),
+    )
+    p_import.add_argument(
         "--strict-routing",
         action="store_true",
         default=False,
         help=(
-            "Hard-B routing for live city re-imports: reject bare seats when "
-            "hired hands exist for the destination product (lists valid seats). "
-            "Default is soft (stamp needs:routing) so archival restores never fail. "
-            "Requires WorkForce roster visibility; if no hands are visible, falls "
-            "back to soft stamp."
+            "Deprecated no-op synonym for the default hard-B import path "
+            "(wl-367 opt-in; wl-417 made hard-B the default). Prefer omitting "
+            "flags for live imports; use --soft-routing for archival restores."
         ),
     )
 

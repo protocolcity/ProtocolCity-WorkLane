@@ -330,10 +330,10 @@ class ImportRoutingTest(unittest.TestCase):
 
 
 class ImportStrictRoutingTest(unittest.TestCase):
-    """Opt-in hard-B import mode (wl-367).
+    """Hard-B import default (wl-367 opt-in → wl-417 always-on for live).
 
-    Default remains soft under hired hands. With hard_when_hands=True and a
-    non-empty hired_hands list, bare seats reject; worker:lili is accepted.
+    Default hard_when_hands=True with a non-empty hired_hands list rejects bare
+    seats; worker:lili is accepted. Soft override is archival-restore only.
     """
 
     def setUp(self) -> None:
@@ -352,7 +352,7 @@ class ImportStrictRoutingTest(unittest.TestCase):
                 "id": task_id,
                 "ext_id": None,
                 "title": "StrictImport",
-                "description": "wl-367 strict routing case",
+                "description": "wl-417 hard-B import routing case",
                 "status": "backlog",
                 "priority": 3,
                 "labels": labels,
@@ -363,13 +363,27 @@ class ImportStrictRoutingTest(unittest.TestCase):
             separators=(",", ":"),
         )
 
-    def test_default_soft_under_hired_hands_stamps_needs_routing(self) -> None:
-        """Default hard_when_hands=False never rejects even when hands exist."""
+    def test_default_hard_under_hired_hands_rejects_bare(self) -> None:
+        """Live default: hard_when_hands=True rejects bare seats when hired."""
+        with self.assertRaises(portability.PortabilityError) as ctx:
+            portability.import_jsonl(
+                [self._line(["area:backend"])],
+                "fixture",
+                tracker=self.dst,
+                hired_hands=self._hired,
+            )
+        msg = str(ctx.exception)
+        self.assertIn("worker:* required", msg)
+        self.assertIn("worker:lili", msg)
+        self.assertEqual(self.dst.list_tasks(), [])
+
+    def test_soft_override_stamps_needs_routing(self) -> None:
+        """Archival soft path never rejects even when hands exist."""
         report = portability.import_jsonl(
             [self._line(["area:backend"])],
             "fixture",
             tracker=self.dst,
-            # omit hard flag — soft default
+            hard_when_hands=False,
             hired_hands=self._hired,
         )
         self.assertEqual(len(report.created), 1)
@@ -417,16 +431,20 @@ class ImportStrictRoutingTest(unittest.TestCase):
         labs = list(self.dst.list_tasks()[0].labels or [])
         self.assertIn("needs:routing", labs)
 
-    def test_cli_strict_routing_flag_wired(self) -> None:
+    def test_cli_routing_flags_wired(self) -> None:
         from worklane.cli import wl as wl_cli
 
         parser = wl_cli._build_parser()
-        args = parser.parse_args(
+        soft = parser.parse_args(
+            ["import", "x.jsonl", "--project", "fixture", "--soft-routing"]
+        )
+        self.assertTrue(soft.soft_routing)
+        default = parser.parse_args(["import", "x.jsonl", "--project", "fixture"])
+        self.assertFalse(default.soft_routing)
+        strict = parser.parse_args(
             ["import", "x.jsonl", "--project", "fixture", "--strict-routing"]
         )
-        self.assertTrue(args.strict_routing)
-        args_off = parser.parse_args(["import", "x.jsonl", "--project", "fixture"])
-        self.assertFalse(args_off.strict_routing)
+        self.assertTrue(strict.strict_routing)
 
 
 class ImportProductStampTest(unittest.TestCase):

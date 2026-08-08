@@ -268,20 +268,20 @@ def _apply_import_routing(
     obj: Dict[str, Any],
     dest_product: str = "",
     *,
-    hard_when_hands: bool = False,
+    hard_when_hands: bool = True,
     hired_hands: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """Stamp routing + product attribution on live imported tickets.
 
-    - ``needs:routing`` when no ``worker:*`` seat (wl-338 soft pre-hire path).
+    - Hard-B default (wl-417): bare seats reject when hired hands exist —
+      same ``ensure_create_labels`` grammar as MCP/HTTP/CLI create.
+    - Pre-hire (no hired hands): stamp ``needs:routing`` (wl-338).
     - ``product:<dest>`` when no ``product:*`` label (wl-364 Map attribution).
 
     Done/canceled tickets are not in any queue — no stamp needed.
-    Default is soft: archival restores never reject. Opt-in hard-B
-    (``hard_when_hands=True`` with hired hands) rejects bare seats via
-    :class:`PortabilityError` so live city re-imports can match create law
-    (wl-367). Existing ``product:*`` labels are left untouched (export
-    authoritative when present).
+    Soft path (``hard_when_hands=False``) is for archival JSONL restores only
+    so historical live rows without seats still re-import. Existing
+    ``product:*`` labels are left untouched (export authoritative when present).
     """
     status = str(obj.get("status") or "backlog").lower()
     if status in _INACTIVE_STATUSES:
@@ -322,7 +322,7 @@ def import_jsonl(
     product: str,
     *,
     tracker: Optional[SQLiteTracker] = None,
-    hard_when_hands: bool = False,
+    hard_when_hands: bool = True,
     hired_hands: Optional[Sequence[str]] = None,
 ) -> ImportReport:
     """Create tickets from JSONL lines into ``product``; never update/delete.
@@ -331,14 +331,14 @@ def import_jsonl(
     in the destination store, the line is skipped and listed in
     ``report.collisions``. Malformed lines raise :class:`PortabilityError`.
 
-    Routing law (wl-338): live imported tickets without a ``worker:*`` seat
-    get ``needs:routing`` stamped so they appear in the unrouted feed rather
-    than silently draining no-one's queue. Default is always soft
-    (``hard_when_hands=False``) so archival restores succeed.
+    Routing law (wl-417 / ALWAYS_WORK §9 — GH/import create always routes):
+    live imported tickets use the same hard-B seat grammar as MCP/HTTP/CLI
+    create. Pass the destination product's hired hands so bare seats reject
+    when hands exist (stops unrouted file storms). Pre-hire (empty hired
+    roster) still stamps ``needs:routing`` (wl-338).
 
-    Opt-in hard-B (wl-367): pass ``hard_when_hands=True`` with the destination
-    product's hired hands so bare seats reject like create-path hard-B when
-    hands exist. Use for live city re-imports only.
+    Soft override (``hard_when_hands=False``): archival JSONL restores of
+    historical live rows that lack a seat — never the live-city default.
 
     Product attribution (wl-364): live imported tickets missing ``product:*``
     receive ``product:<destination-slug>`` for Map store attribution.

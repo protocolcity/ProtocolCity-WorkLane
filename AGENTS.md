@@ -3,8 +3,8 @@
 **Product brand:** **WorkLane** (queue / work orders for BluePrint cities).  
 **Wire / package:** Python package folder `worklane/` (renamed from
 `worklane/` — wl-280, 2026-08-05; local `worklane`→`worklane`
-symlink shim retired wl-413; dual-window console-script aliases still open
-under wl-395/wl-414).
+symlink shim retired wl-413; dual-window console-script aliases retired
+wl-414; sqlite `_main_worktree_root` path fallback retired wl-415).
 **Citizen and Map glass say WorkLane**. Store slug `worklane`
 (legacy `worklane` still aliases) · prefix **`wl-`** (legacy `wl-`
 forever).
@@ -76,3 +76,19 @@ Each host owns its own workspace `AGENTS.md`. Host rules live there. This file
 is about WorkLane the product. When working inside another project, read that
 project’s L1 `AGENTS.md` too.
 
+<!-- bp:generated:hands -->
+- backlog-snapshot [claude-sonnet-4-6] (job)
+- chief-of-staff [claude-sonnet] (job)
+- doc-audit [claude-sonnet-4-6] (job)
+- efficiency-connector [claude-sonnet-4-6] (job)
+- efficiency-gridfinity [claude-sonnet-4-6] (job)
+- efficiency-oneseo-pos [claude-sonnet-4-6] (job)
+- efficiency-pass [claude-sonnet-4-6] (job)
+- efficiency-workforce [claude-sonnet-4-6] (job)
+- efficiency-worklane [claude-sonnet-4-6] (job)
+- github-desk [claude-haiku-4-5-20251001] (job)
+- lili [grok-4.5] (lane)
+- ship-desk [claude-haiku-4-5-20251001] (job)
+- suite-efficiency [claude-sonnet-4-6] (job)
+- visual-sweep (job)
+<!-- /bp:generated:hands -->

@@ -67,6 +67,9 @@ class CliEntrypointAliasTest(unittest.TestCase):
         raw = _PYPROJECT.read_text(encoding="utf-8")
         # Concat so export branding cannot rewrite retired-name checks.
         retired_cli = "t" + "p"
+        # Dual-window package name (wl-280); export rewrites bare
+        # "worklane" → "worklane", so keep the token split.
+        dual_window = "ticketing" + "protocol"
         if tomllib is not None:
             data = tomllib.loads(raw)
             scripts = data["project"]["scripts"]
@@ -75,6 +78,17 @@ class CliEntrypointAliasTest(unittest.TestCase):
                 "tk",
                 scripts,
                 msg="tk console_script was retired 2026-08-03 (wl-342)",
+            )
+            # wl-414: dual-window package-name console aliases retired post-0.1.7.
+            self.assertNotIn(
+                dual_window,
+                scripts,
+                msg="dual-window package console_script retired wl-414",
+            )
+            self.assertNotIn(
+                dual_window + "-mcp",
+                scripts,
+                msg="dual-window package-mcp console_script retired wl-414",
             )
             # Live ticket CLI = paths under .cli. (public: only wl;
             # private: wl + long-form worklane; worklane server is not .cli.).
@@ -115,6 +129,14 @@ class CliEntrypointAliasTest(unittest.TestCase):
             self.assertIsNone(
                 re.search(r"^tk\s*=", raw, re.M),
                 msg="tk console_script must not reappear in pyproject",
+            )
+            self.assertIsNone(
+                re.search(
+                    r"^" + re.escape(dual_window) + r"(?:-mcp)?\s*=",
+                    raw,
+                    re.M,
+                ),
+                msg="dual-window package console_scripts retired wl-414",
             )
             retired_line = re.search(
                 r"(?m)^" + re.escape(retired_cli) + r'\s*=\s*"([^"]+)"',

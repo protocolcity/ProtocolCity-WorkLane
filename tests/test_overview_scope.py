@@ -266,10 +266,10 @@ class OverviewScopeTest(unittest.TestCase):
         ]
         self.assertEqual(match, [], j["items"])
 
-    def test_add_project_warns_without_neighborhood_folder(self) -> None:
-        # wl-155: founding-path guardrail — slug must match a neighborhood
-        # folder for the city join; warn, never refuse. WL_CITY_ROOT drives
-        # the check deterministically here.
+    def test_add_project_refuses_without_neighborhood_folder(self) -> None:
+        # wl-427 / pc-1186: hard refuse ghost slugs when city root is known
+        # (successai-class pollution). Matching hood still creates. Escape:
+        # allow_orphan=true.
         city = self.root / "city"
         (city / "goodhood").mkdir(parents=True)
         (city / "goodhood" / "AGENTS.md").write_text("# hood\n")
@@ -277,10 +277,20 @@ class OverviewScopeTest(unittest.TestCase):
         try:
             r = self.client.post("/api/admin/products", json={"slug": "goodhood"}).json()
             self.assertTrue(r["ok"])
-            self.assertIsNone(r["warning"])
-            r = self.client.post("/api/admin/products", json={"slug": "ghost"}).json()
-            self.assertTrue(r["ok"])  # soft guardrail: created anyway
-            self.assertIn("no neighborhood folder", r["warning"])
+            self.assertIsNone(r.get("warning"))
+            resp = self.client.post("/api/admin/products", json={"slug": "ghost"})
+            self.assertEqual(resp.status_code, 400, resp.text)
+            body = resp.json()
+            self.assertFalse(body.get("ok"))
+            self.assertEqual(body.get("code"), "neighborhood-required")
+            self.assertFalse((self.root / "data" / "ghost.db").exists())
+            # deliberate orphan still works when flagged
+            r2 = self.client.post(
+                "/api/admin/products",
+                json={"slug": "ghost", "allow_orphan": True},
+            ).json()
+            self.assertTrue(r2["ok"], r2)
+            self.assertIn("orphan", (r2.get("warning") or "").lower())
         finally:
             os.environ.pop("WL_CITY_ROOT", None)
 

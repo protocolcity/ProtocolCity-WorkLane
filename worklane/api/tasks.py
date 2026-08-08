@@ -353,6 +353,31 @@ async def api_create_product(request: Request) -> JSONResponse:
             status_code=409,
         )
 
+    # wl-427 / pc-1186 (successai incident): when a city root is known, refuse
+    # creating a product store that has no matching neighborhood folder
+    # (AGENTS.md). Soft warn (wl-155) was not enough — GH fixture force-adopt
+    # still POSTed empty stores onto production desk. Escape hatch:
+    # ``allow_orphan: true`` (founder deliberate; rare). Host-neutral installs
+    # (no city root) keep free create.
+    allow_orphan = bool(payload.get("allow_orphan"))
+    hoods = _city_neighborhood_slugs()
+    if hoods is not None and slug not in hoods and not allow_orphan:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"no neighborhood folder for slug {slug!r} at the city root "
+                    "(need a top-level folder with AGENTS.md whose slug matches; "
+                    "slug = folder name lowercased, whitespace → hyphens). "
+                    "Refusing create so fixture/foreign adopts cannot pollute "
+                    "the live desk (wl-427 · successai). For deliberate orphan "
+                    "stores only: pass allow_orphan=true."
+                ),
+                "code": "neighborhood-required",
+            },
+            status_code=400,
+        )
+
     display = str(payload.get("display") or "").strip() or None
     prefix = str(payload.get("prefix") or "").strip().lower() or None
     if prefix is not None:
@@ -384,19 +409,11 @@ async def api_create_product(request: Request) -> JSONResponse:
             {"ok": False, "error": "project store created but not discoverable — check runtime dir"},
             status_code=500,
         )
-    # wl-155 / wl-270: soft founding-path guardrail — city joins store to
-    # neighborhood by slug == slugify(dirname) (pc-313: lower + whitespace→-);
-    # warn (never refuse) when no such folder exists. Skips silently outside
-    # a city (host-neutral).
     warning = None
-    hoods = _city_neighborhood_slugs()
-    if hoods is not None and slug not in hoods:
+    if allow_orphan and hoods is not None and slug not in hoods:
         warning = (
-            f"store created, but no neighborhood folder whose slug is {slug!r} "
-            "exists at the city root — the ProtocolCity map won't show a "
-            "building until one does (slug = folder name lowercased with "
-            "whitespace runs collapsed to hyphens; e.g. 'Work Folder' → "
-            "'work-folder')"
+            f"orphan store {slug!r} created (allow_orphan=true) — no matching "
+            "neighborhood folder; Map will not show a building until one exists"
         )
     return JSONResponse(
         {

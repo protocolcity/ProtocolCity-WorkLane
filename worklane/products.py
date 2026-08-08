@@ -37,9 +37,12 @@ _KNOWN_PRODUCT_META: Dict[str, Tuple[str, str]] = {
 
 # Legacy stores that are not product surfaces. ``ops_tickets`` is the
 # retired Ops Cockpit store (empty; surface removed from the UI).
+# ``register`` is the pre-cutover OneSeoPOS store (2026-08-03): live surface
+# is ``oneseo-pos`` / ``osp-`` with ``legacy_prefixes: ["regi"]``. Empty
+# register.db must not reappear as a Map/doctor project row.
 # Stems ending in ``_archive`` are cold companion DBs (wl-23 archival) —
 # never product surfaces themselves.
-_IGNORED_DB_STEMS = {"ops_tickets"}
+_IGNORED_DB_STEMS = {"ops_tickets", "register"}
 
 # Backup/scratch artifacts that land in the data dir (a pre-write sqlite
 # backup, a dry-run decoy) are not product surfaces (wl-78 incident:

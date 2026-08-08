@@ -99,6 +99,12 @@ class ProductRegistryTest(unittest.TestCase):
         self._seed("ops_tickets", "legacy")
         self.assertIsNone(products.get_product("ops_tickets"))
 
+    def test_legacy_register_store_is_ignored(self) -> None:
+        """oneseo-pos cutover 2026-08-03: empty register.db must not surface
+        as a product; regi-* resolve via oneseo-pos legacy_prefixes."""
+        self._seed("register", "legacy pos store")
+        self.assertIsNone(products.get_product("register"))
+
     def test_scratch_backup_db_is_ignored(self) -> None:
         """wl-78: a pre-write sqlite backup or dry-run decoy left in the
         data dir must not become a phantom product."""
@@ -392,9 +398,16 @@ class SurfaceRoutingTest(unittest.TestCase):
                 "WL_DEFAULT_PRODUCT",
                 "WL_PROJECT",
                 "WL_PRODUCT",
+                "WL_CITY_ROOT",
+                "WL_CITY_ROOT",
             )
         }
         _make_env(self.root)
+        # wl-427: walk-up from worklane under OneSeo would find a city and
+        # refuse free product creates. Host-neutral surface tests pin a
+        # non-existent city root so neighborhood-required stays off.
+        os.environ["WL_CITY_ROOT"] = str(self.root / "no-city-here")
+        os.environ["WL_CITY_ROOT"] = str(self.root / "no-city-here")
         from worklane.task_server import router
 
         app = FastAPI()
