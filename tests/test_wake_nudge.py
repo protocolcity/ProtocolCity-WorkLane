@@ -37,7 +37,7 @@ class DispatchableHandTest(unittest.TestCase):
         )
 
     def test_gated_skipped(self) -> None:
-        for gt in ("human", "timer", "deferred"):
+        for gt in ("human", "timer", "deferred", "tracking"):
             self.assertIsNone(
                 dispatchable_hand(["worker:lili"], "backlog", gt),
                 msg=gt,

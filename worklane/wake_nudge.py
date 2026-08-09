@@ -56,14 +56,14 @@ def dispatchable_hand(
 
     Dispatchable means:
     - status is backlog (ready pool)
-    - no active gate (human / timer / deferred)
+    - no active gate (human / timer / deferred / tracking)
     - exactly one ``worker:*`` seat that is not ``worker:you``
     """
     st = (status or TaskStatus.BACKLOG).strip().lower()
     if st != TaskStatus.BACKLOG:
         return None
     gt = (gate_type or "").strip().lower()
-    if gt in ("human", "timer", "deferred"):
+    if gt in ("human", "timer", "deferred", "tracking"):
         return None
     ids = worker_ids_from_labels(labels or [])
     if len(ids) != 1:

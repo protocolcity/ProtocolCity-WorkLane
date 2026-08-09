@@ -241,14 +241,18 @@ def reconcile_routing_after_mutation(
     Returns ``(labels, stamped_needs_routing, dropped_needs_routing)``:
     - any ``worker:*`` present → drop redundant ``needs:routing``;
     - live ticket with zero ``worker:*`` → ensure ``needs:routing``;
-    - done/canceled ticket without a seat → leave as-is (not a queue).
+    - done/canceled (not live) → drop ``needs:routing`` (wl-439: terminal
+      residue must not accumulate; transition-time strip, no separate repair).
     """
     labs = _coerce_labels(labels)
     if has_worker_label(labs):
         cleaned = [x for x in labs if x.lower() != NEEDS_ROUTING_LABEL]
         return cleaned, False, len(cleaned) != len(labs)
     if not live:
-        return labs, False, False
+        # wl-439: terminal tickets are not a queue — drop the stamp so
+        # doctor/repair does not have to sweep residue after close/cancel.
+        cleaned = [x for x in labs if x.lower() != NEEDS_ROUTING_LABEL]
+        return cleaned, False, len(cleaned) != len(labs)
     if any(x.lower() == NEEDS_ROUTING_LABEL for x in labs):
         return labs, False, False
     return labs + [NEEDS_ROUTING_LABEL], True, False

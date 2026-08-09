@@ -537,7 +537,7 @@ def _wq_column_counts(
 
 def _wq_gate_counts(tasks: List[Task]) -> Dict[str, int]:
     """Count open tickets by gate class across all open statuses."""
-    counts: Dict[str, int] = {"": 0, "human": 0, "deferred": 0}
+    counts: Dict[str, int] = {"": 0, "human": 0, "deferred": 0, "tracking": 0}
     for t in tasks:
         if t.status in (TaskStatus.DONE, TaskStatus.CANCELED):
             continue
@@ -550,14 +550,15 @@ def _wq_gate_counts(tasks: List[Task]) -> Dict[str, int]:
 def _parse_gate_filter(gate: str) -> Optional[str]:
     """URL gate param → gate_type kwarg for list_tasks/column_counts.
 
-    "" → None (no filter); "none" → "" (ungated/Ready); "human"/"deferred" → exact.
+    "" → None (no filter); "none" → "" (ungated/Ready);
+    "human"/"deferred"/"timer"/"tracking" → exact.
     """
     g = (gate or "").strip()
     if not g:
         return None
     if g == "none":
         return ""
-    if g in ("human", "deferred", "timer"):
+    if g in ("human", "deferred", "timer", "tracking"):
         return g
     return None
 
@@ -759,13 +760,14 @@ def _render_work_queue_filters(
         counts=counts,
     )
 
-    # Gate class chips: Ready (ungated) · For You (human) · Deferred/ice
+    # Gate class chips: Ready · For You · Deferred · Tracking (wl-434)
     open_total = sum(gate_counts.values())
     _gate_specs: List[Tuple[str, str, int]] = [
         ("", "All open", open_total),
         ("none", "Ready", gate_counts.get("", 0)),
         ("human", "For You", gate_counts.get("human", 0)),
         ("deferred", "Deferred", gate_counts.get("deferred", 0)),
+        ("tracking", "Tracking", gate_counts.get("tracking", 0)),
     ]
     gate_chip_parts: List[str] = []
     for gval, glabel, gcnt in _gate_specs:
@@ -1035,6 +1037,9 @@ def _render_task_card(
             gate_tier = "warning"
         elif t.gate_type == "deferred":
             gate_label = "Deferred"
+            gate_tier = "neutral"
+        elif t.gate_type == "tracking":
+            gate_label = "Tracking"
             gate_tier = "neutral"
         elif t.gate_type == "human":
             gate_label = "For You"

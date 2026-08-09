@@ -6,6 +6,7 @@ worker:* seat nor needs:routing. The re-stamp only ran on create.
 """
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,7 +50,18 @@ class ReconcileRoutingAfterMutationTest(unittest.TestCase):
             ["suite"], live=False
         )
         self.assertFalse(stamped)
+        self.assertFalse(dropped)
         self.assertNotIn(NEEDS_ROUTING_LABEL, labs)
+
+    def test_drops_stamp_when_not_live(self) -> None:
+        """wl-439: terminal (not live) drops needs:routing residue."""
+        labs, stamped, dropped = reconcile_routing_after_mutation(
+            ["suite", NEEDS_ROUTING_LABEL], live=False
+        )
+        self.assertFalse(stamped)
+        self.assertTrue(dropped)
+        self.assertNotIn(NEEDS_ROUTING_LABEL, labs)
+        self.assertIn("suite", labs)
 
     # -- pc-621 regression: string input must never be char-iterated ---------
 
@@ -186,6 +198,79 @@ class UpdateLabelsRestampTest(unittest.TestCase):
         )
         assert updated is not None
         self.assertNotIn(NEEDS_ROUTING_LABEL, updated.labels)
+
+    def test_status_done_strips_needs_routing(self) -> None:
+        """wl-439: transition → done drops needs:routing in the same write."""
+        t = self.tracker.create_task(
+            title="unrouted close",
+            description="x",
+            labels=[NEEDS_ROUTING_LABEL, "suite"],
+        )
+        self.assertIn(NEEDS_ROUTING_LABEL, t.labels)
+        updated = self.tracker.update_status(str(t.id), TaskStatus.DONE)
+        assert updated is not None
+        self.assertEqual(updated.status, TaskStatus.DONE)
+        self.assertNotIn(NEEDS_ROUTING_LABEL, updated.labels)
+        self.assertIn("suite", updated.labels)
+
+    def test_status_canceled_strips_needs_routing(self) -> None:
+        """wl-439: transition → canceled drops needs:routing in the same write."""
+        t = self.tracker.create_task(
+            title="unrouted cancel",
+            description="x",
+            labels=[NEEDS_ROUTING_LABEL, "hygiene"],
+        )
+        updated = self.tracker.update_status(str(t.id), TaskStatus.CANCELED)
+        assert updated is not None
+        self.assertEqual(updated.status, TaskStatus.CANCELED)
+        self.assertNotIn(NEEDS_ROUTING_LABEL, updated.labels)
+        self.assertIn("hygiene", updated.labels)
+
+    def test_open_status_keeps_needs_routing(self) -> None:
+        """wl-439: open transitions never strip needs:routing."""
+        t = self.tracker.create_task(
+            title="still open",
+            description="x",
+            labels=[NEEDS_ROUTING_LABEL, "suite"],
+        )
+        for status in (
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.IN_REVIEW,
+            TaskStatus.BACKLOG,
+        ):
+            updated = self.tracker.update_status(str(t.id), status)
+            assert updated is not None
+            self.assertIn(NEEDS_ROUTING_LABEL, updated.labels)
+
+    def test_terminal_strip_keeps_foreign_worker_seat(self) -> None:
+        """wl-439: status strip bypasses label guards; foreign seat stays.
+
+        Doctor residue case (wf-193 / ts-2218): terminal ticket may still
+        carry worker:<foreign> + needs:routing. Transition strip must drop
+        only the stamp without going through foreign-seat mutation guards.
+        """
+        t = self.tracker.create_task(
+            title="foreign residue",
+            description="x",
+            labels=["worker:kc", "suite"],
+        )
+        # create-path drops redundant needs:routing when worker present;
+        # seed residue shape that doctor previously had to repair.
+        with self.tracker._connect() as conn:
+            conn.execute(
+                "UPDATE tasks SET labels = ? WHERE id = ?",
+                (
+                    json.dumps(["worker:kc", NEEDS_ROUTING_LABEL, "suite"]),
+                    int(t.id),
+                ),
+            )
+            conn.commit()
+        updated = self.tracker.update_status(str(t.id), TaskStatus.DONE)
+        assert updated is not None
+        self.assertEqual(updated.status, TaskStatus.DONE)
+        self.assertNotIn(NEEDS_ROUTING_LABEL, updated.labels)
+        self.assertIn("worker:kc", updated.labels)
+        self.assertIn("suite", updated.labels)
 
 
 class CheckMutationStarveGuardTest(unittest.TestCase):

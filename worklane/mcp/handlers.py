@@ -762,9 +762,15 @@ class TPHandlers:
             prio = int(priority)
             if prio not in (1, 2, 3, 4):
                 raise ToolError("priority must be 1 (urgent) … 4 (low)")
-        if gate_type is not None and gate_type not in ("", "human", "timer", "deferred"):
+        if gate_type is not None and gate_type not in (
+            "",
+            "human",
+            "timer",
+            "deferred",
+            "tracking",
+        ):
             raise ToolError(
-                "gate_type must be '' (clear), 'human', 'timer', or 'deferred'"
+                "gate_type must be '' (clear), 'human', 'timer', 'deferred', or 'tracking'"
             )
         if gate_type == "timer" and not gate_until:
             raise ToolError("gate_until is required when gate_type is 'timer'")
@@ -1146,9 +1152,10 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                     },
                     "gate_type": {
                         "type": "string",
-                        "enum": ["", "human", "timer", "deferred"],
+                        "enum": ["", "human", "timer", "deferred", "tracking"],
                         "description": (
                             "Filter by gate class: 'deferred' = parked tickets; "
+                            "'tracking' = structural epic umbrellas (wl-434); "
                             "'human' = act-now gates; 'timer' = embargoed; "
                             "'' = ungated (no active gate)"
                         ),
@@ -1374,10 +1381,13 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                 "until manually cleared AND surfaces in For You (act-now); "
                 "'timer' withholds until gate_until then auto-thaws; "
                 "'deferred' parks the ticket — withholds from ready AND never enters "
-                "For You / Map gold (PROCESS §3.9 Deferred class, wl-261). "
-                "Use deferred when work is real but not yet actionable; use human "
-                "only when founder action is needed now. To thaw a deferred ticket, "
-                "call wl_update with gate_type='' (clears the gate)."
+                "For You / Map gold (PROCESS §3.9 Deferred class, wl-261); "
+                "'tracking' marks a structural epic umbrella — never ready, never "
+                "For You, still listable for decomposition (wl-434). "
+                "Use deferred when work is real but not yet actionable; use tracking "
+                "for coordination wrappers that must not be claimed; use human "
+                "only when founder action is needed now. To thaw a deferred/tracking "
+                "ticket, call wl_update with gate_type='' (clears the gate)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -1395,11 +1405,12 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                     },
                     "gate_type": {
                         "type": "string",
-                        "enum": ["", "human", "timer", "deferred"],
+                        "enum": ["", "human", "timer", "deferred", "tracking"],
                         "description": (
                             "'' clears the gate; 'human' = act-now (surfaces in For You); "
                             "'timer' = embargoed until gate_until; "
-                            "'deferred' = parked (withholds ready, never enters For You)"
+                            "'deferred' = parked (withholds ready, never enters For You); "
+                            "'tracking' = structural epic (withholds ready, never For You)"
                         ),
                     },
                     "gate_until": {
@@ -1411,7 +1422,8 @@ def build_tool_definitions() -> List[Dict[str, Any]]:
                         "description": (
                             "Optional context for the gate. For human gates: "
                             "describe what decision or action is needed. "
-                            "For deferred gates: describe what condition would thaw it."
+                            "For deferred gates: describe what condition would thaw it. "
+                            "For tracking gates: optional epic/track context."
                         ),
                     },
                 },

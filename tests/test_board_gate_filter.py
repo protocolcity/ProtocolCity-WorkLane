@@ -29,6 +29,9 @@ class ParseGateFilterTest(unittest.TestCase):
     def test_deferred_returns_deferred(self) -> None:
         self.assertEqual(_parse_gate_filter("deferred"), "deferred")
 
+    def test_tracking_returns_tracking(self) -> None:
+        self.assertEqual(_parse_gate_filter("tracking"), "tracking")
+
     def test_unknown_returns_none(self) -> None:
         self.assertIsNone(_parse_gate_filter("bogus"))
 
@@ -41,6 +44,7 @@ class WqGateCountsTest(unittest.TestCase):
             Task(id="3", title="deferred", status=TaskStatus.BACKLOG, gate_type="deferred"),
             Task(id="4", title="done", status=TaskStatus.DONE, gate_type=None),
             Task(id="5", title="canceled", status=TaskStatus.CANCELED, gate_type="human"),
+            Task(id="6", title="tracking", status=TaskStatus.BACKLOG, gate_type="tracking"),
         ]
 
     def test_counts_open_only(self) -> None:
@@ -48,11 +52,12 @@ class WqGateCountsTest(unittest.TestCase):
         self.assertEqual(counts[""], 1)       # only open ungated
         self.assertEqual(counts["human"], 1)  # only open human-gated
         self.assertEqual(counts["deferred"], 1)
+        self.assertEqual(counts["tracking"], 1)
 
     def test_done_and_canceled_excluded(self) -> None:
         counts = _wq_gate_counts(self._tasks())
         total = sum(counts.values())
-        self.assertEqual(total, 3)  # 5 tasks minus done and canceled
+        self.assertEqual(total, 4)  # 6 tasks minus done and canceled
 
 
 class WqColumnCountsGateFilterTest(unittest.TestCase):
@@ -110,6 +115,7 @@ class GateChipsRenderTest(unittest.TestCase):
         self.assertIn("Ready", html)
         self.assertIn("For You", html)
         self.assertIn("Deferred", html)
+        self.assertIn("Tracking", html)
 
     def test_all_open_chip_active_by_default(self) -> None:
         html = self._render(gate="")
@@ -128,6 +134,7 @@ class GateChipsRenderTest(unittest.TestCase):
         html = self._render()
         self.assertIn("gate=human", html)
         self.assertIn("gate=deferred", html)
+        self.assertIn("gate=tracking", html)
         self.assertIn("gate=none", html)
 
 
@@ -184,6 +191,22 @@ class ApiGateFilterTest(unittest.TestCase):
         self.assertIn(f"t-{t_def.id}", ids)
         self.assertNotIn(f"t-{t_free.id}", ids)
         self.assertNotIn(f"t-{t_human.id}", ids)
+
+    def test_gate_filter_tracking_excludes_others(self) -> None:
+        t_free = self.tracker.create_task(title="Free ticket")
+        t_track = self.tracker.create_task(title="Tracking epic")
+        t_def = self.tracker.create_task(title="Deferred")
+        self.tracker.update_task(t_track.id, gate_type="tracking", actor="wl-pool")
+        self.tracker.update_task(t_def.id, gate_type="deferred", actor="wl-pool")
+
+        r = self.client.get(
+            "/api/admin/tasks", params={"gate": "tracking", "product": "tradeos"}
+        )
+        self.assertEqual(r.status_code, 200)
+        ids = {task["id"] for task in r.json()["tasks"]}
+        self.assertIn(f"t-{t_track.id}", ids)
+        self.assertNotIn(f"t-{t_free.id}", ids)
+        self.assertNotIn(f"t-{t_def.id}", ids)
 
     def test_gate_filter_human_excludes_others(self) -> None:
         t_free = self.tracker.create_task(title="Free ticket")

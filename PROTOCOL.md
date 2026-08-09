@@ -141,18 +141,20 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
     - Map gold / “needs You” must stay scarce. Dumping every closed or reserved ticket into For You is a process + engine violation (attention membership: human gates + founder-decision labels + stalled inflight + timers — **not** bare `in_review`).
     - If You truly must sign off: file or update with `gate_type=human` + concrete `gate_note` (what to decide / what clears it) — never silent `in_review`.
 8. **Sign every comment** (2026-07-10) — pass the author flag (`--author "<agent-id>"` on the CLI, `author` on the API) on every comment you post, using your canonical agent id from §5.2. The `Owner:` line inside the body documents the claim; the author *field* is what the board byline, filters, and ghost-audits key on. The two must carry the same id. An unsigned (empty-author) comment is a process violation, not a default.
-9. **Gate classes — Ready · For You · Deferred** (engine wl-261, 2026-07-27; For You law wl-257, 2026-07-16) — Three attention/ready classes govern how a ticket surfaces to You:
+9. **Gate classes — Ready · For You · Deferred · Tracking** (engine wl-261, 2026-07-27; For You law wl-257, 2026-07-16; tracking wl-434, 2026-08-08) — Attention/ready classes govern how a ticket surfaces to You and to worker ready feeds:
 
    | Class | How to set | Attention / Map gold | Ready pool |
    |---|---|---|---|
    | **Ready** | no gate | — | ✓ claimable |
    | **For You** | `gate_type=human`, action-shaped note | ✓ In-tray / Map gold | ✗ blocked |
    | **Deferred** | `gate_type=deferred` | — | ✗ blocked |
+   | **Tracking** | `gate_type=tracking` | — | ✗ blocked |
 
    - **Park with `gate_type=deferred`.** To withhold a ticket from ready without painting You: `PATCH gate_type=deferred`. No special note prefix needed. Ready stays blocked; attention / Map gold skip entirely. This is the modern park encoding, superseding the legacy `gate_type=human` + parked `gate_note` workaround for *new* parks (wl-257 dual-read window preserved for existing parked-note gates; see wl-264 for bulk migration).
    - **`gate_type=human` is scarce — act-now only.** Reserve it for tickets where You must act *now* (decide / clear / approve). Every human gate needs a concrete `gate_note` naming what You must decide and what clears it. Legacy human+parked-note gates (`gate_note` starts with `deferred:` / `umbrella`, or includes `post-northstar` / `not claimable` / `withheld from ready` / `parked:`) still block ready without attention paint — preserved during the migration window; prefer `gate_type=deferred` for new parks.
-   - **Umbrella epics:** `gate_type=deferred` + the `umbrella` label. No human gate unless You are needed today.
-   - **Deferred gates thaw freely.** Any agent or founder may clear a deferred gate (`PATCH gate_type=null`) when the track reopens. Human gates still require founder-present to clear (§5.2.1).
+   - **Umbrella epics:** prefer `gate_type=tracking` (+ `umbrella` / `epic:tracking` labels) for structural coordination wrappers that stay listable for chief-of-staff decomposition but must never enter ready feeds. `gate_type=deferred` + `umbrella` remains valid for parks waiting on a thaw condition. No human gate unless You are needed today.
+   - **Tracking gates** withhold ready and For You exactly like deferred, but name the intent: “this is a tracking epic, not implement work.” Unknown non-empty `gate_type` values also fail closed out of ready (engine safeguard).
+   - **Deferred / tracking gates thaw freely.** Any agent or founder may clear them (`PATCH gate_type=""`) when the track reopens or an umbrella is retired. Human gates still require founder-present to clear (§5.2.1).
    - **No bulk sweeps.** Agents must not set any gate type on more than **three** tickets in a single shift unless a ticket they hold explicitly authorizes a named bulk re-gate (ids listed). Mass “park the pool so I look unwedged” is an automatic reject.
    - **Do not re-gate the already gated.** Leave existing gates; comment if the note is wrong.
    - **Muted = snooze, not a gate.** You may snooze a product, kind, task, or all on Waiting on You to mute attention for a day without changing store gates. Snooze scopes: `product | kind | task | all`. Mechanical enforcement: **wl-205** (product/kind/all); **wl-251** adds per-ticket (`task`) scope. Snooze is a UI silence only — it does not block ready or change gate state. Do not conflate snooze with `gate_type=timer` or `you:remind` — **§5 Citizen glance · Three clocks**.
@@ -163,7 +165,17 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
     - **Never cancel without the requested functionality shipping** (or a founder-explicit drop). If the slice is incomplete: leave `backlog` / `in_progress`, post `Blocked:` + `Next step:`, or close only the **completed child** and keep the parent open.
     - **Mass cancel forbidden** unless You **explicitly** order it (named ids or “cancel all of X”). One cancel needs a one-ticket rationale; bulk needs explicit founder language.
     - **Wrong cancel → reopen.** If an agent mass-canceled without that order, reopen and restore the board.
-11. **Sticky residual work · board is shared memory** (2026-07-26, founder — invisible close-outs) —
+11. **Sticky residual work · board is shared memory** (2026-07-26, founder — invisible close-outs; **design-close amend 2026-08-08 · pc-1188 / wl-429**) —
+    The work-order board is how You and agents coordinate. **Closing a ticket hides the work.** Residual work that still needs a return visit must remain **visible as open tickets**, not only as prose in a `Completed:` or `Follow-ups:` note.
+    - **`Follow-ups: none` means none.** Not “tabled in my head,” not “hard-stops listed in the close comment,” not “re-file later.”
+    - **If residual work exists at close:** either (a) **keep the parent open** and comment progress, or (b) **file child tickets first** (imperative titles, parent linked with `blocks:parent` / body “Parent: **id**”), list those ids under `Follow-ups:`, **then** close only the slice that actually shipped.
+    - **Never close a parent epic** while known residual children are still unfinished **unless** those children are **already open on the board**. Invisible residuals are a process violation (same class as empty-BL mass cancel: board looks clean, work is gone).
+    - **You table explicitly.** Only You park work permanently (cancel with founder order, or a child left open under a “tabled” label). Agents do not invent “tabled” as a close-out substitute.
+    - **Design / paper-first close (hard).** When the shipped slice is a design paper (or “paper first · implement after ratify” pattern) and implement residual remains:
+      1. **File on the board before `done`:** either a **ratify gold** (`gate_type=human` + concrete `gate_note`: what You must sign and what clears it) **or** routed implement children (may be `gate_type=deferred` with a named thaw — e.g. “until osp-N ratify”).
+      2. List those ticket ids under `Follow-ups:` (or keep the design ticket open until children exist).
+      3. **Invalid close:** residual described only as prose (“file children after founder ratify,” “pending ratify,” “T1–T4 later”) with `Follow-ups: none` and no open child/gold ids — same class as invisible residual.
+      4. After You ratify or lock the thaw condition, **thaw** deferred children the same turn (ALWAYS_WORK §2k′). Companion capture: host chat **named debt** files a WO same turn — not chat memory.
 12. **Umbrella epic discipline — file gated, never claim** (2026-07-29, wl-297) — A ticket that decomposes into child slices is a coordination wrapper, not a unit of dispatchable work. Two hard rules:
     - **File epics gated.** Before filing children, set `gate_type=deferred` + label `umbrella` on the parent. An epic filed without these is a filing error; the hand that encounters it must park it (`gate_type=deferred` + `umbrella` label, no claim), not work it. Claiming an umbrella without shipping the entire phase it represents is a process violation.
     - **Do not claim umbrella tickets.** A ticket labeled `umbrella` or `epic`, or whose deferred gate note contains "umbrella" or "epic", is a wrapper — take a child slice instead. Engine defense-in-depth: the ready feed (`wl_ready` / `WorkQueue.ready()`) excludes all `umbrella`-labeled tickets regardless of gate state, so a mis-filed epic also drops out of dispatch automatically.
@@ -171,11 +183,6 @@ One addendum (ratified 2026-07-11): a narrower-scope agent whose profile defines
       - Prefer a structured `## Children` (or `## Child tickets` / `## Child list`) section: every list row must carry a filed ticket id (`- [ ] wl-N: title`). Close-path **refuses** wrappers whose Children rows lack ids or cite unknown ids.
       - Children labeled `parent:<epic-id>` / `slice-of:<epic-id>` (or a `parent-child` relation) that are still open also **block** parent close until done/canceled.
       - Free-form Done-when prose without a `## Children` section is not hard-parsed (false-positive risk); use the section when the inventory is load-bearing. Engine: `worklane/epic_coverage.py`.
-    The work-order board is how You and agents coordinate. **Closing a ticket hides the work.** Residual work that still needs a return visit must remain **visible as open tickets**, not only as prose in a `Completed:` or `Follow-ups:` note.
-    - **`Follow-ups: none` means none.** Not “tabled in my head,” not “hard-stops listed in the close comment,” not “re-file later.”
-    - **If residual work exists at close:** either (a) **keep the parent open** and comment progress, or (b) **file child tickets first** (imperative titles, parent linked with `blocks:parent` / body “Parent: **id**”), list those ids under `Follow-ups:`, **then** close only the slice that actually shipped.
-    - **Never close a parent epic** while known residual children are still unfinished **unless** those children are **already open on the board**. Invisible residuals are a process violation (same class as empty-BL mass cancel: board looks clean, work is gone).
-    - **You table explicitly.** Only You park work permanently (cancel with founder order, or a child left open under a “tabled” label). Agents do not invent “tabled” as a close-out substitute.
 
 ## 4) Transitions
 
@@ -320,7 +327,9 @@ and PR URLs may accompany it; path-only or prose-only Links are rejected by
 the engine (wl-396 / wf-171). A merge SHA buried outside the `Links:` section
 ("Merged: abc1234 …" in Completed prose) does not satisfy it. The engine
 checks **presence** only; agents still verify the SHA is an ancestor of
-`origin/main` before close (§5.1.3). **Registered checks:** when a
+`origin/main` before close (§5.1.3). **Shift worktrees:** do not put only
+`workforce/shift/<id>` tips in Links — land first (`git push origin HEAD:main`
+when FF-able), then cite that landing SHA. **Registered checks:** when a
 project lists deterministic checks in `local/config/closeout_checks.json`,
 implement-class close-outs must **cite** each check in `Verification:` with a
 result signal (e.g. `pytest … green` / `0 failed`). Projects with no file (or
@@ -474,6 +483,11 @@ Canonical agent ids (lowercase kebab-case, no spaces, no brackets):
 | `pepper` | Pepper · Till & POS UI. Succeeds `ring` (retired 2026-08-06, osp-504, history retained — comments signed by the old id remain valid record). Register store lane — till/POS UI, payment UX, receipt/tender flows, time clock floor shell. Papers at `register/workers/pepper/` (host hire osp-517). Feed `worker:pepper`. |
 | `stock` | **RETIRED 2026-08-06** — succeeded by `binx` (osp-504). Was: Stock · Inventory & catalog. Register store lane — inventory adjust/transfer, pocket inventory floor UX, catalog, stock moves (new hire 2026-08-02 — no predecessor). History retained — comments signed by `stock` remain valid record. |
 | `binx` | Binx · Inventory & catalog. Succeeds `stock` (retired 2026-08-06, osp-504, history retained — comments signed by the old id remain valid record). Register store lane — inventory adjust/transfer, pocket inventory floor UX, catalog, stock moves. Papers at `register/workers/binx/` (host hire osp-517). Feed `worker:binx`. |
+| `demo-worker` | Demo Worker · Recipes. Papers at `recipes/workers/demo-worker/CONTRACT.md`. Feed `worker:demo-worker`. |
+| `duchess` | Duchess · Presentation Steward. Papers at `presentations/workers/duchess/CONTRACT.md`. Feed `worker:duchess`. |
+| `efficiency-oneseo-pos` | Efficiency-oneseo-pos · Daily OneSeoPOS efficiency / drift pass. Papers at `oneseo-pos/workers/efficiency-oneseo-pos/CONTRACT.md`. Feed `worker:efficiency-oneseo-pos`. Function-named; not retired. |
+| `luna` | Luna · Career Docs Steward. Papers at `career/workers/luna/CONTRACT.md`. Feed `worker:luna`. |
+| `workspace-efficiency` | Workspace efficiency. Papers at `.protocolcity/ops/workers/workspace-efficiency/CONTRACT.md`. Feed `worker:workspace-efficiency`. Function-named; not retired. |
 
 #### 5.2.1 Founder-present sessions (identity law, 2026-07-17)
 

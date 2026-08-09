@@ -1317,9 +1317,12 @@ async def api_update_task(task_id: str, request: Request) -> JSONResponse:
             {"ok": False, "error": "gate_type is required when setting gate_until or gate_note"},
             status_code=400,
         )
-    if gate_type is not None and gate_type not in ("", "human", "timer", "deferred"):
+    if gate_type is not None and gate_type not in ("", "human", "timer", "deferred", "tracking"):
         return JSONResponse(
-            {"ok": False, "error": "gate_type must be '' (clear), 'human', 'timer', or 'deferred'"},
+            {
+                "ok": False,
+                "error": "gate_type must be '' (clear), 'human', 'timer', 'deferred', or 'tracking'",
+            },
             status_code=400,
         )
     if gate_type == "timer" and not gate_until:

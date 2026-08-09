@@ -657,14 +657,48 @@ class SQLiteTracker(ProjectTracker):
                         self._thaw_dependency_frozen(conn, now)
                     return self.get_task(task_id)
 
-            with conn:
-                conn.execute(
-                    """
-                    UPDATE tasks SET status = ?, updated_at = ?
-                     WHERE id = ? OR ext_id = ?
-                    """,
-                    (target_status, now, self._maybe_int(task_id), str(task_id)),
+            # wl-439: strip needs:routing on transition into terminal statuses
+            # in the same write (bypasses foreign-seat label-mutation guards).
+            # Open statuses never lose the stamp via this path.
+            labels_json = None
+            if target_status in (TaskStatus.DONE, TaskStatus.CANCELED):
+                from worklane.routing_labels import reconcile_routing_after_mutation
+
+                cur_labels = list(cur_task.labels or [])
+                new_labels, _stamped, dropped_nr = reconcile_routing_after_mutation(
+                    cur_labels, live=False
                 )
+                if dropped_nr:
+                    labels_json = json.dumps(new_labels)
+
+            with conn:
+                if labels_json is not None:
+                    conn.execute(
+                        """
+                        UPDATE tasks SET status = ?, labels = ?, updated_at = ?
+                         WHERE id = ? OR ext_id = ?
+                        """,
+                        (
+                            target_status,
+                            labels_json,
+                            now,
+                            self._maybe_int(task_id),
+                            str(task_id),
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE tasks SET status = ?, updated_at = ?
+                         WHERE id = ? OR ext_id = ?
+                        """,
+                        (
+                            target_status,
+                            now,
+                            self._maybe_int(task_id),
+                            str(task_id),
+                        ),
+                    )
                 if target_status != cur_task.status:
                     self._insert_event(
                         conn, int(cur_row["id"]), "status_change",
@@ -1056,12 +1090,14 @@ class SQLiteTracker(ProjectTracker):
         Only fields explicitly supplied (non-None) are changed. ``gate_type``
         is the gate control: ``None`` leaves the gate untouched, ``""``
         clears it (gate_until/gate_note are cleared too), ``"human"``/
-        ``"timer"`` sets it (wl-21). A timer gate requires ``gate_until``.
+        ``"timer"`` / ``"deferred"`` / ``"tracking"`` sets it (wl-21, wl-434).
+        A timer gate requires ``gate_until``.
         Returns the updated Task, or None if ``task_id`` does not exist.
         """
-        if gate_type is not None and gate_type not in ("", "human", "timer", "deferred"):
+        if gate_type is not None and gate_type not in ("", "human", "timer", "deferred", "tracking"):
             raise ValueError(
-                f"gate_type must be '' (clear), 'human', 'timer', or 'deferred', got {gate_type!r}"
+                f"gate_type must be '' (clear), 'human', 'timer', 'deferred', or 'tracking', "
+                f"got {gate_type!r}"
             )
         if gate_type == "timer" and not gate_until:
             raise ValueError("gate_until is required when gate_type is 'timer'")

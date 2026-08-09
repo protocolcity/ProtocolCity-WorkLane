@@ -653,9 +653,9 @@ def _collect_founder_attention_items(*, now: datetime) -> List[Dict[str, Any]]:
         if labels & _FOUNDER_DECISION_LABELS:
             items.append(_attention_item(t, prod_slug, "founder_decision", "founder decision needed", since, now))
             counted.add(t.id)
-        elif t.gate_type == "deferred":
-            # Deferred gate: withholds ready but never enters For You (wl-261).
-            # Seed query already skips pure-deferred; keep for fallback path.
+        elif t.gate_type in ("deferred", "tracking"):
+            # Deferred / tracking: withhold ready, never For You (wl-261 / wl-434).
+            # Seed query already skips these; keep for fallback path.
             continue
         elif t.gate_type == "human":
             if _human_gate_is_parked(t.gate_note):

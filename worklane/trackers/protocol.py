@@ -59,7 +59,9 @@ class Task:
     # wl-21: gates as data. gate_type is None (no gate), "human" (blocks
     # the ready queue until manually cleared; action-shaped note golds For You),
     # "timer" (blocks until gate_until, then auto-thaws — see task_is_gated()),
-    # or "deferred" (wl-261: parked indefinitely; never enters ready or For You).
+    # "deferred" (wl-261: parked indefinitely; never enters ready or For You),
+    # or "tracking" (wl-434: structural epic/umbrella; never ready or For You;
+    # stays listable for chief-of-staff decomposition).
     gate_type: Optional[str] = None
     gate_until: Optional[str] = None
     gate_note: Optional[str] = None
@@ -85,19 +87,30 @@ class Task:
         }
 
 
+# Allowed non-empty gate_type values for create/update ("" clears).
+# Keep in sync with API / MCP validators and task_is_gated.
+GATE_TYPES = frozenset({"human", "timer", "deferred", "tracking"})
+# Gates that always withhold ready (no calendar thaw).
+GATE_TYPES_ALWAYS = frozenset({"human", "deferred", "tracking"})
+# Gates that withhold ready and must never paint For You / Map gold.
+GATE_TYPES_NO_ATTENTION = frozenset({"deferred", "tracking"})
+
+
 def task_is_gated(task: "Task") -> bool:
     """True if ``task`` should be withheld from the ready queue right now.
 
-    Human gates withhold until someone clears them (gate_type="").  Timer
-    gates withhold until ``gate_until`` passes, then auto-thaw — computed
-    here at read time rather than by mutating the row, so there's no
-    trigger event to miss (unlike the dependency-freeze label, which is
-    flipped by a write path).  A timer gate with an unparseable or missing
-    ``gate_until`` fails safe (stays gated).
+    Human / deferred / tracking gates withhold until someone clears them
+    (gate_type="").  Timer gates withhold until ``gate_until`` passes, then
+    auto-thaw — computed here at read time rather than by mutating the row,
+    so there's no trigger event to miss (unlike the dependency-freeze label,
+    which is flipped by a write path).  A timer gate with an unparseable or
+    missing ``gate_until`` fails safe (stays gated).  Unknown non-empty
+    gate_type values also fail closed (withhold ready) so cross-product
+    tracking umbrellas never leak into worker feeds (wl-434).
     """
     if not task.gate_type:
         return False
-    if task.gate_type in ("human", "deferred"):
+    if task.gate_type in GATE_TYPES_ALWAYS:
         return True
     if task.gate_type == "timer":
         if not task.gate_until:
@@ -109,7 +122,8 @@ def task_is_gated(task: "Task") -> bool:
         if until.tzinfo is None:
             until = until.replace(tzinfo=timezone.utc)
         return datetime.now(timezone.utc) < until
-    return False
+    # Unknown gate class: fail closed (withhold from ready).
+    return True
 
 
 @runtime_checkable

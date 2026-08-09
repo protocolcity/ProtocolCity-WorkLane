@@ -58,6 +58,16 @@ class TaskIsGatedTest(unittest.TestCase):
         t = Task(id="1", title="x", gate_type="deferred")
         self.assertTrue(task_is_gated(t))
 
+    def test_tracking_gate_is_gated(self) -> None:
+        # wl-434: structural epic umbrellas never enter ready.
+        t = Task(id="1", title="x", gate_type="tracking")
+        self.assertTrue(task_is_gated(t))
+
+    def test_unknown_gate_type_fails_closed(self) -> None:
+        # Cross-product / legacy unknown classes must not leak into ready.
+        t = Task(id="1", title="x", gate_type="legacy-park")
+        self.assertTrue(task_is_gated(t))
+
 
 class SQLiteTrackerGateTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -109,6 +119,18 @@ class SQLiteTrackerGateTest(unittest.TestCase):
         self.assertEqual(updated.gate_type, "deferred")
         self.assertEqual(updated.gate_note, "umbrella: thaw when northstar clears")
 
+    def test_set_tracking_gate(self) -> None:
+        t = self.tracker.create_task(title="Tracking epic")
+        updated = self.tracker.update_task(
+            t.id,
+            gate_type="tracking",
+            gate_note="epic:tracking structural umbrella",
+            actor="wl-pool",
+        )
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.gate_type, "tracking")
+        self.assertEqual(updated.gate_note, "epic:tracking structural umbrella")
+
     def test_invalid_gate_type_rejected(self) -> None:
         t = self.tracker.create_task(title="Gate me")
         with self.assertRaises(ValueError):
@@ -156,6 +178,16 @@ class WorkQueueGateTest(unittest.TestCase):
         ready_ids = {t.id for t in wq.ready()}
         self.assertIn(free.id, ready_ids)
         self.assertNotIn(deferred.id, ready_ids)
+
+    def test_ready_excludes_tracking_gated(self) -> None:
+        tracking = self.tracker.create_task(title="Tracking epic")
+        self.tracker.update_task(tracking.id, gate_type="tracking", actor="wl-pool")
+        free = self.tracker.create_task(title="Free ticket")
+
+        wq = WorkQueue(self.tracker)
+        ready_ids = {t.id for t in wq.ready()}
+        self.assertIn(free.id, ready_ids)
+        self.assertNotIn(tracking.id, ready_ids)
 
     def test_ready_includes_expired_timer_gate(self) -> None:
         past = _iso(datetime.now(timezone.utc) - timedelta(days=1))
@@ -231,6 +263,17 @@ class HttpGateTest(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["task"]["gate_type"], "deferred")
 
+    def test_patch_tracking_gate(self) -> None:
+        t = self.tracker.create_task(title="HTTP tracking epic")
+        r = self.client.patch(
+            f"/api/admin/tasks/t-{t.id}",
+            json={"gate_type": "tracking", "gate_note": "structural umbrella"},
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["task"]["gate_type"], "tracking")
+
     def test_patch_timer_gate_without_until_is_400(self) -> None:
         t = self.tracker.create_task(title="HTTP gate")
         r = self.client.patch(
@@ -248,6 +291,27 @@ class HttpGateTest(unittest.TestCase):
         ids = {row["id"] for row in r.json()["tasks"]}
         self.assertIn(f"t-{free.id}", ids)
         self.assertNotIn(f"t-{deferred.id}", ids)
+
+    def test_ready_endpoint_excludes_tracking_gated(self) -> None:
+        # Worker-filtered ready must also exclude tracking umbrellas.
+        tracking = self.tracker.create_task(
+            title="Tracking via HTTP",
+            labels=["worker:lili", "umbrella", "epic:tracking"],
+        )
+        self.tracker.update_task(tracking.id, gate_type="tracking", actor="wl-pool")
+        free = self.tracker.create_task(
+            title="Free via HTTP tracking",
+            labels=["worker:lili"],
+        )
+
+        r = self.client.get(
+            "/api/admin/tasks/ready",
+            params={"product": "tradeos", "label": "worker:lili"},
+        )
+        self.assertEqual(r.status_code, 200)
+        ids = {row["id"] for row in r.json()["tasks"]}
+        self.assertIn(f"t-{free.id}", ids)
+        self.assertNotIn(f"t-{tracking.id}", ids)
 
     def test_ready_endpoint_excludes_gated(self) -> None:
         gated = self.tracker.create_task(title="Gated via HTTP")
@@ -277,6 +341,14 @@ class GateChipRenderTest(unittest.TestCase):
         html = _render_task_card(deferred_task, preview={})
         self.assertIn("tb-card-gate", html)
         self.assertIn("Deferred", html)
+
+    def test_tracking_gate_chip_shows_tracking(self) -> None:
+        from worklane.board import _render_task_card
+
+        tracking_task = Task(id="3", title="Tracking card", gate_type="tracking")
+        html = _render_task_card(tracking_task, preview={})
+        self.assertIn("tb-card-gate", html)
+        self.assertIn("Tracking", html)
 
     def test_no_gate_chip_on_ungated_card(self) -> None:
         from worklane.board import _render_task_card
