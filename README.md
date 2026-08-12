@@ -1,5 +1,7 @@
 # WorkLane
 
+[![Tests](https://github.com/protocolcity/ProtocolCity-WorkLane/actions/workflows/tests.yml/badge.svg)](https://github.com/protocolcity/ProtocolCity-WorkLane/actions/workflows/tests.yml)
+
 > **Pre-release (0.1.x).** Part of the **ProtocolCity** suite with
 > [WorkForce](https://github.com/protocolcity/ProtocolCity-WorkForce) and
 > [BluePrint](https://github.com/protocolcity/ProtocolCity-BluePrint).
