@@ -1,7 +1,7 @@
 # Installing WorkLane in a new host
 
-This walks a new host ("I found WL on GitHub, I want work order tracking for my
-own project") from a bare clone to agents filing and working tickets. It
+This walks a new host ("I found WorkLane on GitHub, I want work order tracking
+for my own project") from a bare clone to agents filing and working tickets. It
 assumes no existing host.
 
 ## Quick install (package / suite dependency)
@@ -18,7 +18,7 @@ wl --help         # ticket CLI (canonical short; worklane is the long form)
 
 No source checkout or separate host venv required. Runtime state (SQLite
 stores, config) lives under `~/.worklane/`; override with
-`WORKLANE_RUNTIME_DIR`. Skip to **§4** to bootstrap your first
+`WORKLANE_RUNTIME_DIR` (legacy alias: `WORKLANE_RUNTIME_DIR`). Skip to **§4** to bootstrap your first
 project.
 
 ---
@@ -33,7 +33,7 @@ git clone <this repo> worklane
 cd worklane
 ```
 
-WL is self-contained: no other repo, service, or database is required.
+WorkLane is self-contained: no other repo, service, or database is required.
 
 ## 2. Install
 
@@ -109,7 +109,7 @@ curl -s http://localhost:8799/api/admin/products   # expect {"ok":true,"products
 
 ## 4. Bootstrap your project
 
-WL is **one SQLite store per project**, auto-discovered — but the store has
+WorkLane is **one SQLite store per project**, auto-discovered — but the store has
 to exist before you can file tickets against it; there is no
 create-on-first-write. A project appears the moment either of these
 happens:
@@ -182,7 +182,7 @@ Three ways to read/write tickets, in order of preference:
 
 ## 6. Write your host's agent docs
 
-Every host that adopts WL is expected to write its own operating profile
+Every host that adopts WorkLane is expected to write its own operating profile
 — what agent identity to sign as, which working copy to use, what the
 verification bar is before closing a work order. Don't skip this: it's what
 keeps multiple agents from clobbering each other's claims.

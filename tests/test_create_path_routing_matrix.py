@@ -181,6 +181,36 @@ class HttpCreatePathMatrix(_MatrixEnv):
         self.assertTrue(data["ok"])
         self._assert_seated(data["task"].get("labels"))
 
+    def test_worker_you_classified_accepted(self) -> None:
+        """wl-315: worker:you + you:todo is a valid classified human seat."""
+        r = self._post(labels=["worker:you", "you:todo", AREA])
+        self.assertEqual(r.status_code, 200, r.text)
+        data = r.json()
+        self.assertTrue(data["ok"])
+        labs = data["task"].get("labels") or []
+        self.assertIn("worker:you", labs)
+        self.assertNotIn("needs:routing", labs)
+
+    def test_worker_you_bare_rejected(self) -> None:
+        """wl-315: bare worker:you starves hand queues — HTTP must reject it."""
+        r = self._post(labels=["worker:you", AREA])
+        self.assertEqual(r.status_code, 400, r.text)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("starves", err.lower())
+        self.assertIn("you:note", err)
+
+    def test_foreign_seat_rejected(self) -> None:
+        """wl-372: a seat not hired for this product is rejected via HTTP."""
+        r = self._post(labels=["worker:vera", AREA])
+        self.assertEqual(r.status_code, 400, r.text)
+        data = r.json()
+        self.assertFalse(data.get("ok", True))
+        err = data.get("error") or ""
+        self.assertIn("worker:vera", err)
+        self.assertIn("not a hired seat", err)
+
 
 class McpCreatePathMatrix(_MatrixEnv):
     def setUp(self) -> None:

@@ -1,0 +1,35 @@
+name: Deny runtime artifacts
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  check-no-db:
+    name: No SQLite runtime files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if any *.db / *.db-shm / *.db-wal files are present
+        run: |
+          found=$(find . -not -path '*/.git/*' \( -name '*.db' -o -name '*.db-shm' -o -name '*.db-wal' \))
+          if [ -n "$found" ]; then
+            echo "ERROR: SQLite runtime files found in the artifact tree:"
+            echo "$found"
+            echo ""
+            echo "These files must never enter the public repo."
+            echo "See the export/publish law in the internal repo's export script."
+            exit 1
+          fi
+          echo "OK: no SQLite runtime files"
+
+      - name: Fail if worklane/local/ runtime directory is present
+        run: |
+          if find . -not -path '*/.git/*' -type d | grep -qE 'worklane/local$'; then
+            echo "ERROR: worklane/local/ runtime directory found — must not ship"
+            exit 1
+          fi
+          echo "OK: no worklane/local/ runtime directory"

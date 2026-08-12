@@ -8,7 +8,6 @@ import re
 import sqlite3
 import threading
 import time
-import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

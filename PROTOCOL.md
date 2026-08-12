@@ -327,9 +327,17 @@ and PR URLs may accompany it; path-only or prose-only Links are rejected by
 the engine (wl-396 / wf-171). A merge SHA buried outside the `Links:` section
 ("Merged: abc1234 …" in Completed prose) does not satisfy it. The engine
 checks **presence** only; agents still verify the SHA is an ancestor of
-`origin/main` before close (§5.1.3). **Shift worktrees:** do not put only
-`workforce/shift/<id>` tips in Links — land first (`git push origin HEAD:main`
-when FF-able), then cite that landing SHA. **Registered checks:** when a
+`origin/main` before close (§5.1.3) — or of local `main` on a no-remote repo
+(§5.1 rule 3 carve-out). **Shift worktrees:** do not put only
+`workforce/shift/<id>` tips in Links — land first, then cite that landing
+SHA: `git push origin HEAD:main` when FF-able on a repo with an `origin`
+remote; on a local-only repo (no `origin` — e.g. oneseo-pos, recipes, see
+HOST_REGISTRY.md) land instead by merging into the shared local `main` from
+the **primary checkout**, not the shift tree (`git merge --ff-only
+workforce/shift/<id>`, or a real merge/rebase if main has moved). Citing a
+shift-branch SHA without landing it either way is not done — it is
+`Blocked:` (wf-196; osp-817/825 shipped closed with unlanded shift
+commits before this was written). **Registered checks:** when a
 project lists deterministic checks in `local/config/closeout_checks.json`,
 implement-class close-outs must **cite** each check in `Verification:` with a
 result signal (e.g. `pytest … green` / `0 failed`). Projects with no file (or

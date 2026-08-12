@@ -1,11 +1,13 @@
 # Host profile template
 
 Copy this into your host repo (e.g. as a `PROTOCOL.md` section or standalone
-`TICKETING.md`) and fill in the blanks. It mirrors the host-profile shape described in [PROTOCOL.md](PROTOCOL.md) §6 (Host Profiles). Setup steps live in
+`TICKETING.md`) and fill in the blanks. It mirrors the shape of WorkLane's own
+[PROTOCOL.md](PROTOCOL.md) §6 and §8 — those are worked examples
+(host and self-host) if you want to see a filled-in version. Setup steps live in
 [INSTALL.md](INSTALL.md); this is the *process* doc that goes in your
-host repo once WL is running.
+host repo once WorkLane is running.
 
-Why this exists: WL enforces signed writes and status transitions, but it
+Why this exists: WorkLane enforces signed writes and status transitions, but it
 has no opinion on *who* your agents are, what working copy they use, or
 what "done" means for your codebase. Skipping this doc is how two agents
 (or an agent and a human) end up clobbering the same ticket.
@@ -19,7 +21,7 @@ Run from `<absolute path to your repo root>`. Commit subject convention:
 
 **Ticket interface:** `<MCP | wl CLI | direct HTTP>` — see
 [INSTALL.md §5](INSTALL.md#5-pick-an-interface-for-agents) for how each
-works. Never write WL's SQLite stores directly from host code.
+works. Never write WorkLane's SQLite stores directly from host code.
 
 ```bash
 # fill in whichever interface you picked above, e.g.:
@@ -39,7 +41,7 @@ id (PROTOCOL.md §3.8/§5.2) — sign every write, no exceptions.
 
 **Working copy:** `<absolute path>` — state whether this is the primary
 checkout or a git worktree, and whether the lane is allowed to create its
-own worktrees. (WL's own lanes default to "primary checkout, no
+own worktrees. (WorkLane's own lanes default to "primary checkout, no
 worktrees" — see PROTOCOL.md §6.1's rationale: a stray worktree stranded
 five closed tickets' commits off `main` for ~5 hours.)
 
@@ -81,19 +83,18 @@ the rulebook:
 ```markdown
 ## Ticketing
 
-This repo tracks work in WorkLane (WL), a standalone local-first
-ticketing service — not GitHub Issues, not a TODO file. Before touching
-any ticket:
+This repo tracks work in WorkLane, a standalone local-first work-order
+service — not GitHub Issues, not a TODO file. Before touching any ticket:
 
 1. Read `<path-to-your-copy-of>/PROTOCOL.md` (or your host profile section
    above) — the lifecycle/ownership rulebook every agent follows.
-2. Use `<MCP | the wl CLI | curl>` for every read/write — never open WL's
-   SQLite files directly.
+2. Use `<MCP | the wl CLI | curl>` for every read/write — never open
+   WorkLane's SQLite files directly.
 3. Sign every comment with `<your-agent-id>` (PROTOCOL.md §3.8).
 4. Close tickets with the four-section contract: `Completed:` /
    `Verification:` / `Links:` / `Follow-ups:` — malformed close-outs are
    rejected by the API (or by `wl_close` if you're on MCP).
 
-WL itself lives at `<path to your WL checkout, or "vendored at <path>">`.
+WorkLane itself lives at `<path to your WorkLane checkout, or "vendored at <path>">`.
 Service runs on `<host>:<port>` (default `127.0.0.1:8799`).
 ```

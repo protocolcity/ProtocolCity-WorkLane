@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from worklane.board import _claim_stale_minutes
-from worklane.products import discover_products, product_trackers
+from worklane.products import product_trackers
 from worklane.server_helpers import _activity_ts_sort_key
 from worklane.trackers import TaskStatus
 
@@ -164,45 +164,72 @@ def _scene_recent_transitions(
 
 def _build_desk_scene_payload() -> Dict[str, Any]:
     """Heavy path: per-store counts, attention, filed, transitions."""
+    from worklane.devqueue.queue import parse_blockers  # noqa: PLC0415
     from worklane.server_helpers import (  # noqa: PLC0415
         _collect_founder_attention_items,
-        _merged_ready_count,
-        _merged_scope_tasks_for_filters,
         _parse_task_date_utc,
     )
+    from worklane.trackers.protocol import task_is_gated  # noqa: PLC0415
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=_SCENE_WINDOW_HOURS)
     stores: List[Dict[str, Any]] = []
     filed: List[Dict[str, Any]] = []
-    for spec in discover_products():
-        tasks = _merged_scope_tasks_for_filters(spec.slug)
-        closers = _closeout_authors(spec.slug)
+    # Batch closeout authors once across all stores (avoids N separate sqlite
+    # opens — one per-store call inside the loop was the prior pattern).
+    closers = _closeout_authors("")
+    for spec, tracker in product_trackers():
+        # Load tasks once per store.  The prior code called both
+        # _merged_scope_tasks_for_filters (→ tracker.list_tasks) *and*
+        # _merged_ready_count (→ WorkQueue.__init__ → tracker.list_tasks),
+        # doubling the per-store db round trips.
+        tasks = list(tracker.list_tasks(limit=None))
+        by_id: Dict[str, Any] = {}
+        for t in tasks:
+            by_id[str(t.id)] = t
+            if t.ext_id:
+                by_id[str(t.ext_id)] = t
         counts = {
             TaskStatus.BACKLOG: 0,
             TaskStatus.IN_PROGRESS: 0,
             TaskStatus.IN_REVIEW: 0,
         }
         done_total = 0
+        ready_count = 0
         for t in tasks:
             st = (t.status or "").strip()
+            composite = f"{spec.prefix}-{t.id}"
             if st == TaskStatus.DONE:
                 done_total += 1
                 dt = _parse_task_date_utc(t.updated_at)
                 if dt is not None and dt >= cutoff:
                     filed.append({
-                        "id": t.id, "store": spec.slug, "title": t.title,
+                        "id": composite, "store": spec.slug, "title": t.title,
                         "closed_at": t.updated_at,
-                        "author": closers.get(str(t.id), ""),
+                        "author": closers.get(composite, ""),
                     })
             elif st in counts:
                 counts[st] += 1
+                if st == TaskStatus.BACKLOG:
+                    # Inline ready check: mirrors WorkQueue.ready() —
+                    # ungated, not an umbrella, all declared blockers done.
+                    blockers = parse_blockers(t.description or "")
+                    if (
+                        not task_is_gated(t)
+                        and "umbrella" not in (t.labels or [])
+                        and all(
+                            by_id.get(bid) is not None
+                            and by_id[bid].status == TaskStatus.DONE
+                            for bid in blockers
+                        )
+                    ):
+                        ready_count += 1
         stores.append({
             "slug": spec.slug, "display": spec.display, "prefix": spec.prefix,
             "backlog": counts[TaskStatus.BACKLOG],
             "in_progress": counts[TaskStatus.IN_PROGRESS],
             "in_review": counts[TaskStatus.IN_REVIEW],
             "done_total": done_total,
-            "ready": _merged_ready_count(spec.slug),
+            "ready": ready_count,
         })
     filed.sort(key=lambda f: _activity_ts_sort_key(f.get("closed_at")), reverse=True)
     return {

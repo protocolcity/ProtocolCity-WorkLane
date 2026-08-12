@@ -33,7 +33,6 @@ import sqlite3
 # server binds the same port as ``TASK_PORT``, suppress self-POST.
 os.environ.setdefault("TRADEOS_SKIP_OPS_MIRROR", "1")
 import sys
-import urllib.error
 import urllib.request
 from urllib.parse import quote, urlencode
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -4981,7 +4980,7 @@ def tickets_app_page(
     prompt: str = "",
     gate: str = "",
 ) -> Any:
-    """Tickets app — surface is a first-class path (``all`` \| ``tradeos``)."""
+    """Tickets app — surface is a first-class path (``all`` | ``tradeos``)."""
     if surface == "ops":
         q = _wq_query_for_view(
             view,
