@@ -182,13 +182,21 @@ def _list_tasks_for_wq_multi_resolved(
     limit: int,
     with_preview: bool,
     gate_type: Optional[str] = None,
+    q: Optional[str] = None,
+    include_description: bool = True,
 ) -> Tuple[List[Task], Dict[str, Dict[str, str]]]:
     """Merge tasks across all product stores; the live-feed product's half
     may come from the main app HTTP API when ``TRADEOS_TICKETS_SOURCE`` says
-    so (see products.live_feed_product_slug)."""
+    so (see products.live_feed_product_slug).
+
+    DECISION (recommendation-default): ``q`` search stays on the sqlite
+    stores. The host HTTP feed has no q= and would dump unfiltered tradeOS
+    rows into search hits (wl-493).
+    """
     empty_prev: Dict[str, Dict[str, str]] = {}
     p = (product or "").strip().lower()
-    if not _tradeos_tickets_use_http_feed():
+    q_norm = (q or "").strip() or None
+    if q_norm or not _tradeos_tickets_use_http_feed():
         tasks = list_tasks_for_wq_multi(
             products,
             status=status,
@@ -197,6 +205,8 @@ def _list_tasks_for_wq_multi_resolved(
             product=p,
             gate_type=gate_type,
             limit=limit,
+            q=q_norm,
+            include_description=include_description,
         )
         return tasks, empty_prev
 
@@ -223,6 +233,7 @@ def _list_tasks_for_wq_multi_resolved(
                 product=p,
                 gate_type=gate_type,
                 limit=500,
+                include_description=include_description,
             )
         )
     merged.sort(key=lambda x: x.updated_at or "", reverse=True)

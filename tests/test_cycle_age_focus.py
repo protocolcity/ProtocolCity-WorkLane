@@ -129,10 +129,8 @@ class CycleAgeFocusPanelTest(unittest.TestCase):
         # for the oc-22 dispatch-report seam.
         from datetime import datetime, timedelta, timezone
 
-        from worklane.task_server import (
-            _allocation_lane_rows,
-            _merged_scope_tasks_for_filters,
-        )
+        from worklane.server_helpers import _allocation_lane_rows
+        from worklane.task_server import _merged_scope_tasks_for_filters
 
         since = datetime.now(timezone.utc) - timedelta(days=14)
         rows = _allocation_lane_rows(

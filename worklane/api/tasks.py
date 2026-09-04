@@ -30,7 +30,6 @@ from worklane.board import (
     get_ops_ticket_tracker,
     ops_tickets_db_path,
     parse_wq_priority,
-    parse_wq_product,
     resolve_wq_product,
     status_counts_for_scope_multi,
 )
@@ -537,7 +536,7 @@ async def api_compact_product(slug: str, request: Request) -> JSONResponse:
             )
 
     tracker = product_tracker(spec)
-    hot = _tracker_db_path(tracker) or Path(spec.db_path)
+    hot = _tracker_db_path(tracker)
     result = archival.archive_cold_tickets(hot, older_than_days=older_than_days)
     archive_path = archival.archive_db_path_for(hot)
     return JSONResponse(
@@ -1667,6 +1666,7 @@ async def api_add_comment(task_id: str, request: Request) -> JSONResponse:
 
 @router.get("/api/admin/tasks")
 def api_list_tasks(
+    request: Request,
     status: str = "",
     label: str = "",
     priority: str = "",
@@ -1675,6 +1675,7 @@ def api_list_tasks(
     limit: int = 200,
     with_preview: int = 0,
     gate: str = "",
+    q: str = "",
 ) -> JSONResponse:
     from worklane.board import _parse_gate_filter  # noqa: PLC0415
 
@@ -1696,6 +1697,20 @@ def api_list_tasks(
             },
             status_code=404,
         )
+    # wl-493: bound id/title search. Status omitted → every status (including
+    # done/canceled). Default limit 20, hard cap 50. Existing list without
+    # q= keeps limit default 200. Distinguishing omitted limit from the
+    # FastAPI default requires the raw query map.
+    q_norm = (q or "").strip()
+    include_description = True
+    if q_norm:
+        include_description = False
+        if "limit" not in request.query_params:
+            limit = 20
+        elif limit < 1:
+            limit = 20
+        if limit > 50:
+            limit = 50
     tasks, tradeos_prev = _list_tasks_for_wq_multi_resolved(
         products,
         status=status or None,
@@ -1705,6 +1720,8 @@ def api_list_tasks(
         limit=limit,
         with_preview=bool(with_preview),
         gate_type=gate_type,
+        q=q_norm or None,
+        include_description=include_description,
     )
 
     task_dicts = [t.to_dict() for t in tasks]

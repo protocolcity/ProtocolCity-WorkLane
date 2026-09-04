@@ -21,7 +21,7 @@ from worklane.mcp.handlers import (
     build_tool_definitions,
     dispatch_tool,
 )
-from worklane.mcp.server import MCPServer
+from worklane.mcp.server import MCPServer, parse_args
 from worklane.trackers.sqlite import SQLiteTracker
 
 
@@ -899,6 +899,66 @@ class StdioProtocolTest(unittest.TestCase):
         )
         self.assertTrue(replies[1]["result"]["isError"])
         self.assertIn("not found", replies[1]["result"]["content"][0]["text"])
+
+
+class ParseArgsIdentityTest(unittest.TestCase):
+    """wl-482: a CLI --author pin beats env; omitting it inherits env.
+
+    Clear both dual-read keys via concatenation so the public-export
+    ``WL_`` → ``WL_`` rewrite cannot turn a set-then-pop pair into a
+    no-op on dest pytest.
+    """
+
+    def setUp(self) -> None:
+        self._env_before = {}
+        for prefix in ("WL", "WL"):
+            key = prefix + "_AGENT_ID"
+            self._env_before[key] = os.environ.get(key)
+            os.environ.pop(key, None)
+
+    def tearDown(self) -> None:
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_cli_author_beats_env(self) -> None:
+        os.environ["WL_AGENT_ID"] = "lili"
+        args = parse_args(["--author", "you"])
+        self.assertEqual(args.author, "you")
+
+    def test_env_author_when_cli_omitted(self) -> None:
+        os.environ["WL_AGENT_ID"] = "lili"
+        args = parse_args([])
+        self.assertEqual(args.author, "lili")
+
+
+class PackageMcpLauncherTest(unittest.TestCase):
+    """Private-repo launcher: skip on dest export (no .mcp.json / wrapper)."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+    MCP_JSON = ROOT / ".mcp.json"
+    WRAPPER = ROOT / "scripts" / "worklane_mcp.sh"
+
+    @unittest.skipUnless(
+        MCP_JSON.is_file(),
+        ".mcp.json is private-repo (not dest-exported)",
+    )
+    def test_mcp_json_does_not_pin_author_cli(self) -> None:
+        data = json.loads(self.MCP_JSON.read_text(encoding="utf-8"))
+        server = data["mcpServers"]["worklane"]
+        self.assertNotIn("--author", server.get("args") or [])
+        self.assertTrue(str(server["command"]).endswith("worklane_mcp.sh"))
+
+    @unittest.skipUnless(
+        WRAPPER.is_file(),
+        "scripts/worklane_mcp.sh is private-repo (not dest-exported)",
+    )
+    def test_wrapper_inherits_tp_agent_id(self) -> None:
+        text = self.WRAPPER.read_text(encoding="utf-8")
+        self.assertIn("${WL_AGENT_ID:-you}", text)
+        self.assertIn('--author "$WL_AGENT_ID"', text)
 
 
 if __name__ == "__main__":

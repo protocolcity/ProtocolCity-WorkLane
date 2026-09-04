@@ -697,7 +697,7 @@ project tracked by WL has its own SQLite file
 "All" is a merged read view. Projects are independent — an agent working one
 project's tickets never writes another project's store. Composite ids
 (`wl-…` WorkLane, `<slug>-…` your product) address tickets across stores;
-WL's own development work is tracked in `worklane.db` under the same
+WorkLane's own development work is tracked in `worklane.db` under the same
 rules as any other project. (`product` remains a silent back-compat alias on
 API/MCP/CLI param names — e.g. `?product=` query params not yet migrated to
 `?project=` — see wl-64/wl-46.)

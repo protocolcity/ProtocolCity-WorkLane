@@ -1,9 +1,8 @@
 """ProjectTracker Protocol and shared value types (SEO-164).
 
 Any module that wants to read or write work items talks to this interface,
-never directly to Linear, SQLite, or any other backing store. Two concrete
-adapters live alongside: :mod:`worklane.trackers.sqlite` (default) and
-:mod:`worklane.trackers.linear` (optional bridge).
+never directly to SQLite or any other backing store. The shipped adapter
+is :mod:`worklane.trackers.sqlite`.
 """
 
 from __future__ import annotations
@@ -41,9 +40,9 @@ class Task:
     """Shared task shape — one row per work item across all adapters.
 
     ``id`` is the adapter's internal identifier (integer PK stringified
-    for SQLiteTracker, Linear's ``SEO-171`` identifier for LinearTracker).
+    for SQLiteTracker).
     ``ext_id`` is an optional cross-system reference — e.g. SQLiteTracker
-    stores the original Linear identifier here after the migration script
+    stores an imported external identifier here after a migration script
     imports it, so cross-references in old doc links keep resolving.
     """
 

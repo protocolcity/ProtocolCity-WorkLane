@@ -5,6 +5,9 @@ and import_jsonl each prove routing law under hired hands:
 
 * bare create (no worker:*) → reject (HTTP/MCP/CLI/import hard-B default)
 * create with worker:lili → accepted; seat preserved; no needs:routing
+* worker:you + you:kind → accepted (classified human seat, wl-315)
+* bare worker:you → reject (starve guard, wl-315)
+* foreign seat (worker:vera) → reject (not hired for this product, wl-372)
 * import soft override (hard_when_hands=False) → needs:routing stamp only
   (archival restore path)
 
@@ -237,6 +240,42 @@ class McpCreatePathMatrix(_MatrixEnv):
         self.assertTrue(out["ok"])
         self._assert_seated(out["task"].get("labels"))
 
+    def test_worker_you_classified_accepted(self) -> None:
+        """wl-315: worker:you + you:todo is a valid classified human seat."""
+        out = self.h.wl_create(
+            title="matrix mcp you classified",
+            description="MCP create-path routing matrix classified you",
+            labels=["worker:you", "you:todo", AREA],
+        )
+        self.assertTrue(out["ok"])
+        labs = out["task"].get("labels") or []
+        self.assertIn("worker:you", labs)
+        self.assertNotIn("needs:routing", labs)
+
+    def test_worker_you_bare_rejected(self) -> None:
+        """wl-315: bare worker:you starves hand queues — MCP must reject it."""
+        with self.assertRaises(ToolError) as ctx:
+            self.h.wl_create(
+                title="matrix mcp you bare",
+                description="MCP create-path routing matrix bare you",
+                labels=["worker:you", AREA],
+            )
+        msg = str(ctx.exception)
+        self.assertIn("starves", msg.lower())
+        self.assertIn("you:note", msg)
+
+    def test_foreign_seat_rejected(self) -> None:
+        """wl-372: a seat not hired for this product is rejected via MCP."""
+        with self.assertRaises(ToolError) as ctx:
+            self.h.wl_create(
+                title="matrix mcp foreign",
+                description="MCP create-path routing matrix foreign seat",
+                labels=["worker:vera", AREA],
+            )
+        msg = str(ctx.exception)
+        self.assertIn("worker:vera", msg)
+        self.assertIn("not a hired seat", msg)
+
 
 @unittest.skipUnless(
     _CLI_TASK is not None,
@@ -290,6 +329,31 @@ class CliCreatePathMatrix(_MatrixEnv):
         tasks = SQLiteTracker(db_path=self.db_path).list_tasks()
         self.assertEqual(len(tasks), 1)
         self._assert_seated(list(tasks[0].labels or []))
+
+    def test_worker_you_classified_accepted(self) -> None:
+        """wl-315: worker:you + you:todo is a valid classified human seat."""
+        code = self._run_create(["worker:you", "you:todo", AREA])
+        self.assertEqual(code, 0, msg=self._cli_err + self._cli_out)
+        self.assertIn("Created #", self._cli_out)
+        tasks = SQLiteTracker(db_path=self.db_path).list_tasks()
+        self.assertEqual(len(tasks), 1)
+        labs = list(tasks[0].labels or [])
+        self.assertIn("worker:you", labs)
+        self.assertNotIn("needs:routing", labs)
+
+    def test_worker_you_bare_rejected(self) -> None:
+        """wl-315: bare worker:you starves hand queues — CLI must reject it."""
+        code = self._run_create(["worker:you", AREA])
+        self.assertEqual(code, 1, msg=self._cli_err)
+        self.assertIn("starves", self._cli_err.lower())
+        self.assertIn("you:note", self._cli_err)
+
+    def test_foreign_seat_rejected(self) -> None:
+        """wl-372: a seat not hired for this product is rejected via CLI."""
+        code = self._run_create(["worker:vera", AREA])
+        self.assertEqual(code, 1, msg=self._cli_err)
+        self.assertIn("worker:vera", self._cli_err)
+        self.assertIn("not a hired seat", self._cli_err)
 
 
 class ImportCreatePathMatrix(_MatrixEnv):
@@ -376,6 +440,55 @@ class ImportCreatePathMatrix(_MatrixEnv):
     def test_worker_lili_seat_preserved(self) -> None:
         task = self._import_one([SEAT, AREA])
         self._assert_seated(list(task["labels"] or []))
+
+    def test_worker_you_classified_accepted(self) -> None:
+        """wl-315: worker:you + you:todo is a valid classified human seat."""
+        task = self._import_one(["worker:you", "you:todo", AREA])
+        labs = list(task["labels"] or [])
+        self.assertIn("worker:you", labs)
+        self.assertNotIn("needs:routing", labs)
+
+    def _import_expect_reject(self, labels: List[str]) -> str:
+        from worklane import portability
+
+        tr = SQLiteTracker(db_path=self.db_path, product_default="")
+        line = json.dumps(
+            {
+                "id": "src-reject",
+                "ext_id": None,
+                "title": "matrix import reject",
+                "description": "import create-path routing matrix reject case",
+                "status": "backlog",
+                "priority": 3,
+                "labels": labels,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "comments": [],
+            },
+            separators=(",", ":"),
+        )
+        with self.assertRaises(portability.PortabilityError) as ctx:
+            portability.import_jsonl(
+                [line],
+                PRODUCT,
+                tracker=tr,
+                hard_when_hands=True,
+                hired_hands=[SEAT],
+            )
+        self.assertEqual(tr.list_tasks(), [])
+        return str(ctx.exception)
+
+    def test_worker_you_bare_rejected(self) -> None:
+        """wl-315: bare worker:you starves hand queues — import must reject it."""
+        msg = self._import_expect_reject(["worker:you", AREA])
+        self.assertIn("starves", msg.lower())
+        self.assertIn("you:note", msg)
+
+    def test_foreign_seat_rejected(self) -> None:
+        """wl-372: a seat not hired for this product is rejected via import."""
+        msg = self._import_expect_reject(["worker:vera", AREA])
+        self.assertIn("worker:vera", msg)
+        self.assertIn("not a hired seat", msg)
 
 
 if __name__ == "__main__":

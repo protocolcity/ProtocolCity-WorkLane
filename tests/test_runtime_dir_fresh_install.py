@@ -27,21 +27,30 @@ import worklane.trackers.sqlite as sqlite_mod
 
 
 class TpDataDirTest(unittest.TestCase):
+    _ENV_KEYS = (
+        "WORKLANE_RUNTIME_DIR",
+        "WORKLANE_RUNTIME_DIR",
+        "WORKLANE_RUNTIME_LOCAL",
+        "WORKLANE_RUNTIME_LOCAL",
+    )
+
     def setUp(self) -> None:
-        self._prev = os.environ.get("WORKLANE_RUNTIME_DIR")
-        os.environ.pop("WORKLANE_RUNTIME_DIR", None)
+        self._env_before = {k: os.environ.get(k) for k in self._ENV_KEYS}
+        for k in self._ENV_KEYS:
+            os.environ.pop(k, None)
 
     def tearDown(self) -> None:
-        if self._prev is None:
-            os.environ.pop("WORKLANE_RUNTIME_DIR", None)
-        else:
-            os.environ["WORKLANE_RUNTIME_DIR"] = self._prev
+        for k, v in self._env_before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
-    def test_source_checkout_keeps_in_repo_default(self) -> None:
+    def test_source_checkout_uses_main_worktree_data_dir(self) -> None:
         with patch.object(products, "_is_source_checkout", return_value=True):
             self.assertEqual(
                 products.wl_data_dir(),
-                Path(products.__file__).parent / "local" / "data",
+                products.checkout_root() / "worklane" / "local" / "data",
             )
 
     def test_installed_package_uses_user_level_dir(self) -> None:
@@ -54,6 +63,44 @@ class TpDataDirTest(unittest.TestCase):
         os.environ["WORKLANE_RUNTIME_DIR"] = "/tmp/pinned-host"
         with patch.object(products, "_is_source_checkout", return_value=False):
             self.assertEqual(products.wl_data_dir(), Path("/tmp/pinned-host/data"))
+
+    def test_checkout_root_follows_gitdir_pointer_to_main(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            main = tmp_path / "main"
+            (main / "worklane" / "local" / "data").mkdir(parents=True)
+            gitdir = main / ".git" / "worktrees" / "hand"
+            gitdir.mkdir(parents=True)
+            wt = tmp_path / "worktree"
+            wt.mkdir()
+            (wt / ".git").write_text("gitdir: %s\n" % gitdir, encoding="utf-8")
+            self.assertEqual(products.checkout_root(wt), main.resolve())
+
+    def test_worktree_tp_data_dir_matches_main_store(self) -> None:
+        main = Path("/tmp/wl-main-checkout")
+        with patch.object(products, "_is_source_checkout", return_value=True), patch.object(
+            products, "checkout_root", return_value=main
+        ):
+            self.assertEqual(
+                products.wl_data_dir(),
+                main / "worklane" / "local" / "data",
+            )
+
+    def test_runtime_local_opt_in_keeps_package_local_store(self) -> None:
+        os.environ["WORKLANE_RUNTIME_LOCAL"] = "1"
+        with patch.object(products, "_is_source_checkout", return_value=True), patch.object(
+            products,
+            "checkout_root",
+            return_value=Path("/tmp/wl-main-checkout"),
+        ):
+            self.assertEqual(
+                products.wl_data_dir(),
+                Path(products.__file__).resolve().parent / "local" / "data",
+            )
+
+    def test_sqlite_wrapper_uses_products_checkout_root(self) -> None:
+        self.assertEqual(sqlite_mod._main_worktree_root(), products.checkout_root())
+        self.assertEqual(sqlite_mod.DEFAULT_DB_PATH.name, "tradeos.db")
 
 
 class FreshInstallDbFilenameTest(unittest.TestCase):
@@ -95,6 +142,8 @@ class EmptyRuntimeOverrideTest(unittest.TestCase):
     _ENV_KEYS = (
         "WORKLANE_RUNTIME_DIR",
         "WORKLANE_RUNTIME_DIR",
+        "WORKLANE_RUNTIME_LOCAL",
+        "WORKLANE_RUNTIME_LOCAL",
         "WL_DEFAULT_PROJECT",
         "WL_DEFAULT_PRODUCT",
         "WL_PROJECT",

@@ -18,8 +18,8 @@ from worklane.trackers.protocol import ProjectTracker
 
 
 # Factories return a *fresh* tracker instance on each call so tests can
-# swap the backing DB path (SQLiteTracker) or API key (LinearTracker)
-# without dragging stale connections between cases.
+# swap the backing DB path (SQLiteTracker) without dragging stale
+# connections between cases.
 TrackerFactory = Callable[[], ProjectTracker]
 
 _REGISTRY: Dict[str, TrackerFactory] = {}
@@ -66,10 +66,8 @@ def _register_defaults() -> None:
     # Import lazily so module import doesn't pay for adapters that are
     # never used in this process.
     from worklane.trackers.sqlite import SQLiteTracker
-    from worklane.trackers.linear import LinearTracker
 
     register_tracker("sqlite", SQLiteTracker)
-    register_tracker("linear", LinearTracker)
 
 
 _register_defaults()

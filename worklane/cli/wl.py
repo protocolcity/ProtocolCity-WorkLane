@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-neutral WorkLane CLI — HTTP client + local portability (wl-13/wl-22).
+"""WorkLane CLI — HTTP client + local portability (wl-13/wl-22).
 
 Unlike :mod:`worklane.cli.task` (which imports the tracker and
 reads/writes the SQLite store for day-to-day CRUD), this CLI speaks the
@@ -296,7 +296,7 @@ def cmd_demo(args: argparse.Namespace) -> None:
         print("Optional: check Charter compliance with `wl doctor`.")
 
 
-_BLUEPRINT_BASE = "https://github.com/protocolcity/ProtocolCity-BluePrint/blob/main"
+_BLUEPRINT_BASE = "https://github.com/protocolcity/BluePrint/blob/main"
 
 
 def _slugify_dirname(name: str) -> str:

@@ -83,10 +83,8 @@ class AllocationViewTest(unittest.TestCase):
     def test_allocation_lane_rows_filed_vs_closed(self) -> None:
         from datetime import datetime, timedelta, timezone
 
-        from worklane.task_server import (
-            _allocation_lane_rows,
-            _merged_scope_tasks_for_filters,
-        )
+        from worklane.server_helpers import _allocation_lane_rows
+        from worklane.task_server import _merged_scope_tasks_for_filters
 
         since = datetime.now(timezone.utc) - timedelta(days=14)
         rows = _allocation_lane_rows(
@@ -100,7 +98,7 @@ class AllocationViewTest(unittest.TestCase):
     def test_allocation_author_rows_from_signed_comments(self) -> None:
         from datetime import datetime, timedelta, timezone
 
-        from worklane.task_server import _allocation_author_rows
+        from worklane.server_helpers import _allocation_author_rows
 
         since = datetime.now(timezone.utc) - timedelta(days=14)
         rows = _allocation_author_rows("tradeos", since)

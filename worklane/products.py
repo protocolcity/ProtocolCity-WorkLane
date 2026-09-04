@@ -40,9 +40,11 @@ _KNOWN_PRODUCT_META: Dict[str, Tuple[str, str]] = {
 # ``register`` is the pre-cutover OneSeoPOS store (2026-08-03): live surface
 # is ``oneseo-pos`` / ``osp-`` with ``legacy_prefixes: ["regi"]``. Empty
 # register.db must not reappear as a Map/doctor project row.
+# ``davinci`` is the pre-comms store (2026-09-01, davi-9 B): live surface
+# is ``comms`` / ``comms-`` with ``legacy_prefixes: ["davi"]``.
 # Stems ending in ``_archive`` are cold companion DBs (wl-23 archival) —
 # never product surfaces themselves.
-_IGNORED_DB_STEMS = {"ops_tickets", "register"}
+_IGNORED_DB_STEMS = {"ops_tickets", "register", "davinci"}
 
 # Backup/scratch artifacts that land in the data dir (a pre-write sqlite
 # backup, a dry-run decoy) are not product surfaces (wl-78 incident:
@@ -97,6 +99,61 @@ def _is_source_checkout() -> bool:
     return (Path(__file__).resolve().parents[1] / ".git").exists()
 
 
+def checkout_root(start: Optional[Path] = None) -> Path:
+    """Resolve the main git worktree root that hosts this package.
+
+    Linked worktrees store a ``.git`` *file* pointing at
+    ``<main>/.git/worktrees/<name>``. Following that pointer keeps MCP
+    started in a WorkForce worktree on the same ``worklane/local/data``
+    as launchd ``:8799`` (wl-467). HTTP and MCP both reach this through
+    :func:`wl_data_dir`; sqlite's ``_main_worktree_root`` is a wrapper.
+
+    ``start`` defaults to this package's parent (the repo that contains
+    ``worklane/``). When the pointer is missing, unreadable, or the
+    resolved main has no ``worklane/`` package, return ``start`` unchanged.
+    """
+    repo = Path(start) if start is not None else Path(__file__).resolve().parents[1]
+    repo = repo.resolve()
+    dot_git = repo / ".git"
+    if not dot_git.is_file():
+        return repo
+    try:
+        text = dot_git.read_text(encoding="utf-8").strip()
+    except OSError:
+        return repo
+    if not text.startswith("gitdir:"):
+        return repo
+    raw = text.split(":", 1)[1].strip()
+    if not raw:
+        return repo
+    gitdir = Path(raw)
+    if not gitdir.is_absolute():
+        gitdir = repo / gitdir
+    try:
+        gitdir = gitdir.resolve()
+        main_root = gitdir.parents[2]
+    except (OSError, IndexError):
+        return repo
+    if (main_root / "worklane").exists():
+        return main_root
+    return repo
+
+
+def runtime_local_opt_in() -> bool:
+    """True when this checkout should keep its own runtime dir.
+
+    ``WORKLANE_RUNTIME_LOCAL=1`` (legacy ``WORKLANE_RUNTIME_LOCAL``)
+    opts a linked worktree out of following the main-checkout store.
+    Unset / empty = follow main (wl-467 default).
+    """
+    val = (
+        os.environ.get("WORKLANE_RUNTIME_LOCAL")
+        or os.environ.get("WORKLANE_RUNTIME_LOCAL")
+        or ""
+    ).strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
 def runtime_dir_override() -> str:
     """Absolute override path from WORKLANE_RUNTIME_DIR or WORKLANE_RUNTIME_DIR.
 
@@ -113,17 +170,19 @@ def runtime_dir_override() -> str:
 def wl_data_dir() -> Path:
     """Runtime data dir (honors WORKLANE_RUNTIME_DIR; or WORKLANE_RUNTIME_DIR).
 
-    Source checkouts keep the existing in-repo default so hosts already
-    running from a checkout see no change. An installed package (wl-124:
-    no ``.git`` at the repo root, e.g. a ``pip install`` of the exported
-    package) falls back to a user-level directory instead of writing
-    inside site-packages, where it would be wiped on reinstall/upgrade.
+    Source checkouts keep the in-repo default. Linked git worktrees follow
+    the main checkout so MCP and HTTP share launchd's store (wl-467), unless
+    ``WORKLANE_RUNTIME_LOCAL`` is set. An installed package (wl-124: no
+    ``.git`` at the repo root) falls back to a user-level directory instead
+    of writing inside site-packages, where it would be wiped on upgrade.
     """
     override = runtime_dir_override()
     if override:
         return Path(override) / "data"
     if _is_source_checkout():
-        return Path(__file__).parent / "local" / "data"
+        if runtime_local_opt_in():
+            return Path(__file__).resolve().parent / "local" / "data"
+        return checkout_root() / "worklane" / "local" / "data"
     return Path.home() / ".worklane" / "data"
 
 

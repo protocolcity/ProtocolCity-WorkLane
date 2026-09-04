@@ -98,6 +98,8 @@ except ImportError:
         limit: int,
         with_preview: bool,
         gate_type: Optional[str] = None,
+        q: Optional[str] = None,
+        include_description: bool = True,
     ) -> Tuple[List[Task], Dict[str, Dict[str, str]]]:
         p = (product or "").strip().lower()
         return list_tasks_for_wq_multi(
@@ -108,6 +110,8 @@ except ImportError:
             product=p,
             gate_type=gate_type,
             limit=limit,
+            q=q,
+            include_description=include_description,
         ), {}
 
     def _fetch_tradeos_ops_snapshot() -> Dict[str, Optional[Dict[str, Any]]]:  # type: ignore[misc]

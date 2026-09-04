@@ -1,10 +1,10 @@
 # WorkLane
 
-[![Tests](https://github.com/protocolcity/ProtocolCity-WorkLane/actions/workflows/tests.yml/badge.svg)](https://github.com/protocolcity/ProtocolCity-WorkLane/actions/workflows/tests.yml)
+[![Tests](https://github.com/protocolcity/WorkLane/actions/workflows/tests.yml/badge.svg)](https://github.com/protocolcity/WorkLane/actions/workflows/tests.yml)
 
 > **Pre-release (0.1.x).** Part of the **ProtocolCity** suite with
-> [WorkForce](https://github.com/protocolcity/ProtocolCity-WorkForce) and
-> [BluePrint](https://github.com/protocolcity/ProtocolCity-BluePrint).
+> [WorkForce](https://github.com/protocolcity/WorkForce) and
+> [BluePrint](https://github.com/protocolcity/BluePrint).
 > Expect sharp edges; file issues.
 
 **A local-first work queue for multi-agent teams — the coordination layer that
@@ -54,7 +54,7 @@ shared backlog daily for months.
 ## Quickstart (from this repo)
 
 ```bash
-git clone https://github.com/protocolcity/ProtocolCity-WorkLane && cd ProtocolCity-WorkLane
+git clone https://github.com/protocolcity/WorkLane && cd WorkLane
 pip install -e .
 
 worklane                     # start the API server (http://127.0.0.1:8799)

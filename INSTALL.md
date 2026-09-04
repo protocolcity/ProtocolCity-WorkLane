@@ -18,7 +18,10 @@ wl --help         # ticket CLI (canonical short; worklane is the long form)
 
 No source checkout or separate host venv required. Runtime state (SQLite
 stores, config) lives under `~/.worklane/`; override with
-`WORKLANE_RUNTIME_DIR` (legacy alias: `WORKLANE_RUNTIME_DIR`). Skip to **§4** to bootstrap your first
+`WORKLANE_RUNTIME_DIR` (legacy alias: `WORKLANE_RUNTIME_DIR`).
+Source-checkout git worktrees follow the main checkout's `worklane/local/`
+so MCP and the launchd server share one store; set
+`WORKLANE_RUNTIME_LOCAL=1` to keep a worktree-local store instead. Skip to **§4** to bootstrap your first
 project.
 
 ---

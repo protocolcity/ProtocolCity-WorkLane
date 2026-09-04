@@ -94,6 +94,18 @@ class OverviewScopeTest(unittest.TestCase):
             # wl-158: the way back to the room lives in the nameplate
             self.assertIn("room-back", r.text)
 
+    def test_report_json_routes_live_on_api_report_router(self) -> None:
+        # wl-487: extract lock — both JSON seams live in worklane.api.report,
+        # not as leftover handlers on task_server.
+        from worklane.api.report import router as report_router
+        from worklane import task_server
+
+        paths = {getattr(r, "path", None) for r in report_router.routes}
+        self.assertIn("/api/report", paths)
+        self.assertIn("/api/admin/overview/summary", paths)
+        self.assertFalse(hasattr(task_server, "api_report"))
+        self.assertFalse(hasattr(task_server, "api_admin_overview_summary"))
+
     def test_api_report_shape(self) -> None:
         j = self.client.get("/api/report").json()
         self.assertTrue(j["ok"])

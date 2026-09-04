@@ -20,12 +20,6 @@ overrides it. **City loop (short):** workspace CORE + ProtocolCity
 `docs/specs/ALWAYS_WORK_PROTOCOL.md` (author You · seat hand · gold only on
 true blocker).
 
-Read this file when:
-
-- You've scoped into `worklane/` and need to know what the folder is.
-- You're about to change WorkLane code, schema, API surface, or process rules.
-- You're an agent picking up a `wl-*` / `wl-*` ticket and want the entry point.
-
 ## Reading order
 
 0. **[INSTALL.md](INSTALL.md)** — onboarding a *new* host (clone → install → start → bootstrap a project → pick an agent interface) plus **[HOST_PROFILE_TEMPLATE.md](HOST_PROFILE_TEMPLATE.md)** for writing that host's own PROTOCOL.md §6-style profile. Start here if Desk isn't running yet.

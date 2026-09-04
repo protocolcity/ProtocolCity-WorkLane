@@ -21,11 +21,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from worklane.products import (
     ProductSpec,
-    discover_products,
     get_product,
-    prefixed_task_id,
+    known_prefix_slug,
     product_slugs,
-    product_trackers,
     split_task_id,
 )
 from worklane.rendering import _badge, _esc, _label_chip
@@ -162,6 +160,8 @@ _PRODUCT_ALIASES = {
     # wl-207: store slug is worklane; legacy slug keeps resolving
     "worklane": "worklane",
     "wl": "worklane",  # rare: slug passed as prefix name
+    # davi-9 B / wl-492: folder+store comms; davinci slug keeps resolving
+    "davinci": "comms",
 }
 
 
@@ -269,6 +269,42 @@ def list_tasks_for_product_scope(
 
 # ── Multi-product queries (registry-driven; supersede the dual pair) ──────
 
+def _search_terms_for_store(
+    spec: ProductSpec, q: Optional[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return ``(q_text, q_id)`` for one store (wl-493).
+
+    ``q_text`` is the stripped query for title/ext_id LIKE. ``q_id`` is a
+    bare rowid when ``q`` is digits, or the numeric rest of a composite
+    whose prefix maps to this store (including legacy aliases). Wrong-store
+    composites stay title-only so ``q=pc-1389`` does not hit ``wl-1389``.
+    """
+    raw = (q or "").strip()
+    if not raw:
+        return None, None
+    slug = known_prefix_slug(raw)
+    if slug is not None:
+        _prefix, rest = raw.split("-", 1)
+        q_id = rest if slug == spec.slug and rest else None
+        return raw, q_id
+    if raw.isdigit():
+        return raw, raw
+    return raw, None
+
+
+def _task_id_matches_q(composite_id: str, q: Optional[str]) -> bool:
+    """True when ``composite_id`` is an exact id hit for search ranking."""
+    raw = (q or "").strip().lower()
+    if not raw:
+        return False
+    tid = str(composite_id).lower()
+    if tid == raw:
+        return True
+    if raw.isdigit() and tid.rsplit("-", 1)[-1] == raw:
+        return True
+    return False
+
+
 def list_tasks_for_wq_multi(
     products: List[Tuple[ProductSpec, Any]],
     *,
@@ -278,25 +314,52 @@ def list_tasks_for_wq_multi(
     product: str,
     gate_type: Optional[str] = None,
     limit: int = 500,
+    q: Optional[str] = None,
+    include_description: bool = True,
 ) -> List[Task]:
     """Tasks across product stores; ``product`` scopes to one slug, "" = all.
 
     In the one-DB-per-product model a product scope selects a store — no
     ``product:*`` label filtering is involved.
+
+    ``q`` (wl-493) is a bound id/title search: SQL LIKE on each store, not
+    a Python scan of every description. Exact id hits sort ahead of title
+    hits so a closed composite still surfaces under a tight limit.
     """
     p = (product or "").strip().lower()
+    q_norm = (q or "").strip() or None
     merged: List[Task] = []
     for spec, tracker in products:
         if p and spec.slug != p:
             continue
-        tasks = tracker.list_tasks(
-            status=status, label=(label or "").strip() or None,
-            priority=priority, gate_type=gate_type, limit=limit,
-        )
+        kwargs: Dict[str, Any] = {
+            "status": status,
+            "label": (label or "").strip() or None,
+            "priority": priority,
+            "gate_type": gate_type,
+            "limit": limit,
+        }
+        q_text, q_id = _search_terms_for_store(spec, q_norm)
+        if q_text:
+            kwargs["q"] = q_text
+        if q_id:
+            kwargs["q_id"] = q_id
+        if not include_description:
+            kwargs["include_description"] = False
+        try:
+            tasks = tracker.list_tasks(**kwargs)
+        except TypeError:
+            if q_text or q_id:
+                tasks = []
+            else:
+                kwargs.pop("include_description", None)
+                tasks = tracker.list_tasks(**kwargs)
         merged.extend(
             replace(t, id=f"{spec.prefix}-{t.id}") for t in tasks
         )
     merged.sort(key=lambda x: x.updated_at or "", reverse=True)
+    if q_norm:
+        merged.sort(key=lambda x: 0 if _task_id_matches_q(str(x.id), q_norm) else 1)
     return merged[:limit]
 
 
@@ -631,7 +694,6 @@ def _render_work_queue_filters(
     product: str = "",
     gate: str = "",
     merged_scope_tasks: Optional[List[Task]] = None,
-    view_toggle_html: str = "",
 ) -> str:
     prod = parse_wq_product(product)
     if merged_scope_tasks is not None:
@@ -883,7 +945,6 @@ def _render_work_queue_filters(
         + "<span class='wq-cmdbar-spacer'></span>"
         + jump_form
         + adv_toggle
-        + view_toggle_html
         + "</div>"
         + gate_row
         + f"<div id='wq-advanced-panel' class='wq-advanced-panel'{panel_hidden}>{advanced_body}</div>"
@@ -1186,32 +1247,6 @@ def _render_task_board(
     )
 
 
-def _render_view_toggle(
-    current_view: str,
-    status: str,
-    label: str,
-    priority: Optional[int] = None,
-    *,
-    list_path: str = TICKETS_APP_ALL,
-    product: str = "",
-) -> str:
-    def _cls(name: str) -> str:
-        return "tb-view-btn" + (" active" if name == current_view else "")
-
-    def _href(view: str) -> str:
-        st = (status or "").strip()
-        q = _wq_query_for_view(
-            view, st, label, priority, product=product, list_path=list_path
-        )
-        return f"{list_path}?{q}"
-
-    return (
-        "<div class='tb-view-toggle'>"
-        f"<a class='{_cls('board')}' href='{_esc(_href('board'))}'>Board</a>"
-        f"<a class='{_cls('table')}' href='{_esc(_href('table'))}'>Table</a>"
-        "</div>"
-    )
-
 
 def _render_comments(
     comments: List[TaskComment],
@@ -1246,17 +1281,7 @@ def _board_styles() -> str:
 <style>
 .tb-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px;
               flex-wrap:wrap; }
-.tb-toolbar .tb-view-toggle { margin-bottom:0; }
 .tb-toolbar .tb-quick-add { margin-left:auto; }
-
-.tb-view-toggle { display:inline-flex; gap:0; border:1px solid var(--border);
-                  border-radius:var(--r-md); overflow:hidden; margin-bottom:12px; }
-.tb-view-btn { padding:6px 16px; font-size:var(--fs-sm); color:var(--muted);
-               text-decoration:none; background:var(--bg2); transition:all .12s; }
-.tb-view-btn:hover { color:var(--fg); background:var(--hover-tint); }
-.tb-view-btn.active { color:var(--neon); background:color-mix(in srgb, var(--neon) 10%, transparent);
-                      font-weight:600; }
-.tb-view-btn + .tb-view-btn { border-left:1px solid var(--border); }
 
 /* Flex board (wl-36): real columns share space, empty ones collapse to rails. */
 .tb-board { display:flex; gap:12px; align-items:stretch; }
@@ -1874,36 +1899,4 @@ def _client_js() -> str:
   }
 </script>
 """
-
-
-# ── Preview comment helpers ───────────────────────────────────────────────
-
-def _load_preview_comments(
-    tracker: Any, tasks: List[Task]
-) -> Dict[str, Dict[str, str]]:
-    preview: Dict[str, Dict[str, str]] = {}
-    if not hasattr(tracker, "list_comments"):
-        return preview
-    for t in tasks:
-        try:
-            comments = tracker.list_comments(t.id)
-        except Exception:
-            continue
-        if not comments:
-            continue
-        latest = max(comments, key=lambda c: c.created_at or "")
-        body = (latest.body or "").strip().replace("\r", "")
-        first_line = next((ln.strip() for ln in body.split("\n") if ln.strip()), "")
-        if len(first_line) > 180:
-            first_line = first_line[:177].rstrip() + "…"
-        owner, owner_claimed_at = _extract_owner_claim(comments)
-        preview[t.id] = {
-            "body": first_line,
-            "author": latest.author or "",
-            "created_at": latest.created_at or "",
-            "owner": owner,
-            "owner_claimed_at": owner_claimed_at,
-        }
-    return preview
-
 

@@ -50,6 +50,21 @@ def _is_transient_sqlite_error(exc: BaseException) -> bool:
         return False
     return bool(_TRANSIENT_SQLITE_RE.search(str(exc)))
 
+
+def _like_contains(needle: str) -> str:
+    """Substring LIKE pattern; caller must use ``ESCAPE '#'``.
+
+    ``%``, ``_``, and ``#`` in the user token are literals, not wildcards
+    (wl-493 — ``q=%`` must not dump the store).
+    """
+    escaped = (
+        str(needle)
+        .replace("#", "##")
+        .replace("%", "#%")
+        .replace("_", "#_")
+    )
+    return "%" + escaped + "%"
+
 from worklane._ref_parse import (
     _BLOCKER_DECL_RE,
     _BLOCKER_KEYWORDS,
@@ -59,48 +74,25 @@ from worklane._ref_parse import (
     _SEO_TICKET_RE,
     _extract_ticket_refs,
 )
+from worklane.products import checkout_root, wl_data_dir
 from worklane.trackers.protocol import ProjectTracker, Task, TaskComment, TaskStatus
 
 
-def _tp_root() -> Path:
-    """WorkLane package root (``worklane/``).
-
-    Computed from this module's own location so WL stays independent of
-    any host repo's path helpers.
-    """
-    return Path(__file__).resolve().parents[1]
-
-
 def _main_worktree_root() -> Path:
-    """Resolve the main git worktree root for the repo that hosts WL.
+    """Main git worktree root — thin wrapper around products.checkout_root.
 
-    WL can be vendored into any repo; it still needs to find the single
-    "main" worktree so concurrent worktrees share one ticket DB. We walk
-    up from WL's own location and follow the ``.git`` pointer file if we
-    land inside a linked worktree.
+    The walker lives in :func:`worklane.products.checkout_root` so HTTP,
+    MCP, and the sqlite default path share one algorithm (wl-467).
     """
-    repo = _tp_root().parent
-    dot_git = repo / ".git"
-    if dot_git.is_file():
-        # Inside a worktree — .git is a pointer file
-        text = dot_git.read_text().strip()
-        if text.startswith("gitdir:"):
-            gitdir = Path(text.split(":", 1)[1].strip())
-            # gitdir points to <main>/.git/worktrees/<name>
-            main_root = gitdir.parents[2]
-            # Package path is worklane/ forever after 0.1.7 (wl-280 rename;
-            # dual-window path fallback retired wl-415).
-            if (main_root / "worklane").exists():
-                return main_root
-    return repo
+    return checkout_root()
 
 
 REPO_ROOT = _main_worktree_root()
 _MAIN_ROOT = REPO_ROOT
 # WorkLane runtime root (separate product boundary).
 TICKETING_ROOT = _MAIN_ROOT / "worklane"
-# Product ticket DB — gitignored runtime state under worklane/local/data.
-DEFAULT_DB_PATH = TICKETING_ROOT / "local" / "data" / "tradeos.db"
+# Product ticket DB — same resolver as HTTP/MCP (wl_data_dir).
+DEFAULT_DB_PATH = wl_data_dir() / "tradeos.db"
 # Pre-rename fallback: hidden `.local/` layout retained so installs mid-upgrade still read.
 LEGACY_HIDDEN_DB_PATH = TICKETING_ROOT / ".local" / "data" / "tradeos.db"
 # Pre-cord-cut fallback: DB under the consuming repo root (tradeOS-side).
@@ -420,12 +412,18 @@ class SQLiteTracker(ProjectTracker):
         label: Optional[str] = None,
         priority: Optional[int] = None,
         gate_type: Optional[str] = None,
+        q: Optional[str] = None,
+        q_id: Optional[str] = None,
     ) -> Tuple[List[str], List[object]]:
         """Shared WHERE clauses for list_tasks / count_tasks_by_status.
 
         Label match is a JSON-blob substring (``%"label"%``) — same contract
         as list_tasks historically; a full inverted index is overkill at
         O(1k–4k) task counts.
+
+        ``q`` is a title/ext_id substring (LIKE, ``#``-escaped). ``q_id`` is
+        an exact rowid match. Combined with OR so a composite-id search can
+        hit the row even when the title does not contain the token (wl-493).
         """
         clauses: List[str] = []
         params: List[object] = []
@@ -444,6 +442,24 @@ class SQLiteTracker(ProjectTracker):
             else:
                 clauses.append("gate_type = ?")
                 params.append(gate_type)
+        q_text = (q or "").strip()
+        q_id_text = (q_id or "").strip()
+        search_parts: List[str] = []
+        if q_text:
+            like = _like_contains(q_text)
+            search_parts.append(
+                "(title LIKE ? ESCAPE '#' OR IFNULL(ext_id, '') LIKE ? ESCAPE '#')"
+            )
+            params.extend([like, like])
+        if q_id_text:
+            if q_id_text.isdigit():
+                search_parts.append("id = ?")
+                params.append(int(q_id_text))
+            else:
+                search_parts.append("CAST(id AS TEXT) = ?")
+                params.append(q_id_text)
+        if search_parts:
+            clauses.append("(" + " OR ".join(search_parts) + ")")
         return clauses, params
 
     def list_tasks(
@@ -455,6 +471,8 @@ class SQLiteTracker(ProjectTracker):
         gate_type: Optional[str] = None,
         limit: Optional[int] = None,
         include_description: bool = True,
+        q: Optional[str] = None,
+        q_id: Optional[str] = None,
     ) -> List[Task]:
         # wl-353: attention / in-flight rollups only need metadata — skip the
         # multi-MB description blobs that dominate cold SELECT * across stores.
@@ -468,6 +486,7 @@ class SQLiteTracker(ProjectTracker):
             )
         clauses, params = self._task_filter_sql(
             status=status, label=label, priority=priority, gate_type=gate_type,
+            q=q, q_id=q_id,
         )
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
